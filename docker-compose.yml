@@ -1,0 +1,90 @@
+version: "3.9"
+
+# Flow OS — Local Development Environment
+# Runs PostgreSQL, Neo4j, and MinIO (S3-compatible object storage for evidence files)
+#
+# Start:   docker compose up -d
+# Stop:    docker compose down
+# Reset:   docker compose down -v   (WARNING: destroys all data)
+# Logs:    docker compose logs -f [service]
+
+services:
+
+  # ===========================================================================
+  # POSTGRESQL
+  # Blueprint + Runtime schemas
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: flowos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       flowos
+      POSTGRES_USER:     flowos
+      POSTGRES_PASSWORD: flowos_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d   # runs SQL files on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowos -d flowos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ===========================================================================
+  # NEO4J
+  # Graph database for org hierarchy, work item relationships, workflow graphs
+  # Browser UI: http://localhost:7474  (user: neo4j, password: flowos_dev)
+  # ===========================================================================
+  neo4j:
+    image: neo4j:5-community
+    container_name: flowos-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/flowos_dev
+      NEO4J_PLUGINS: '["apoc"]'                 # APOC utilities — useful for graph ops
+      NEO4J_dbms_memory_pagecache_size: 512M
+      NEO4J_dbms_memory_heap_max__size: 512M
+    ports:
+      - "7474:7474"   # HTTP browser UI
+      - "7687:7687"   # Bolt protocol (used by Node.js driver)
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "flowos_dev", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  # ===========================================================================
+  # MINIO
+  # S3-compatible object storage for evidence files (photos, attachments)
+  # Browser UI: http://localhost:9001  (user: flowos, password: flowos_dev_secret)
+  # ===========================================================================
+  minio:
+    image: minio/minio:latest
+    container_name: flowos-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER:     flowos
+      MINIO_ROOT_PASSWORD: flowos_dev_secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Browser console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  neo4j_logs:
+  minio_data:
