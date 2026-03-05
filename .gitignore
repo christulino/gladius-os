@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment — never commit credentials
+.env
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Runtime data
+pids
+*.pid
+
+# Editor
+.vscode/
+.idea/
