@@ -30,6 +30,7 @@ const ENTITY_TYPES = new Set([
   'workflows',
   'stages',
   'service-catalog',
+  'service-classes',
   'connections',
   'evidence',
   'board-views',
