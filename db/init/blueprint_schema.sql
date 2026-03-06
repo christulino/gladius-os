@@ -476,90 +476,6 @@ CREATE TABLE blueprint.calendar_exceptions (
 -- Replenishment is a pull operation — it respects WIP limits on the destination.
 -- =============================================================================
 
-CREATE TABLE blueprint.replenishment_policies (
-    id                  SERIAL PRIMARY KEY,
-    uri                 TEXT NOT NULL UNIQUE,
-    workflow_id         INTEGER NOT NULL REFERENCES blueprint.workflows(id),
-    name                TEXT NOT NULL,                      -- 'Weekly Replenishment' | 'On-Demand Pull'
-
-    source_stage_id     INTEGER NOT NULL REFERENCES blueprint.stages(id),
-    -- The backlog/intake stage items are pulled FROM
-
-    destination_stage_id INTEGER NOT NULL REFERENCES blueprint.stages(id),
-    -- The ready/queued stage items are pulled INTO
-
-    -- Scheduling
-    cadence             TEXT,                               -- 'manual' | 'daily' | 'weekly' | 'per_sprint'
-    cadence_config      JSONB,
-    -- For weekly: {"day_of_week": "monday", "time": "09:00"}
-
-    -- Pull rules
-    max_pull_count      INTEGER,                            -- Max items to pull per replenishment. NULL = fill to WIP limit
-    ordering_field      TEXT NOT NULL DEFAULT 'priority_order',
-    -- How to order candidates: 'priority_order' | 'arrival_date' | 'due_date' | 'service_class'
-
-    -- Service class priority is respected automatically via service_classes.priority_order
-    respect_service_class_priority BOOLEAN NOT NULL DEFAULT TRUE,
-
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- =============================================================================
--- ORGANIZATION TEMPLATES
--- Starter kits cloned when a new sub-org is created.
--- =============================================================================
-
-CREATE TABLE blueprint.org_templates (
-    id                  SERIAL PRIMARY KEY,
-    uri                 TEXT NOT NULL UNIQUE,
-    name                TEXT NOT NULL,                      -- 'Basic Team Board' | 'Software Delivery Team'
-    description         TEXT,
-    owner_org_id        INTEGER REFERENCES blueprint.organizations(id),
-    -- NULL = system-level template
-    default_workflow_id INTEGER REFERENCES blueprint.workflows(id),
-    clones_service_classes BOOLEAN NOT NULL DEFAULT TRUE,
-    clones_work_item_types BOOLEAN NOT NULL DEFAULT TRUE,
-    is_system_default   BOOLEAN NOT NULL DEFAULT FALSE,
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- =============================================================================
--- SERVICE CATALOG
--- What an organization offers to others.
--- Requesting a service instantiates a work item of the linked type.
--- =============================================================================
-
-CREATE TABLE blueprint.service_catalog_items (
-    id                  SERIAL PRIMARY KEY,
-    uri                 TEXT NOT NULL UNIQUE,
-    name                TEXT NOT NULL,
-    description         TEXT,
-    owner_org_id        INTEGER NOT NULL REFERENCES blueprint.organizations(id),
-    work_item_type_id   INTEGER NOT NULL REFERENCES blueprint.work_item_types(id),
-    is_internal         BOOLEAN NOT NULL DEFAULT TRUE,      -- Internal org use only
-    is_cross_org        BOOLEAN NOT NULL DEFAULT FALSE,     -- Available to other orgs in same node
-    is_external         BOOLEAN NOT NULL DEFAULT FALSE,     -- Exposed outside system (contact forms etc)
-    request_mode        TEXT NOT NULL DEFAULT 'user_requestable',
-    -- 'user_requestable' — appears in catalog, user can fill form and submit
-    -- 'restricted'       — appears only to users passing visibility_rules for this item
-    -- 'automation_only'  — hidden from all catalog views, only triggered by automation
-    external_slug       TEXT UNIQUE,                        -- URL slug: /request/project-request
-    requires_approval   BOOLEAN NOT NULL DEFAULT FALSE,
-    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- =============================================================================
--- WORKFLOWS
--- Assigned to a Work Item Type.
--- A workflow is a directed graph of stages.
--- =============================================================================
-
 CREATE TABLE blueprint.workflows (
     id                  SERIAL PRIMARY KEY,
     uri                 TEXT NOT NULL UNIQUE,
@@ -856,41 +772,113 @@ CREATE TABLE blueprint.connections (
 );
 
 -- =============================================================================
--- SYSTEM DEFAULT SEED REFERENCE
--- Documents which records are system defaults.
--- Actual seed data lives in /db/seeds/blueprint_defaults.sql
+CREATE TABLE blueprint.replenishment_policies (
+    id                  SERIAL PRIMARY KEY,
+    uri                 TEXT NOT NULL UNIQUE,
+    workflow_id         INTEGER NOT NULL REFERENCES blueprint.workflows(id),
+    name                TEXT NOT NULL,                      -- 'Weekly Replenishment' | 'On-Demand Pull'
+
+    source_stage_id     INTEGER NOT NULL REFERENCES blueprint.stages(id),
+    -- The backlog/intake stage items are pulled FROM
+
+    destination_stage_id INTEGER NOT NULL REFERENCES blueprint.stages(id),
+    -- The ready/queued stage items are pulled INTO
+
+    -- Scheduling
+    cadence             TEXT,                               -- 'manual' | 'daily' | 'weekly' | 'per_sprint'
+    cadence_config      JSONB,
+    -- For weekly: {"day_of_week": "monday", "time": "09:00"}
+
+    -- Pull rules
+    max_pull_count      INTEGER,                            -- Max items to pull per replenishment. NULL = fill to WIP limit
+    ordering_field      TEXT NOT NULL DEFAULT 'priority_order',
+    -- How to order candidates: 'priority_order' | 'arrival_date' | 'due_date' | 'service_class'
+
+    -- Service class priority is respected automatically via service_classes.priority_order
+    respect_service_class_priority BOOLEAN NOT NULL DEFAULT TRUE,
+
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- ORGANIZATION TEMPLATES
+-- Starter kits cloned when a new sub-org is created.
 -- =============================================================================
 
--- System default work_item_type_classes:
---   'Task' | 'Bug' | 'Feature' | 'Epic' | 'Service Request' | 'Project' | 'Incident'
-
--- System default workflows:
---   'Simple Task Workflow'      — intake → in-progress → done
---   'Standard Feature Workflow' — intake → triage → queued → in-progress → review → done
---   'Bug Triage Workflow'       — intake → triage → queued → in-progress → review → delivery → done
---   'Service Request Workflow'  — intake → triage → queued → in-progress → done
-
--- System default roles per org:
---   'owner' | 'admin' | 'member' | 'viewer' | 'external'
+CREATE TABLE blueprint.org_templates (
+    id                  SERIAL PRIMARY KEY,
+    uri                 TEXT NOT NULL UNIQUE,
+    name                TEXT NOT NULL,                      -- 'Basic Team Board' | 'Software Delivery Team'
+    description         TEXT,
+    owner_org_id        INTEGER REFERENCES blueprint.organizations(id),
+    -- NULL = system-level template
+    default_workflow_id INTEGER REFERENCES blueprint.workflows(id),
+    clones_service_classes BOOLEAN NOT NULL DEFAULT TRUE,
+    clones_work_item_types BOOLEAN NOT NULL DEFAULT TRUE,
+    is_system_default   BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 -- =============================================================================
--- INDEXES
+-- SERVICE CATALOG
+-- What an organization offers to others.
+-- Requesting a service instantiates a work item of the linked type.
 -- =============================================================================
 
--- FK for organizations.calendar_id (added after business_calendars table exists)
+CREATE TABLE blueprint.service_catalog_items (
+    id                  SERIAL PRIMARY KEY,
+    uri                 TEXT NOT NULL UNIQUE,
+    name                TEXT NOT NULL,
+    description         TEXT,
+    owner_org_id        INTEGER NOT NULL REFERENCES blueprint.organizations(id),
+    work_item_type_id   INTEGER NOT NULL REFERENCES blueprint.work_item_types(id),
+    is_internal         BOOLEAN NOT NULL DEFAULT TRUE,      -- Internal org use only
+    is_cross_org        BOOLEAN NOT NULL DEFAULT FALSE,     -- Available to other orgs in same node
+    is_external         BOOLEAN NOT NULL DEFAULT FALSE,     -- Exposed outside system (contact forms etc)
+    request_mode        TEXT NOT NULL DEFAULT 'user_requestable',
+    -- 'user_requestable' — appears in catalog, user can fill form and submit
+    -- 'restricted'       — appears only to users passing visibility_rules for this item
+    -- 'automation_only'  — hidden from all catalog views, only triggered by automation
+    external_slug       TEXT UNIQUE,                        -- URL slug: /request/project-request
+    requires_approval   BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- WORKFLOWS
+-- Assigned to a Work Item Type.
+-- A workflow is a directed graph of stages.
+-- =============================================================================
+
+
+-- =============================================================================
+-- DEFERRED FOREIGN KEYS
+-- Added after referenced tables exist
+-- =============================================================================
+
 ALTER TABLE blueprint.organizations
     ADD CONSTRAINT fk_org_calendar
     FOREIGN KEY (calendar_id)
     REFERENCES blueprint.business_calendars(id);
 
-CREATE INDEX idx_calendar_org              ON blueprint.business_calendars(org_id);
-CREATE INDEX idx_calendar_hours_calendar   ON blueprint.calendar_working_hours(calendar_id);
-CREATE INDEX idx_calendar_exceptions_date  ON blueprint.calendar_exceptions(calendar_id, exception_date);
-
-
+ALTER TABLE blueprint.organizations
     ADD CONSTRAINT fk_org_default_template
     FOREIGN KEY (default_template_id)
     REFERENCES blueprint.org_templates(id);
+
+-- =============================================================================
+-- INDEXES
+-- =============================================================================
+
+CREATE INDEX idx_calendar_org              ON blueprint.business_calendars(org_id);
+CREATE INDEX idx_calendar_hours_calendar   ON blueprint.calendar_working_hours(calendar_id);
+CREATE INDEX idx_calendar_exceptions_date  ON blueprint.calendar_exceptions(calendar_id, exception_date);
 
 CREATE INDEX idx_service_classes_org        ON blueprint.service_classes(org_id);
 CREATE INDEX idx_replenishment_workflow     ON blueprint.replenishment_policies(workflow_id);
@@ -934,5 +922,5 @@ CREATE INDEX idx_connections_target_org     ON blueprint.connections(target_org_
 CREATE INDEX idx_connections_trigger_stage  ON blueprint.connections(trigger_stage_id);
 
 -- =============================================================================
--- END BLUEPRINT SCHEMA v1.1
+-- END BLUEPRINT SCHEMA v1.2
 -- =============================================================================
