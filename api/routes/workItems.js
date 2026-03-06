@@ -15,6 +15,7 @@
 import { Router }               from 'express'
 import { getWorkItemHierarchy } from '../../graph/hierarchy.js'
 import { prepareTransition, executeTransition } from '../../runtime/transitions.js'
+import { createWorkItem, updateWorkItemFields, ValidationError } from '../../runtime/workItems.js'
 import { query }                from '../../db/postgres.js'
 
 const router = Router()
@@ -102,6 +103,41 @@ router.post('/transition', async (req, res, next) => {
     if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
     res.json(result)
   } catch (err) { next(err) }
+})
+
+/**
+ * POST /v1/work-items
+ * Create a new work item.
+ * Body: { work_item_type_id, owner_org_id, title, service_class_id?, parent_id?, field_values?, description? }
+ */
+router.post('/', async (req, res, next) => {
+  try {
+    const userId = req.user?.id || 1
+    const workItem = await createWorkItem(req.body, userId)
+    res.status(201).json(workItem)
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(err.statusCode).json({ error: err.message })
+    next(err)
+  }
+})
+
+/**
+ * PATCH /v1/work-items?uri=flowos://...
+ * Update field values on a work item.
+ * Body: { field_values: { key: value } }
+ */
+router.patch('/', async (req, res, next) => {
+  try {
+    const uri    = req.query.uri
+    const userId = req.user?.id || 1
+    if (!uri) return res.status(400).json({ error: 'uri query parameter is required' })
+    if (!req.body.field_values) return res.status(400).json({ error: 'field_values is required' })
+    const workItem = await updateWorkItemFields(uri, req.body.field_values, userId)
+    res.json(workItem)
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(err.statusCode).json({ error: err.message })
+    next(err)
+  }
 })
 
 export default router
