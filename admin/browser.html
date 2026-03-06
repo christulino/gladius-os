@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow OS — Admin</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --bg:       #0d0f12;
+    --surface:  #161920;
+    --border:   #252830;
+    --accent:   #4ade80;
+    --accent2:  #60a5fa;
+    --warn:     #fb923c;
+    --danger:   #f87171;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 20px;
+    height: 48px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  header .logo {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  header .sep { color: var(--border); }
+  header .title { color: var(--muted); font-size: 12px; }
+  header .status { margin-left: auto; display: flex; gap: 16px; }
+  header .stat { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  header .stat span { color: var(--accent); }
+
+  /* ── LAYOUT ── */
+  .layout { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── SIDEBAR ── */
+  nav {
+    width: 180px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    padding: 12px 0;
+    overflow-y: auto;
+  }
+  nav .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 8px 16px 4px;
+  }
+  nav button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 16px;
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-family: var(--sans);
+    font-size: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.1s;
+  }
+  nav button:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+  nav button.active { background: rgba(74,222,128,0.08); color: var(--accent); }
+  nav button .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* ── MAIN ── */
+  main {
+    flex: 1;
+    overflow: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── PANEL ── */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .panel-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  /* ── SUMMARY CARDS ── */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+  }
+  .summary-card .label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .summary-card .value {
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .summary-card .sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ── TABLE ── */
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  thead th {
+    padding: 8px 10px;
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 10px;
+  }
+  tbody tr { border-bottom: 1px solid rgba(37,40,48,0.8); }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  tbody td {
+    padding: 7px 10px;
+    color: var(--text);
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  tbody td.uri { color: var(--muted); font-size: 10px; }
+  tbody td.id  { color: var(--muted); }
+
+  /* ── BADGES ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+  .badge-green  { background: rgba(74,222,128,0.12);  color: var(--accent); }
+  .badge-blue   { background: rgba(96,165,250,0.12);  color: var(--accent2); }
+  .badge-orange { background: rgba(251,146,60,0.12);  color: var(--warn); }
+  .badge-red    { background: rgba(248,113,113,0.12); color: var(--danger); }
+  .badge-gray   { background: rgba(100,116,139,0.12); color: var(--muted); }
+
+  /* ── WORKFLOW TREE ── */
+  .workflow-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .workflow-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .workflow-card-header:hover { background: rgba(255,255,255,0.02); }
+  .workflow-name { font-size: 13px; font-weight: 500; }
+  .workflow-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; }
+  .stage-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .stage-chip {
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .stage-chip.entry   { border-color: var(--accent);  color: var(--accent); }
+  .stage-chip.terminal { border-color: var(--muted); }
+  .stage-chip.done    { border-color: var(--accent);  color: var(--accent); }
+  .stage-chip.cancelled { border-color: var(--danger); color: var(--danger); }
+  .arrow { color: var(--border); font-size: 10px; }
+
+  /* ── TRANSITION HISTORY ── */
+  .history-row {
+    display: grid;
+    grid-template-columns: 40px 1fr 140px 100px 90px;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+  }
+  .history-row:hover { background: rgba(255,255,255,0.02); }
+  .history-cell { padding: 8px 10px; font-family: var(--mono); font-size: 11px; }
+
+  /* ── LOADING / EMPTY ── */
+  .loading, .empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .loading::before { content: '⟳ '; animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── RAW TABLE BROWSER ── */
+  .table-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .table-btn {
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .table-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .table-btn.active { border-color: var(--accent2); color: var(--accent2); background: rgba(96,165,250,0.08); }
+  .table-btn.blueprint { }
+  .table-btn.runtime { border-style: dashed; }
+
+  /* ── PAGINATION ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .pagination button {
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .pagination button:hover:not(:disabled) { border-color: var(--text); color: var(--text); }
+  .pagination button:disabled { opacity: 0.3; cursor: default; }
+  .pagination .info { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  /* ── REFRESH ── */
+  .refresh-btn {
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .devtools-link {
+    margin-left: 8px;
+    padding: 4px 10px;
+    background: none;
+    border: 1px solid var(--accent2);
+    border-radius: 3px;
+    color: var(--accent2);
+    font-family: var(--mono);
+    font-size: 10px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .devtools-link:hover { background: rgba(96,165,250,0.08); }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">Flow OS</span>
+  <span class="sep">/</span>
+  <span class="title">Admin Data Browser</span>
+  <div class="status" id="header-stats"></div>
+  <a href="/devtools" class="devtools-link">DevTools →</a>
+</header>
+
+<div class="layout">
+  <nav>
+    <div class="section-label">Views</div>
+    <button class="active" onclick="showTab('summary')" id="tab-summary"><span class="dot"></span>Summary</button>
+    <button onclick="showTab('orgs')" id="tab-orgs"><span class="dot"></span>Organizations</button>
+    <button onclick="showTab('workitems')" id="tab-workitems"><span class="dot"></span>Work Items</button>
+    <button onclick="showTab('workflows')" id="tab-workflows"><span class="dot"></span>Workflows</button>
+    <button onclick="showTab('users')" id="tab-users"><span class="dot"></span>Users</button>
+    <button onclick="showTab('history')" id="tab-history"><span class="dot"></span>Transitions</button>
+    <div class="section-label" style="margin-top:8px">Raw Tables</div>
+    <button onclick="showTab('raw')" id="tab-raw"><span class="dot"></span>Browse</button>
+  </nav>
+
+  <main id="main-content">
+    <div class="loading">Loading...</div>
+  </main>
+</div>
+
+<script>
+const API = '/admin/api'
+let currentTab = 'summary'
+let rawOffset = 0
+let rawLimit  = 50
+let rawTable  = null
+let wiOffset  = 0
+let histOffset= 0
+
+// ── TABS ──
+function showTab(tab) {
+  currentTab = tab
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'))
+  document.getElementById(`tab-${tab}`)?.classList.add('active')
+  loadTab(tab)
+}
+
+function loadTab(tab) {
+  switch(tab) {
+    case 'summary':   loadSummary();    break
+    case 'orgs':      loadOrgs();       break
+    case 'workitems': loadWorkItems();  break
+    case 'workflows': loadWorkflows();  break
+    case 'users':     loadUsers();      break
+    case 'history':   loadHistory();    break
+    case 'raw':       loadRaw();        break
+  }
+}
+
+// ── FETCH HELPER ──
+async function api(path) {
+  const r = await fetch(API + path)
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+  return r.json()
+}
+
+function setContent(html) {
+  document.getElementById('main-content').innerHTML = html
+}
+
+function loading() {
+  setContent('<div class="loading">Loading...</div>')
+}
+
+// ── SUMMARY ──
+async function loadSummary() {
+  loading()
+  const d = await api('/summary')
+
+  const wi = d.work_items
+  document.getElementById('header-stats').innerHTML = `
+    <span class="stat">orgs <span>${d.orgs}</span></span>
+    <span class="stat">work items <span>${wi.total}</span></span>
+    <span class="stat">transitions <span>${d.transitions}</span></span>
+    <span class="stat">sync queue <span>${d.sync_queue_depth}</span></span>
+  `
+
+  setContent(`
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="label">Organizations</div>
+        <div class="value">${d.orgs}</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Users</div>
+        <div class="value">${d.users}</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Work Items</div>
+        <div class="value">${wi.total}</div>
+        <div class="sub">${wi.active} active · ${wi.pending} pending</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Done</div>
+        <div class="value" style="color:var(--muted)">${wi.done}</div>
+        <div class="sub">${wi.cancelled} cancelled</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Workflows</div>
+        <div class="value">${d.workflows}</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Transitions</div>
+        <div class="value">${d.transitions}</div>
+      </div>
+      <div class="summary-card">
+        <div class="label">Sync Queue</div>
+        <div class="value" style="color:${d.sync_queue_depth > 0 ? 'var(--warn)' : 'var(--muted)'}">${d.sync_queue_depth}</div>
+        <div class="sub">pending</div>
+      </div>
+    </div>
+  `)
+}
+
+// ── ORGANIZATIONS ──
+async function loadOrgs() {
+  loading()
+  const d = await api('/organizations')
+  setContent(`
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Organizations</span>
+        <span class="panel-meta">${d.count} rows</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Name</th><th>Slug</th><th>Type</th>
+            <th>Parent</th><th>Members</th><th>Work Items</th><th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${d.rows.map(r => `
+              <tr>
+                <td class="id">${r.id}</td>
+                <td>${r.name}</td>
+                <td style="color:var(--muted)">${r.slug}</td>
+                <td><span class="badge badge-blue">${r.org_type}</span></td>
+                <td style="color:var(--muted)">${r.parent_name || '—'}</td>
+                <td style="text-align:right">${r.member_count}</td>
+                <td style="text-align:right">${r.work_item_count}</td>
+                <td>${r.is_active ? '<span class="badge badge-green">active</span>' : '<span class="badge badge-gray">inactive</span>'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `)
+}
+
+// ── WORK ITEMS ──
+async function loadWorkItems() {
+  loading()
+  const d = await api(`/work-items?limit=50&offset=${wiOffset}`)
+
+  const stateColor = s => ({
+    active: 'badge-green', pending: 'badge-orange',
+    done: 'badge-blue', cancelled: 'badge-gray'
+  })[s] || 'badge-gray'
+
+  const classColor = c => ({
+    intake: 'badge-blue', 'in-progress': 'badge-green',
+    review: 'badge-orange', done: 'badge-blue',
+    cancelled: 'badge-red', blocked: 'badge-red',
+    triage: 'badge-orange', queued: 'badge-gray'
+  })[c] || 'badge-gray'
+
+  setContent(`
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Work Items</span>
+        <span class="panel-meta">${d.total} total</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Title</th><th>Type</th><th>Stage</th>
+            <th>State</th><th>Service Class</th><th>Org</th><th>Created</th>
+          </tr></thead>
+          <tbody>
+            ${d.rows.map(r => `
+              <tr>
+                <td class="id">${r.id}</td>
+                <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${r.title}</td>
+                <td><span class="badge badge-gray">${r.work_item_type_name}</span></td>
+                <td><span class="badge ${classColor(r.current_stage_class)}">${r.current_stage_name}</span></td>
+                <td><span class="badge ${stateColor(r.spawn_state)}">${r.spawn_state}</span></td>
+                <td>
+                  ${r.service_class_color
+                    ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.service_class_color};margin-right:5px"></span>`
+                    : ''}
+                  ${r.service_class_name || '—'}
+                </td>
+                <td style="color:var(--muted)">${r.org_slug}</td>
+                <td style="color:var(--muted)">${new Date(r.created_at).toLocaleString()}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button onclick="wiOffset=Math.max(0,wiOffset-50);loadWorkItems()" ${wiOffset===0?'disabled':''}>← Prev</button>
+        <button onclick="wiOffset+=50;loadWorkItems()" ${wiOffset+50>=d.total?'disabled':''}>Next →</button>
+        <span class="info">${wiOffset+1}–${Math.min(wiOffset+d.count,d.total)} of ${d.total}</span>
+      </div>
+    </div>
+  `)
+}
+
+// ── WORKFLOWS ──
+async function loadWorkflows() {
+  loading()
+  const d = await api('/workflows')
+
+  const stageClass = s => {
+    if (s.is_entry_stage) return 'entry'
+    if (s.stage_class === 'done') return 'done'
+    if (s.stage_class === 'cancelled') return 'cancelled'
+    if (s.is_terminal) return 'terminal'
+    return ''
+  }
+
+  setContent(d.rows.map(wf => `
+    <div class="workflow-card">
+      <div class="workflow-card-header">
+        <span class="badge badge-blue">v${wf.version}</span>
+        <span class="workflow-name">${wf.name}</span>
+        ${wf.description ? `<span style="color:var(--muted);font-size:11px">${wf.description}</span>` : ''}
+        <span class="workflow-meta">${wf.stages.length} stages · ${wf.transitions.length} transitions</span>
+      </div>
+      <div class="stage-flow">
+        ${wf.stages.map((s,i) => `
+          ${i > 0 ? '<span class="arrow">→</span>' : ''}
+          <span class="stage-chip ${stageClass(s)}" title="class: ${s.stage_class} | type: ${s.stage_type}${s.wip_limit ? ' | WIP: '+s.wip_limit : ''}">${s.name}</span>
+        `).join('')}
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>From</th><th>To</th><th>Label</th><th>Kind</th><th>Requires Reason</th></tr></thead>
+          <tbody>
+            ${wf.transitions.map(t => `
+              <tr>
+                <td>${t.from_stage_name}</td>
+                <td>${t.to_stage_name}</td>
+                <td>${t.transition_label || '—'}</td>
+                <td><span class="badge ${t.transition_kind==='forward'?'badge-green':t.transition_kind==='backward'?'badge-orange':'badge-gray'}">${t.transition_kind}</span></td>
+                <td>${t.requires_reason ? '<span class="badge badge-orange">yes</span>' : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `).join(''))
+}
+
+// ── USERS ──
+async function loadUsers() {
+  loading()
+  const d = await api('/users')
+  setContent(`
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Users</span>
+        <span class="panel-meta">${d.count} rows</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Memberships</th><th>Status</th></tr></thead>
+          <tbody>
+            ${d.rows.map(r => `
+              <tr>
+                <td class="id">${r.id}</td>
+                <td>${r.display_name}</td>
+                <td style="color:var(--muted)">${r.email}</td>
+                <td>${r.memberships.map(m =>
+                  `<span class="badge badge-gray" style="margin-right:3px">${m.org_slug} · ${m.role_name}</span>`
+                ).join('') || '—'}</td>
+                <td>${r.is_active ? '<span class="badge badge-green">active</span>' : '<span class="badge badge-gray">inactive</span>'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `)
+}
+
+// ── TRANSITION HISTORY ──
+async function loadHistory() {
+  loading()
+  const d = await api(`/transition-history?limit=50&offset=${histOffset}`)
+
+  function fmt(sec) {
+    if (!sec) return '—'
+    if (sec < 60) return `${sec}s`
+    if (sec < 3600) return `${Math.round(sec/60)}m`
+    return `${(sec/3600).toFixed(1)}h`
+  }
+
+  setContent(`
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Transition History</span>
+        <span class="panel-meta">${d.total} total</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>ID</th><th>Work Item</th><th>From</th><th>To</th>
+            <th>Time in Stage</th><th>By</th><th>Auto</th><th>Reason</th><th>When</th>
+          </tr></thead>
+          <tbody>
+            ${d.rows.map(r => `
+              <tr>
+                <td class="id">${r.id}</td>
+                <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${r.work_item_title}</td>
+                <td><span class="badge badge-gray">${r.from_stage_name}</span></td>
+                <td><span class="badge badge-green">${r.to_stage_name}</span></td>
+                <td style="font-family:var(--mono);text-align:right">${fmt(r.time_in_stage_seconds)}</td>
+                <td style="color:var(--muted)">${r.transitioned_by || '—'}</td>
+                <td>${r.was_automated ? '<span class="badge badge-blue">auto</span>' : '—'}</td>
+                <td style="color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis">${r.transition_reason || '—'}</td>
+                <td style="color:var(--muted)">${new Date(r.created_at).toLocaleString()}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button onclick="histOffset=Math.max(0,histOffset-50);loadHistory()" ${histOffset===0?'disabled':''}>← Prev</button>
+        <button onclick="histOffset+=50;loadHistory()" ${histOffset+50>=d.total?'disabled':''}>Next →</button>
+        <span class="info">${histOffset+1}–${Math.min(histOffset+d.count,d.total)} of ${d.total}</span>
+      </div>
+    </div>
+  `)
+}
+
+// ── RAW TABLE BROWSER ──
+async function loadRaw() {
+  loading()
+  const tables = await api('/tables')
+
+  const bp = tables.tables.filter(t => t.startsWith('blueprint.'))
+  const rt = tables.tables.filter(t => t.startsWith('runtime.'))
+
+  const tableSelector = `
+    <div class="table-selector">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);align-self:center;margin-right:4px">blueprint:</span>
+      ${bp.map(t => `<button class="table-btn blueprint ${rawTable===t?'active':''}" onclick="selectRawTable('${t}')">${t.replace('blueprint.','')}</button>`).join('')}
+      <span style="font-family:var(--mono);font-size:10px;color:var(--muted);align-self:center;margin-left:8px;margin-right:4px">runtime:</span>
+      ${rt.map(t => `<button class="table-btn runtime ${rawTable===t?'active':''}" onclick="selectRawTable('${t}')">${t.replace('runtime.','')}</button>`).join('')}
+    </div>
+  `
+
+  if (!rawTable) {
+    setContent(`<div class="panel"><div class="panel-header"><span class="panel-title">Raw Table Browser</span></div>${tableSelector}<div class="empty">Select a table to browse</div></div>`)
+    return
+  }
+
+  const [schema, tbl] = rawTable.split('.')
+  const d = await api(`/tables/${schema}/${tbl}?limit=${rawLimit}&offset=${rawOffset}`)
+
+  setContent(`
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">${rawTable}</span>
+        <span class="panel-meta">${d.total} rows</span>
+      </div>
+      ${tableSelector}
+      <div class="table-wrap">
+        <table>
+          <thead><tr>${d.columns.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${d.rows.map(row => `
+              <tr>${d.columns.map(c => {
+                const v = row[c]
+                const str = v === null ? '<span style="color:var(--muted)">null</span>'
+                          : typeof v === 'object' ? `<span style="color:var(--accent2)">${JSON.stringify(v).slice(0,80)}</span>`
+                          : typeof v === 'boolean' ? `<span class="badge ${v?'badge-green':'badge-gray'}">${v}</span>`
+                          : String(v).slice(0,80)
+                return `<td>${str}</td>`
+              }).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button onclick="rawOffset=Math.max(0,rawOffset-rawLimit);loadRaw()" ${rawOffset===0?'disabled':''}>← Prev</button>
+        <button onclick="rawOffset+=rawLimit;loadRaw()" ${rawOffset+rawLimit>=d.total?'disabled':''}>Next →</button>
+        <span class="info">${rawOffset+1}–${Math.min(rawOffset+d.count,d.total)} of ${d.total}</span>
+      </div>
+    </div>
+  `)
+}
+
+async function selectRawTable(t) {
+  rawTable  = t
+  rawOffset = 0
+  loadRaw()
+}
+
+// ── INIT ──
+loadSummary()
+</script>
+</body>
+</html>

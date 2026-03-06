@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow OS — DevTools</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --bg:       #0d0f12;
+    --surface:  #161920;
+    --border:   #252830;
+    --accent:   #4ade80;
+    --accent2:  #60a5fa;
+    --warn:     #fb923c;
+    --danger:   #f87171;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 13px; min-height: 100vh; display: flex; flex-direction: column; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 0 20px; height: 48px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+  header .logo { font-family: var(--mono); font-size: 12px; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; }
+  header .sep { color: var(--border); }
+  header .title { color: var(--muted); font-size: 12px; }
+  .admin-link { margin-left: auto; padding: 4px 10px; background: none; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-family: var(--mono); font-size: 10px; cursor: pointer; text-decoration: none; }
+  .admin-link:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* tabs */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); background: var(--surface); padding: 0 20px; flex-shrink: 0; }
+  .tab { padding: 12px 16px; font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.1s; letter-spacing: 0.06em; text-transform: uppercase; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .layout { display: flex; flex: 1; overflow: hidden; }
+
+  /* endpoint list */
+  .endpoint-list { width: 260px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; background: var(--surface); }
+  .ep-section { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .ep-section-label { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; padding: 6px 14px 2px; }
+  .ep-item { display: flex; align-items: center; gap: 8px; padding: 7px 14px; cursor: pointer; transition: all 0.1s; }
+  .ep-item:hover { background: rgba(255,255,255,0.03); }
+  .ep-item.active { background: rgba(74,222,128,0.06); }
+  .method { font-family: var(--mono); font-size: 10px; font-weight: 500; width: 36px; flex-shrink: 0; }
+  .method.GET    { color: var(--accent); }
+  .method.POST   { color: var(--accent2); }
+  .method.PATCH  { color: var(--warn); }
+  .method.DELETE { color: var(--danger); }
+  .ep-path { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .ep-desc { font-size: 10px; color: var(--muted); }
+
+  /* request panel */
+  .request-panel { flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .panel-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .panel-title { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .form-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 10px; align-items: start; padding: 14px; }
+  .form-label { font-family: var(--mono); font-size: 11px; color: var(--muted); padding-top: 7px; }
+  input, textarea, select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 6px 9px;
+    width: 100%;
+    transition: border-color 0.1s;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent2); }
+  textarea { resize: vertical; min-height: 80px; }
+  select option { background: var(--surface); }
+
+  .url-bar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+  .method-badge { font-family: var(--mono); font-size: 12px; font-weight: 500; padding: 5px 10px; border-radius: 4px; flex-shrink: 0; }
+  .method-badge.GET    { background: rgba(74,222,128,0.12);  color: var(--accent); }
+  .method-badge.POST   { background: rgba(96,165,250,0.12);  color: var(--accent2); }
+  .method-badge.PATCH  { background: rgba(251,146,60,0.12);  color: var(--warn); }
+  .url-text { font-family: var(--mono); font-size: 12px; color: var(--text); flex: 1; }
+  .send-btn {
+    padding: 6px 16px;
+    background: var(--accent);
+    border: none;
+    border-radius: 4px;
+    color: var(--bg);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: opacity 0.1s;
+  }
+  .send-btn:hover { opacity: 0.9; }
+  .send-btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* response */
+  .response-meta { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+  .status-badge { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 3px; }
+  .status-2xx { background: rgba(74,222,128,0.12); color: var(--accent); }
+  .status-4xx { background: rgba(251,146,60,0.12);  color: var(--warn); }
+  .status-5xx { background: rgba(248,113,113,0.12); color: var(--danger); }
+  .timing { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+
+  pre {
+    padding: 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.6;
+    color: var(--text);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+  .json-key    { color: var(--accent2); }
+  .json-string { color: var(--accent); }
+  .json-number { color: var(--warn); }
+  .json-bool   { color: var(--danger); }
+  .json-null   { color: var(--muted); }
+
+  /* sequence tab */
+  .sequence-panel { flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .step {
+    display: flex;
+    gap: 14px;
+    position: relative;
+  }
+  .step::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 36px;
+    bottom: -16px;
+    width: 1px;
+    background: var(--border);
+  }
+  .step:last-child::before { display: none; }
+  .step-num {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .step-num.done    { border-color: var(--accent);  color: var(--accent); }
+  .step-num.running { border-color: var(--accent2); color: var(--accent2); }
+  .step-num.error   { border-color: var(--danger);  color: var(--danger); }
+  .step-body { flex: 1; }
+  .step-title { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+  .step-result {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .step-result.success { border-color: rgba(74,222,128,0.3); }
+  .step-result.error   { border-color: rgba(248,113,113,0.3); color: var(--danger); }
+
+  .run-btn {
+    padding: 8px 20px;
+    background: none;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.1s;
+    align-self: flex-start;
+  }
+  .run-btn:hover { background: rgba(74,222,128,0.08); }
+  .run-btn:disabled { opacity: 0.4; cursor: default; }
+
+  .empty { padding: 40px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+
+  /* ── LOG VIEWER ── */
+  .log-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0; background: var(--surface);
+  }
+  .log-filter-btn {
+    padding: 3px 9px; background: none;
+    border: 1px solid var(--border); border-radius: 3px;
+    color: var(--muted); font-family: var(--mono); font-size: 10px;
+    cursor: pointer; transition: all 0.1s;
+  }
+  .log-filter-btn.active-log   { border-color: var(--accent);  color: var(--accent); }
+  .log-filter-btn.active-warn  { border-color: var(--warn);    color: var(--warn); }
+  .log-filter-btn.active-error { border-color: var(--danger);  color: var(--danger); }
+  .log-filter-btn.active-info  { border-color: var(--accent2); color: var(--accent2); }
+  .log-clear { margin-left: auto; padding: 3px 9px; background: none; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-family: var(--mono); font-size: 10px; cursor: pointer; }
+  .log-clear:hover { border-color: var(--danger); color: var(--danger); }
+  .log-status { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .log-status.connected { color: var(--accent); }
+  .log-scroll {
+    flex: 1; overflow-y: auto; padding: 6px 0;
+    font-family: var(--mono); font-size: 11px; line-height: 1.5;
+  }
+  .log-entry {
+    display: grid;
+    grid-template-columns: 76px 44px 1fr;
+    gap: 0 8px;
+    padding: 2px 14px;
+    border-bottom: 1px solid rgba(37,40,48,0.5);
+  }
+  .log-entry:hover { background: rgba(255,255,255,0.02); }
+  .log-ts  { color: var(--muted); font-size: 10px; white-space: nowrap; padding-top: 1px; }
+  .log-lvl { font-size: 10px; text-align: center; }
+  .log-lvl.log   { color: var(--muted); }
+  .log-lvl.info  { color: var(--accent2); }
+  .log-lvl.warn  { color: var(--warn); }
+  .log-lvl.error { color: var(--danger); }
+  .log-lvl.debug { color: var(--muted); opacity: 0.6; }
+  .log-msg { color: var(--text); word-break: break-word; white-space: pre-wrap; }
+  .log-msg.warn  { color: var(--warn); }
+  .log-msg.error { color: var(--danger); }
+
+  /* ── DB CONSOLE ── */
+  .db-layout { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 16px; gap: 12px; }
+  .db-editor-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .db-editor-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .db-editor-title { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+  .db-run-btn { margin-left: auto; padding: 4px 14px; background: var(--accent); border: none; border-radius: 3px; color: var(--bg); font-family: var(--mono); font-size: 11px; font-weight: 500; cursor: pointer; }
+  .db-run-btn:hover { opacity: 0.9; }
+  .db-run-btn:disabled { opacity: 0.4; cursor: default; }
+  #sql-input {
+    width: 100%; min-height: 100px; max-height: 200px;
+    background: var(--bg); border: none; border-radius: 0;
+    color: var(--accent2); font-family: var(--mono); font-size: 12px;
+    padding: 12px; resize: vertical; line-height: 1.6;
+  }
+  #sql-input:focus { outline: none; }
+  .db-snippets { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--border); }
+  .snippet-btn { padding: 3px 9px; background: none; border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-family: var(--mono); font-size: 10px; cursor: pointer; transition: all 0.1s; }
+  .snippet-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .db-results { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+  .db-results-header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .db-results-title { font-family: var(--mono); font-size: 10px; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+  .db-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-left: auto; }
+  .db-table-wrap { flex: 1; overflow: auto; }
+  .db-error { padding: 14px; font-family: var(--mono); font-size: 12px; color: var(--danger); }
+  .db-empty-msg { padding: 30px; text-align: center; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">Flow OS</span>
+  <span class="sep">/</span>
+  <span class="title">DevTools</span>
+  <a href="/admin" class="admin-link">← Admin</a>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('endpoints')">Endpoints</div>
+  <div class="tab" onclick="switchTab('sequences')">Sequences</div>
+  <div class="tab" onclick="switchTab('logs')">Log Viewer</div>
+  <div class="tab" onclick="switchTab('db')">DB Console</div>
+</div>
+
+<div id="tab-endpoints" class="layout">
+  <div class="endpoint-list" id="endpoint-list"></div>
+  <div class="request-panel" id="request-panel">
+    <div class="empty">← Select an endpoint to test</div>
+  </div>
+</div>
+
+<div id="tab-sequences" class="layout" style="display:none">
+  <div class="sequence-panel" id="sequence-panel">
+    <div style="display:flex;gap:10px;flex-wrap:wrap" id="sequence-buttons"></div>
+    <div id="sequence-content"><div class="empty">Select a sequence to run</div></div>
+  </div>
+</div>
+
+<div id="tab-logs" class="layout" style="display:none;flex-direction:column">
+  <div class="log-toolbar">
+    <span class="log-status" id="log-status">● disconnected</span>
+    <button class="log-filter-btn" id="filter-all"   onclick="setFilter('all')">all</button>
+    <button class="log-filter-btn" id="filter-log"   onclick="setFilter('log')">log</button>
+    <button class="log-filter-btn" id="filter-warn"  onclick="setFilter('warn')">warn</button>
+    <button class="log-filter-btn" id="filter-error" onclick="setFilter('error')">error</button>
+    <label style="display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:8px">
+      <input type="checkbox" id="autoscroll" checked> autoscroll
+    </label>
+    <button class="log-clear" onclick="clearLogs()">clear</button>
+  </div>
+  <div class="log-scroll" id="log-scroll"></div>
+</div>
+
+<div id="tab-db" class="layout" style="display:none">
+  <div class="db-layout">
+    <div class="db-editor-wrap">
+      <div class="db-editor-header">
+        <span class="db-editor-title">SQL Console</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">SELECT / EXPLAIN only</span>
+        <button class="db-run-btn" onclick="runQuery()" id="db-run-btn">▶ Run</button>
+      </div>
+      <textarea id="sql-input" spellcheck="false" placeholder="SELECT * FROM runtime.work_items LIMIT 10"></textarea>
+      <div class="db-snippets" id="db-snippets"></div>
+    </div>
+    <div class="db-results">
+      <div class="db-results-header">
+        <span class="db-results-title">Results</span>
+        <span class="db-meta" id="db-meta"></span>
+      </div>
+      <div id="db-results-body"><div class="db-empty-msg">Run a query to see results</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = ''
+let activeEndpoint = null
+let activeTab = 'endpoints'
+
+// ── ENDPOINT DEFINITIONS ──
+const ENDPOINTS = [
+  { section: 'Health' },
+  { method:'GET',   path:'/health',       desc:'Server health check',        params:[] },
+
+  { section: 'Work Items' },
+  { method:'GET',   path:'/v1/work-items', desc:'Get work item by URI',
+    params:[{ key:'uri', label:'Work Item URI', type:'text', placeholder:'flowos://system/work-items/...' }] },
+  { method:'POST',  path:'/v1/work-items', desc:'Create a work item',
+    body: JSON.stringify({ work_item_type_id:1, owner_org_id:1, title:'New work item', field_values:{} }, null, 2) },
+  { method:'PATCH', path:'/v1/work-items', desc:'Update field values',
+    params:[{ key:'uri', label:'Work Item URI', type:'text' }],
+    body: JSON.stringify({ field_values:{ estimate_hours:4 } }, null, 2) },
+  { method:'GET',   path:'/v1/work-items/transition/prepare', desc:'Prepare a transition',
+    params:[
+      { key:'uri',         label:'Work Item URI',  type:'text', placeholder:'flowos://...' },
+      { key:'to_stage_id', label:'To Stage ID',    type:'number' }
+    ]},
+  { method:'POST',  path:'/v1/work-items/transition', desc:'Execute a transition',
+    body: JSON.stringify({ uri:'flowos://...', to_stage_id:2, reason:'' }, null, 2) },
+
+  { section: 'Organizations' },
+  { method:'GET', path:'/v1/organizations', desc:'List organizations', params:[] },
+
+  { section: 'Admin' },
+  { method:'GET', path:'/admin/api/summary',            desc:'System summary',       params:[] },
+  { method:'GET', path:'/admin/api/organizations',      desc:'All organizations',    params:[] },
+  { method:'GET', path:'/admin/api/work-items',         desc:'All work items',       params:[] },
+  { method:'GET', path:'/admin/api/workflows',          desc:'Workflows with stages',params:[] },
+  { method:'GET', path:'/admin/api/users',              desc:'Users & memberships',  params:[] },
+  { method:'GET', path:'/admin/api/transition-history', desc:'Transition history',   params:[] },
+]
+
+// ── RENDER ENDPOINT LIST ──
+function renderEndpointList() {
+  const el = document.getElementById('endpoint-list')
+  let html = ''
+  let idx = 0
+  for (const ep of ENDPOINTS) {
+    if (ep.section) {
+      html += `<div class="ep-section"><div class="ep-section-label">${ep.section}</div>`
+      continue
+    }
+    const i = idx++
+    html += `
+      <div class="ep-item ${activeEndpoint===i?'active':''}" onclick="selectEndpoint(${i})">
+        <span class="method ${ep.method}">${ep.method}</span>
+        <div>
+          <div class="ep-path">${ep.path}</div>
+          <div class="ep-desc">${ep.desc}</div>
+        </div>
+      </div>`
+    // Close section div after last item before next section
+    const next = ENDPOINTS[ENDPOINTS.indexOf(ep)+1]
+    if (!next || next.section) html += '</div>'
+  }
+  el.innerHTML = html
+}
+
+// Get non-section endpoints
+function getEndpoints() { return ENDPOINTS.filter(e => !e.section) }
+
+function selectEndpoint(i) {
+  activeEndpoint = i
+  renderEndpointList()
+  const ep = getEndpoints()[i]
+  renderRequestPanel(ep)
+}
+
+// ── RENDER REQUEST PANEL ──
+function renderRequestPanel(ep) {
+  const paramFields = (ep.params || []).map(p => `
+    <div class="form-label">${p.label}</div>
+    <input type="${p.type||'text'}" id="param-${p.key}" placeholder="${p.placeholder||''}" />
+  `).join('')
+
+  const bodyField = (ep.body !== undefined) ? `
+    <div class="form-label">Body (JSON)</div>
+    <textarea id="req-body" rows="8">${ep.body || ''}</textarea>
+  ` : ''
+
+  const hasParams = ep.params?.length > 0
+  const hasBody   = ep.body !== undefined
+
+  document.getElementById('request-panel').innerHTML = `
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Request</span>
+      </div>
+      <div class="url-bar">
+        <span class="method-badge ${ep.method}">${ep.method}</span>
+        <span class="url-text" id="url-display">${ep.path}</span>
+        <button class="send-btn" onclick="sendRequest()">Send</button>
+      </div>
+      ${(hasParams || hasBody) ? `
+        <div style="border-top:1px solid var(--border)">
+          <div class="form-grid">
+            ${paramFields}
+            ${bodyField}
+          </div>
+        </div>` : ''}
+    </div>
+    <div class="panel" id="response-panel" style="display:none">
+      <div class="panel-header">
+        <span class="panel-title">Response</span>
+        <div id="response-meta"></div>
+      </div>
+      <pre id="response-body"></pre>
+    </div>
+  `
+
+  // Live URL update for params
+  ;(ep.params||[]).forEach(p => {
+    document.getElementById(`param-${p.key}`)?.addEventListener('input', updateUrl)
+  })
+  updateUrl()
+}
+
+function updateUrl() {
+  const ep = getEndpoints()[activeEndpoint]
+  if (!ep) return
+  const params = (ep.params||[]).reduce((acc, p) => {
+    const v = document.getElementById(`param-${p.key}`)?.value
+    if (v) acc[p.key] = v
+    return acc
+  }, {})
+  const qs = new URLSearchParams(params).toString()
+  const url = ep.path + (qs ? '?' + qs : '')
+  const el = document.getElementById('url-display')
+  if (el) el.textContent = url
+}
+
+// ── SEND REQUEST ──
+async function sendRequest() {
+  const ep = getEndpoints()[activeEndpoint]
+  if (!ep) return
+
+  const params = (ep.params||[]).reduce((acc, p) => {
+    const v = document.getElementById(`param-${p.key}`)?.value
+    if (v) acc[p.key] = v
+    return acc
+  }, {})
+  const qs = new URLSearchParams(params).toString()
+  const url = ep.path + (qs ? '?' + qs : '')
+
+  let body = undefined
+  if (ep.body !== undefined) {
+    try { body = document.getElementById('req-body')?.value } catch {}
+  }
+
+  const panel = document.getElementById('response-panel')
+  const metaEl = document.getElementById('response-meta')
+  const bodyEl = document.getElementById('response-body')
+  panel.style.display = 'block'
+  metaEl.innerHTML = '<span style="color:var(--muted);font-family:var(--mono);font-size:11px">Sending...</span>'
+  bodyEl.textContent = ''
+
+  const start = Date.now()
+  try {
+    const opts = {
+      method: ep.method,
+      headers: { 'Content-Type': 'application/json' },
+    }
+    if (body) opts.body = body
+
+    const res = await fetch(url, opts)
+    const ms  = Date.now() - start
+    const data = await res.json()
+
+    const statusClass = res.status < 300 ? 'status-2xx' : res.status < 500 ? 'status-4xx' : 'status-5xx'
+    metaEl.innerHTML = `
+      <span class="status-badge ${statusClass}">${res.status} ${res.statusText}</span>
+      <span class="timing">${ms}ms</span>
+    `
+    bodyEl.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2))
+  } catch (err) {
+    const ms = Date.now() - start
+    metaEl.innerHTML = `<span class="status-badge status-5xx">Error</span><span class="timing">${ms}ms</span>`
+    bodyEl.textContent = err.message
+  }
+}
+
+// ── SYNTAX HIGHLIGHT ──
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
+    if (/^"/.test(match)) {
+      if (/:$/.test(match)) return `<span class="json-key">${match}</span>`
+      return `<span class="json-string">${match}</span>`
+    }
+    if (/true|false/.test(match)) return `<span class="json-bool">${match}</span>`
+    if (/null/.test(match)) return `<span class="json-null">${match}</span>`
+    return `<span class="json-number">${match}</span>`
+  })
+}
+
+// ── SEQUENCES ──
+const SEQUENCES = [
+  {
+    name: 'Create → Transition → Done',
+    desc: 'Create a Task, move it to In Progress, then Done',
+    steps: [
+      {
+        title: 'Create work item',
+        run: async (ctx) => {
+          const r = await fetch('/v1/work-items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ work_item_type_id:1, owner_org_id:1, title:`Test Task ${Date.now()}` })
+          })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          ctx.workItemUri = d.uri
+          ctx.workItemId  = d.id
+          return d
+        }
+      },
+      {
+        title: 'Prepare transition → In Progress',
+        run: async (ctx) => {
+          const r = await fetch(`/v1/work-items/transition/prepare?uri=${encodeURIComponent(ctx.workItemUri)}&to_stage_id=2`)
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          if (!d.canTransition) throw new Error('Cannot transition: ' + JSON.stringify(d.blockedCriteria))
+          return d
+        }
+      },
+      {
+        title: 'Execute transition → In Progress',
+        run: async (ctx) => {
+          const r = await fetch('/v1/work-items/transition', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uri: ctx.workItemUri, to_stage_id: 2 })
+          })
+          const d = await r.json()
+          if (!r.ok || !d.success) throw new Error(d.error || 'Transition failed')
+          return d
+        }
+      },
+      {
+        title: 'Execute transition → Done',
+        run: async (ctx) => {
+          const r = await fetch('/v1/work-items/transition', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uri: ctx.workItemUri, to_stage_id: 3 })
+          })
+          const d = await r.json()
+          if (!r.ok || !d.success) throw new Error(d.error || 'Transition failed')
+          return d
+        }
+      },
+      {
+        title: 'Verify final state',
+        run: async (ctx) => {
+          const r = await fetch(`/v1/work-items?uri=${encodeURIComponent(ctx.workItemUri)}`)
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          if (d.spawn_state !== 'done') throw new Error(`Expected done, got ${d.spawn_state}`)
+          return d
+        }
+      },
+    ]
+  },
+  {
+    name: 'Create Pending Item',
+    desc: 'Create a Bug with missing required fields — verify pending state',
+    steps: [
+      {
+        title: 'Create Bug without severity field',
+        run: async (ctx) => {
+          const r = await fetch('/v1/work-items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ work_item_type_id:3, owner_org_id:1, title:'Login crashes on iOS 17' })
+          })
+          const d = await r.json()
+          if (!r.ok) throw new Error(d.error)
+          ctx.workItemUri = d.uri
+          return d
+        }
+      },
+      {
+        title: 'Verify spawn_state',
+        run: async (ctx) => {
+          const r = await fetch(`/v1/work-items?uri=${encodeURIComponent(ctx.workItemUri)}`)
+          const d = await r.json()
+          // Bug type has no required fields seeded yet — so it'll be active
+          // This step just shows the current state
+          return { spawn_state: d.spawn_state, pending_missing_fields: d.pending_missing_fields }
+        }
+      }
+    ]
+  }
+]
+
+function renderSequences() {
+  const btns = document.getElementById('sequence-buttons')
+  btns.innerHTML = SEQUENCES.map((s,i) => `
+    <button class="run-btn" onclick="runSequence(${i})">${s.name}</button>
+  `).join('')
+}
+
+async function runSequence(i) {
+  const seq = SEQUENCES[i]
+  const ctx = {}
+
+  const content = document.getElementById('sequence-content')
+  content.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:14px;font-weight:500;margin-bottom:4px">${seq.name}</div>
+      <div style="color:var(--muted);font-size:12px">${seq.desc}</div>
+    </div>
+    ${seq.steps.map((s,j) => `
+      <div class="step" id="step-${j}">
+        <div class="step-num" id="step-num-${j}">${j+1}</div>
+        <div class="step-body">
+          <div class="step-title">${s.title}</div>
+          <div class="step-result" id="step-result-${j}" style="display:none"></div>
+        </div>
+      </div>
+    `).join('')}
+  `
+
+  // Disable all run buttons
+  document.querySelectorAll('.run-btn').forEach(b => b.disabled = true)
+
+  for (let j = 0; j < seq.steps.length; j++) {
+    const step   = seq.steps[j]
+    const numEl  = document.getElementById(`step-num-${j}`)
+    const resEl  = document.getElementById(`step-result-${j}`)
+    numEl.classList.add('running')
+    resEl.style.display = 'block'
+    resEl.textContent = 'Running...'
+
+    try {
+      const result = await step.run(ctx)
+      numEl.classList.remove('running')
+      numEl.classList.add('done')
+      resEl.classList.add('success')
+      resEl.innerHTML = syntaxHighlight(JSON.stringify(result, null, 2))
+    } catch (err) {
+      numEl.classList.remove('running')
+      numEl.classList.add('error')
+      resEl.classList.add('error')
+      resEl.textContent = `✗ ${err.message}`
+      break
+    }
+  }
+
+  document.querySelectorAll('.run-btn').forEach(b => b.disabled = false)
+}
+
+function syntaxHighlight(json) {
+  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, match => {
+    if (/^"/.test(match)) {
+      if (/:$/.test(match)) return `<span class="json-key">${match}</span>`
+      return `<span class="json-string">${match}</span>`
+    }
+    if (/true|false/.test(match)) return `<span class="json-bool">${match}</span>`
+    if (/null/.test(match)) return `<span class="json-null">${match}</span>`
+    return `<span class="json-number">${match}</span>`
+  })
+}
+
+function switchTab(tab) {
+  activeTab = tab
+  const tabs = ['endpoints','sequences','logs','db']
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', tabs[i] === tab)
+  })
+  tabs.forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === tab ? 'flex' : 'none'
+  })
+  if (tab === 'logs'  && !logEvtSource) initLogViewer()
+  if (tab === 'db'    && !dbReady)      initDbConsole()
+}
+
+// ── LOG VIEWER ──
+let logEvtSource  = null
+let logFilter     = 'all'
+let logEntries    = []
+
+function initLogViewer() {
+  const statusEl = document.getElementById('log-status')
+  logEvtSource = new EventSource('/admin/api/logs/stream')
+
+  logEvtSource.onopen = () => {
+    statusEl.textContent = '● connected'
+    statusEl.classList.add('connected')
+  }
+  logEvtSource.onerror = () => {
+    statusEl.textContent = '● disconnected'
+    statusEl.classList.remove('connected')
+  }
+  logEvtSource.onmessage = (e) => {
+    try {
+      const entry = JSON.parse(e.data)
+      logEntries.push(entry)
+      appendLogEntry(entry)
+    } catch {}
+  }
+}
+
+function appendLogEntry(entry) {
+  if (logFilter !== 'all' && entry.level !== logFilter) return
+  const scroll = document.getElementById('log-scroll')
+  const ts = new Date(entry.ts).toLocaleTimeString('en-US', { hour12: false, hour:'2-digit', minute:'2-digit', second:'2-digit' })
+  const div = document.createElement('div')
+  div.className = 'log-entry'
+  div.dataset.level = entry.level
+  div.innerHTML = `
+    <span class="log-ts">${ts}</span>
+    <span class="log-lvl ${entry.level}">${entry.level}</span>
+    <span class="log-msg ${['warn','error'].includes(entry.level) ? entry.level : ''}">${escHtml(entry.message)}</span>
+  `
+  scroll.appendChild(div)
+  if (document.getElementById('autoscroll').checked) {
+    scroll.scrollTop = scroll.scrollHeight
+  }
+}
+
+function setFilter(f) {
+  logFilter = f
+  document.querySelectorAll('.log-filter-btn').forEach(b => {
+    b.className = 'log-filter-btn'
+    if (b.id === `filter-${f}` || (f==='all' && b.id==='filter-all')) {
+      b.classList.add(f === 'all' ? 'active-info' : `active-${f}`)
+    }
+  })
+  // Re-render from buffer
+  const scroll = document.getElementById('log-scroll')
+  scroll.innerHTML = ''
+  logEntries.forEach(e => appendLogEntry(e))
+}
+
+function clearLogs() {
+  logEntries = []
+  document.getElementById('log-scroll').innerHTML = ''
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+}
+
+// ── DB CONSOLE ──
+let dbReady = false
+
+const SNIPPETS = [
+  { label:'work items',       sql:'SELECT wi.id, wi.title, s.name AS stage, wi.spawn_state\nFROM runtime.work_items wi\nJOIN blueprint.stages s ON s.id = wi.current_stage_id\nORDER BY wi.id DESC\nLIMIT 20' },
+  { label:'transition history', sql:'SELECT sth.id, wi.title, fs.name AS from_stage, ts.name AS to_stage,\n  sth.time_in_stage_seconds, sth.created_at\nFROM runtime.stage_transition_history sth\nJOIN runtime.work_items wi ON wi.id = sth.work_item_id\nJOIN blueprint.stages fs ON fs.id = sth.from_stage_id\nJOIN blueprint.stages ts ON ts.id = sth.to_stage_id\nORDER BY sth.id DESC LIMIT 20' },
+  { label:'workflows + stages', sql:'SELECT w.name AS workflow, s.display_order, s.name AS stage,\n  s.stage_class, s.is_entry_stage, s.is_terminal\nFROM blueprint.stages s\nJOIN blueprint.workflows w ON w.id = s.workflow_id\nORDER BY w.id, s.display_order' },
+  { label:'orgs + members',   sql:'SELECT o.name AS org, u.display_name, r.name AS role\nFROM blueprint.org_memberships om\nJOIN blueprint.organizations o ON o.id = om.org_id\nJOIN blueprint.users u ON u.id = om.user_id\nJOIN blueprint.roles r ON r.id = om.role_id\nWHERE om.is_active = true' },
+  { label:'sync queue',       sql:'SELECT * FROM runtime.search_index_queue\nORDER BY id DESC LIMIT 20' },
+  { label:'all tables',       sql:"SELECT table_schema, table_name,\n  (SELECT COUNT(*) FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema = t.table_schema) AS col_count\nFROM information_schema.tables t\nWHERE table_schema IN ('blueprint','runtime')\nORDER BY table_schema, table_name" },
+]
+
+function initDbConsole() {
+  dbReady = true
+  const snippetsEl = document.getElementById('db-snippets')
+  snippetsEl.innerHTML = SNIPPETS.map((s,i) =>
+    `<button class="snippet-btn" onclick="loadSnippet(${i})">${s.label}</button>`
+  ).join('')
+
+  // Cmd+Enter / Ctrl+Enter to run
+  document.getElementById('sql-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runQuery()
+  })
+}
+
+function loadSnippet(i) {
+  document.getElementById('sql-input').value = SNIPPETS[i].sql
+}
+
+async function runQuery() {
+  const sql = document.getElementById('sql-input').value.trim()
+  if (!sql) return
+
+  const btn     = document.getElementById('db-run-btn')
+  const metaEl  = document.getElementById('db-meta')
+  const bodyEl  = document.getElementById('db-results-body')
+
+  btn.disabled = true
+  btn.textContent = '⟳ Running'
+  metaEl.textContent = ''
+  bodyEl.innerHTML = '<div class="db-empty-msg">Running...</div>'
+
+  try {
+    const res  = await fetch('/admin/api/query', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ sql }),
+    })
+    const data = await res.json()
+
+    if (!res.ok) {
+      bodyEl.innerHTML = `<div class="db-error">✗ ${escHtml(data.error)}</div>`
+      metaEl.textContent = 'error'
+      return
+    }
+
+    metaEl.textContent = `${data.count} row${data.count !== 1 ? 's' : ''} · ${data.duration_ms}ms`
+
+    if (!data.rows.length) {
+      bodyEl.innerHTML = '<div class="db-empty-msg">No rows returned</div>'
+      return
+    }
+
+    const cols = data.columns.map(c => c.name)
+    bodyEl.innerHTML = `
+      <div class="db-table-wrap">
+        <table>
+          <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${data.rows.map(row => `
+              <tr>${cols.map(c => {
+                const v = row[c]
+                const str = v === null
+                  ? `<span style="color:var(--muted)">null</span>`
+                  : typeof v === 'object'
+                  ? `<span style="color:var(--accent2)">${escHtml(JSON.stringify(v))}</span>`
+                  : typeof v === 'boolean'
+                  ? `<span style="color:${v?'var(--accent)':'var(--muted)'}">${v}</span>`
+                  : escHtml(String(v))
+                return `<td>${str}</td>`
+              }).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="db-error">✗ ${escHtml(err.message)}</div>`
+    metaEl.textContent = 'error'
+  } finally {
+    btn.disabled = false
+    btn.textContent = '▶ Run'
+  }
+}
+
+// ── INIT ──
+renderEndpointList()
+renderSequences()
+</script>
+</body>
+</html>

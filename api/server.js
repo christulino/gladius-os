@@ -10,13 +10,23 @@
  */
 
 import express      from 'express'
+import { readFile } from 'fs/promises'
+import { fileURLToPath } from 'url'
+import { dirname, join } from 'path'
 import 'dotenv/config'
+import { initLogger }             from '../admin/logger.js'
 import { healthCheck as pgHealth }    from '../db/postgres.js'
 import { healthCheck as neo4jHealth } from '../db/neo4j.js'
 import workItemRoutes   from './routes/workItems.js'
 import orgRoutes        from './routes/organizations.js'
 import catalogRoutes    from './routes/catalog.js'
 import boardRoutes      from './routes/board.js'
+import adminApiRoutes   from '../admin/api.js'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Patch console before anything else logs
+initLogger()
 
 const app  = express()
 const PORT = process.env.PORT || 3000
@@ -27,11 +37,11 @@ const PORT = process.env.PORT || 3000
 
 app.use(express.json())
 
-// Request logger
+// Request logger — always captured to log buffer, printed in debug mode
 app.use((req, _res, next) => {
-  if (process.env.LOG_LEVEL === 'debug') {
-    console.debug(`[api] ${req.method} ${req.path}`)
-  }
+  const msg = `[api] ${req.method} ${req.path}`
+  if (process.env.LOG_LEVEL === 'debug') console.debug(msg)
+  else console.log(msg)
   next()
 })
 
@@ -43,6 +53,25 @@ app.use('/v1/work-items',    workItemRoutes)
 app.use('/v1/organizations', orgRoutes)
 app.use('/v1/catalog',       catalogRoutes)
 app.use('/v1/board',         boardRoutes)
+app.use('/admin/api',        adminApiRoutes)
+
+// Admin UI
+app.get('/admin', async (_req, res) => {
+  try {
+    const html = await readFile(join(__dirname, '../admin/browser.html'), 'utf8')
+    res.setHeader('Content-Type', 'text/html')
+    res.send(html)
+  } catch { res.status(500).send('Admin UI not found') }
+})
+
+// Dev Tools UI
+app.get('/devtools', async (_req, res) => {
+  try {
+    const html = await readFile(join(__dirname, '../admin/devtools.html'), 'utf8')
+    res.setHeader('Content-Type', 'text/html')
+    res.send(html)
+  } catch { res.status(500).send('DevTools UI not found') }
+})
 
 // Health check
 app.get('/health', async (_req, res) => {
