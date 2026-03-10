@@ -350,6 +350,96 @@
     text-decoration: none;
   }
   .devtools-link:hover { background: rgba(96,165,250,0.08); }
+
+  /* ── EDIT DRAWER ── */
+  .drawer-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: all; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 420px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 101;
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .drawer-title { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+  .drawer-subtitle { font-size: 12px; color: var(--muted); }
+  .drawer-close {
+    margin-left: auto; background: none; border: none;
+    color: var(--muted); font-size: 18px; cursor: pointer; line-height: 1;
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .drawer-close:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .drawer-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .drawer-footer {
+    display: flex; gap: 8px; padding: 14px 16px;
+    border-top: 1px solid var(--border); flex-shrink: 0;
+  }
+  .drawer-field label {
+    display: block; font-family: var(--mono); font-size: 10px;
+    color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .drawer-field input, .drawer-field textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-family: var(--mono);
+    font-size: 12px; padding: 7px 9px;
+  }
+  .drawer-field input:focus, .drawer-field textarea:focus { outline: none; border-color: var(--accent2); }
+  .drawer-field textarea { resize: vertical; min-height: 70px; }
+  .drawer-field .toggle-wrap { display: flex; align-items: center; gap: 10px; }
+  .toggle {
+    width: 36px; height: 20px; border-radius: 10px;
+    background: var(--border); border: none; cursor: pointer;
+    position: relative; transition: background 0.15s; flex-shrink: 0;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle::after {
+    content: ''; position: absolute;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: white; top: 3px; left: 3px;
+    transition: left 0.15s;
+  }
+  .toggle.on::after { left: 19px; }
+  .toggle-label { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .save-btn {
+    flex: 1; padding: 8px; background: var(--accent); border: none;
+    border-radius: 4px; color: var(--bg); font-family: var(--mono);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+  .save-btn:hover { opacity: 0.9; }
+  .save-btn:disabled { opacity: 0.4; cursor: default; }
+  .cancel-btn {
+    padding: 8px 16px; background: none; border: 1px solid var(--border);
+    border-radius: 4px; color: var(--muted); font-family: var(--mono);
+    font-size: 12px; cursor: pointer;
+  }
+  .cancel-btn:hover { border-color: var(--text); color: var(--text); }
+  .drawer-msg { font-family: var(--mono); font-size: 11px; padding: 6px 10px; border-radius: 3px; }
+  .drawer-msg.success { background: rgba(74,222,128,0.1); color: var(--accent); }
+  .drawer-msg.error   { background: rgba(248,113,113,0.1); color: var(--danger); }
+  .edit-btn {
+    padding: 2px 8px; background: none;
+    border: 1px solid var(--border); border-radius: 3px;
+    color: var(--muted); font-family: var(--mono); font-size: 10px;
+    cursor: pointer; transition: all 0.1s;
+  }
+  .edit-btn:hover { border-color: var(--accent2); color: var(--accent2); }
 </style>
 </head>
 <body>
@@ -380,6 +470,24 @@
   </main>
 </div>
 
+<!-- Edit Drawer -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="edit-drawer">
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title" id="drawer-title">Edit</div>
+      <div class="drawer-subtitle" id="drawer-subtitle"></div>
+    </div>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+  <div id="drawer-msg-wrap" style="padding:0 16px 0"></div>
+  <div class="drawer-footer">
+    <button class="cancel-btn" onclick="closeDrawer()">Cancel</button>
+    <button class="save-btn" id="drawer-save-btn" onclick="saveEdit()">Save Changes</button>
+  </div>
+</div>
+
 <script>
 const API = '/admin/api'
 let currentTab = 'summary'
@@ -388,6 +496,9 @@ let rawLimit  = 50
 let rawTable  = null
 let wiOffset  = 0
 let histOffset= 0
+
+// Cache for edit drawer — avoids embedding JSON in onclick attributes
+const rowCache = {}
 
 // ── TABS ──
 function showTab(tab) {
@@ -478,6 +589,10 @@ async function loadSummary() {
 async function loadOrgs() {
   loading()
   const d = await api('/organizations')
+
+  // Cache rows for edit drawer
+  d.rows.forEach(r => { rowCache[`organization-${r.id}`] = r })
+
   setContent(`
     <div class="panel">
       <div class="panel-header">
@@ -488,7 +603,7 @@ async function loadOrgs() {
         <table>
           <thead><tr>
             <th>ID</th><th>Name</th><th>Slug</th><th>Type</th>
-            <th>Parent</th><th>Members</th><th>Work Items</th><th>Status</th>
+            <th>Parent</th><th>Members</th><th>Work Items</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>
             ${d.rows.map(r => `
@@ -501,6 +616,7 @@ async function loadOrgs() {
                 <td style="text-align:right">${r.member_count}</td>
                 <td style="text-align:right">${r.work_item_count}</td>
                 <td>${r.is_active ? '<span class="badge badge-green">active</span>' : '<span class="badge badge-gray">inactive</span>'}</td>
+                <td><button class="edit-btn" onclick="openEditDrawer('organization', ${r.id})">edit</button></td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -513,6 +629,9 @@ async function loadOrgs() {
 async function loadWorkItems() {
   loading()
   const d = await api(`/work-items?limit=50&offset=${wiOffset}`)
+
+  // Cache rows for edit drawer
+  d.rows.forEach(r => { rowCache[`work_item-${r.id}`] = r })
 
   const stateColor = s => ({
     active: 'badge-green', pending: 'badge-orange',
@@ -536,7 +655,7 @@ async function loadWorkItems() {
         <table>
           <thead><tr>
             <th>ID</th><th>Title</th><th>Type</th><th>Stage</th>
-            <th>State</th><th>Service Class</th><th>Org</th><th>Created</th>
+            <th>State</th><th>Service Class</th><th>Org</th><th>Created</th><th></th>
           </tr></thead>
           <tbody>
             ${d.rows.map(r => `
@@ -554,6 +673,7 @@ async function loadWorkItems() {
                 </td>
                 <td style="color:var(--muted)">${r.org_slug}</td>
                 <td style="color:var(--muted)">${new Date(r.created_at).toLocaleString()}</td>
+                <td><button class="edit-btn" onclick="openEditDrawer('work_item', ${r.id})">edit</button></td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -754,6 +874,149 @@ async function selectRawTable(t) {
   rawTable  = t
   rawOffset = 0
   loadRaw()
+}
+
+// ── EDIT DRAWER ──
+let editState = { entityType: null, id: null, fields: {} }
+
+const EDIT_FIELDS = {
+  work_item: [
+    { key: 'title',       label: 'Title',       type: 'text' },
+    { key: 'description', label: 'Description', type: 'textarea' },
+    { key: 'field_values',label: 'Field Values (JSON)', type: 'json' },
+  ],
+  organization: [
+    { key: 'name',      label: 'Name',      type: 'text' },
+    { key: 'is_active', label: 'Active',    type: 'boolean' },
+  ],
+}
+
+const ENTITY_LABELS = {
+  work_item:    'Work Item',
+  organization: 'Organization',
+}
+
+function openEditDrawer(entityType, id) {
+  const row = rowCache[`${entityType}-${id}`]
+  if (!row) { console.error('Row not found in cache:', entityType, id); return }
+  editState = { entityType, id, row }
+
+  document.getElementById('drawer-title').textContent    = `Edit ${ENTITY_LABELS[entityType]}`
+  document.getElementById('drawer-subtitle').textContent = `ID: ${id}`
+  document.getElementById('drawer-msg-wrap').innerHTML   = ''
+
+  const fields = EDIT_FIELDS[entityType] || []
+  document.getElementById('drawer-body').innerHTML = fields.map(f => {
+    const val = row[f.key]
+    if (f.type === 'boolean') {
+      const on = !!val
+      return `
+        <div class="drawer-field">
+          <label>${f.label}</label>
+          <div class="toggle-wrap">
+            <button class="toggle ${on ? 'on' : ''}" id="toggle-${f.key}"
+              onclick="toggleField('${f.key}')"></button>
+            <span class="toggle-label" id="toggle-label-${f.key}">${on ? 'Yes' : 'No'}</span>
+          </div>
+        </div>`
+    }
+    if (f.type === 'json') {
+      const pretty = val ? JSON.stringify(val, null, 2) : '{}'
+      return `
+        <div class="drawer-field">
+          <label>${f.label}</label>
+          <textarea id="field-${f.key}" rows="6">${pretty}</textarea>
+        </div>`
+    }
+    if (f.type === 'textarea') {
+      return `
+        <div class="drawer-field">
+          <label>${f.label}</label>
+          <textarea id="field-${f.key}" rows="4">${val || ''}</textarea>
+        </div>`
+    }
+    return `
+      <div class="drawer-field">
+        <label>${f.label}</label>
+        <input type="text" id="field-${f.key}" value="${escAttr(val || '')}" />
+      </div>`
+  }).join('')
+
+  document.getElementById('edit-drawer').classList.add('open')
+  document.getElementById('drawer-overlay').classList.add('open')
+}
+
+function closeDrawer() {
+  document.getElementById('edit-drawer').classList.remove('open')
+  document.getElementById('drawer-overlay').classList.remove('open')
+  editState = { entityType: null, id: null, row: null }
+}
+
+function toggleField(key) {
+  const btn   = document.getElementById(`toggle-${key}`)
+  const label = document.getElementById(`toggle-label-${key}`)
+  const isOn  = btn.classList.toggle('on')
+  label.textContent = isOn ? 'Yes' : 'No'
+}
+
+async function saveEdit() {
+  const { entityType, id } = editState
+  if (!entityType || !id) return
+
+  const fields  = EDIT_FIELDS[entityType] || []
+  const updates = {}
+
+  for (const f of fields) {
+    if (f.type === 'boolean') {
+      updates[f.key] = document.getElementById(`toggle-${f.key}`).classList.contains('on')
+    } else if (f.type === 'json') {
+      try {
+        updates[f.key] = JSON.parse(document.getElementById(`field-${f.key}`).value)
+      } catch {
+        showDrawerMsg(`Invalid JSON in "${f.label}"`, 'error')
+        return
+      }
+    } else {
+      updates[f.key] = document.getElementById(`field-${f.key}`).value
+    }
+  }
+
+  const btn = document.getElementById('drawer-save-btn')
+  btn.disabled    = true
+  btn.textContent = 'Saving...'
+
+  try {
+    const res  = await fetch(`/admin/api/edit/${entityType}/${id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(updates),
+    })
+    const data = await res.json()
+
+    if (!res.ok) {
+      showDrawerMsg(data.error || 'Save failed', 'error')
+      return
+    }
+
+    showDrawerMsg(`Saved — ${data.fields_changed.join(', ')} updated`, 'success')
+    // Refresh current tab after short delay
+    setTimeout(() => { closeDrawer(); loadTab(currentTab) }, 800)
+
+  } catch (err) {
+    showDrawerMsg(err.message, 'error')
+  } finally {
+    btn.disabled    = false
+    btn.textContent = 'Save Changes'
+  }
+}
+
+function showDrawerMsg(msg, type) {
+  document.getElementById('drawer-msg-wrap').innerHTML =
+    `<div class="drawer-msg ${type}" style="margin-bottom:10px">${msg}</div>`
+}
+
+function escAttr(s) {
+  return String(s).replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 // ── INIT ──

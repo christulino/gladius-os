@@ -1,6 +1,6 @@
 # CONTEXT.md — Flow OS Project
 > Paste this file at the start of every Claude session to restore full project context.
-> Last updated: 2026-03-05
+> Last updated: 2026-03-06 (Session 4)
 
 ---
 
@@ -36,69 +36,56 @@ This is not another Jira. The fundamental mental model is different:
 ---
 
 ## Technology Stack
-- **Runtime:** Node.js
-- **Architecture:** Modular, loosely coupled JS files — each module is essentially independent, communicates by passing full objects and data structures via callbacks
-- **Why Node.js:** Fits the architectural mindset of independent pieces working together; extensible; developer familiar with it
-- **Frontend:** TBD — UI/board visualization is deliberately deferred pending design brainstorm
-- **Database:** Polyglot persistence — PostgreSQL + Neo4j (see Database Architecture section)
-- **Object Storage:** S3-compatible (MinIO locally) — for evidence binaries (photos, files)
+- **Runtime:** Node.js (ESM, v24)
+- **Architecture:** Modular, loosely coupled JS files — each module is essentially independent, communicates by passing full objects and data structures
+- **API:** Express REST
+- **Database:** Polyglot persistence — PostgreSQL + Neo4j
+- **Object Storage:** S3-compatible (MinIO locally) — for evidence binaries
 - **IDE:** VS Code with Prettier, ESLint, GitLens, GitHub Copilot
 - **Platform:** MacBook Air, local development first
+- **Frontend:** TBD — UI/board visualization deliberately deferred pending design brainstorm
 
 ---
 
 ## Artifact Files
-- `blueprint_schema.sql` — v1.1 — PostgreSQL Blueprint schema (structural definitions)
-- `runtime_schema.sql` — v0.4 — PostgreSQL Runtime schema (work item instances and activity)
+- `blueprint_schema.sql` — v1.2 — PostgreSQL Blueprint schema (fixed table order + FK constraints)
+- `runtime_schema.sql` — v0.4 — PostgreSQL Runtime schema
 - `neo4j_graph_model.cypher` — v0.2 — Neo4j node/relationship definitions, constraints, indexes, queries, sync strategy
-- `flowos/` — Node.js project scaffold (17 files, see File & Directory Structure section below)
+- `flowos/` — Node.js project (see structure below)
 
 ---
 
 ## Database Architecture
 
 ### Decision: Polyglot Persistence — PostgreSQL + Neo4j
-
 **Boundary Rule:** "What are the properties of this thing?" → PostgreSQL. "How is this thing connected to other things?" → Neo4j.
 
-### PostgreSQL — Blueprint Schema owns:
+### PostgreSQL — Blueprint Schema (31 tables)
 Structural definitions. Empty of actual work. Can be versioned, snapshotted, rolled back independently.
 - Organizations, hierarchy, tags, visibility policies
-- Users, roles, org memberships
-- Work item type classes, work item types, custom field definitions
-- Workflows, stages, stage transitions, stage micro-state settings
-- Exit criteria (all three tiers)
-- Transition actions (api_call, spawn, optional_spawn)
-- Connections and cross-org triggers
+- Users, roles, org memberships, role inheritance
+- Work item type classes, work item types, custom field definitions, type relationships
+- Workflows, stages, stage transitions, stage transition role restrictions
+- Exit criteria (all three tiers), transition actions, connections
 - Service catalog items and visibility rules
 - Business calendars and working hours
-- Replenishment policies
-- Org templates and inheritance policies
+- Replenishment policies, org templates, inheritance policies
 
-### PostgreSQL — Runtime Schema owns:
+### PostgreSQL — Runtime Schema (16 tables)
 Work item instances and all activity data.
 - Work items (instances, current state, field values, spawn state)
 - Stage transition history (immutable, sacred timestamps)
-- Substate history
-- Checklist completions
-- Evidence (metadata — binaries in object store)
-- Exit criteria status per work item
-- Transition action log
-- Work item user relationships
-- Work item comments
-- Flow metrics snapshots (performance cache — rebuildable from history)
-- Org flow metrics aggregates
-- Replenishment log
-- Notifications and notification preferences
-- Board views (personal and shared)
-- Search index queue
+- Substate history, checklist completions, evidence metadata
+- Exit criteria status per work item, transition action log
+- Work item user relationships, work item comments
+- Flow metrics snapshots, org flow metrics aggregates
+- Board views, notifications, replenishment log, search index queue
 
-### Neo4j owns:
-Relationship graphs, traversal, visualization — not yet designed in detail.
+### Neo4j (not yet seeded)
 - Work item relationship graph (parent/child/spawned/origin chains)
-- Cross-org work item networks (project request cascading to hundreds of downstream items)
-- Work item type version networks (exposed interfaces between orgs, like microservice contracts)
-- Workflow directed graphs (stages as nodes, transitions as edges)
+- Cross-org work item networks
+- Work item type version networks
+- Workflow directed graphs
 - Anything requiring deep traversal or visual network rendering
 
 ### Interview Narrative:
@@ -116,371 +103,312 @@ Every entity has a globally unique, stable URI from creation:
 `flowos://org-slug/entity-type/uuid`
 Local DB primary keys are internal only. URIs are the public, cross-system identity. Required for federation, gossip, external references.
 
-Entities with URIs: organizations, users, work item types, workflows, stages, work items, service catalog items, connections, evidence, board views, visibility rules.
+Valid entity types: orgs, work-items, users, workflows, stages, work-item-types, service-classes, connections, transitions, criteria
 
 ### Workflow as Directed Graph
-Workflows are not flat status lists. Stages are nodes, transitions are edges. Each transition has an explicit `from_stage` and `to_stage`. `transition_kind`: `forward | backward | sideways | cross-workflow`. No `refactor` kind — that's handled by atomic primitives (cancel + create + link).
+Workflows are not flat status lists. Stages are nodes, transitions are edges. Each transition has an explicit `from_stage` and `to_stage`. `transition_kind`: `forward | backward | sideways | cross-workflow`.
 
 ### Stage Classes — Universal Vocabulary
 Every stage belongs to a class regardless of what the team calls it:
 `intake | triage | queued | in-progress | blocked | review | approved | delivery | done | cancelled`
-This is what enables cross-workflow and cross-team board visibility. A "QA Testing" stage and a "Legal Approval" stage are both `review` class — they normalize on the same board.
+This enables cross-workflow and cross-team board visibility. "QA Testing" and "Legal Approval" are both `review` class — they normalize on the same board.
 
 ### Stage Micro-States
-Stages optionally expand into sub-columns without creating new stages in the data model:
-`[Waiting for X] → [In Progress N/WIP] → [X Done]`
-Controlled by boolean flags on the stage: `has_waiting_queue`, `wip_limit`, `requires_review`, `requires_evidence`, `measure_substates`.
+Stages optionally expand into sub-columns without creating new stages in the data model.
+Controlled by boolean flags: `has_waiting_queue`, `wip_limit`, `requires_review`, `requires_evidence`, `measure_substates`.
 
 ### Exit Criteria — Three Tiers
 1. **Manual** — human evaluated, system tracks acknowledgment
 2. **Codified** — system evaluates condition (field value, child items terminal, checklist complete)
 3. **API** — external call returns condition, system allows/blocks transition
-Evidence attachment is a fourth gate — enforced separately via stage settings.
 
-**Critical:** exit criteria OWN all blocking logic. This includes checking that child work items of a type are terminal. Transition actions never block.
+**Critical:** exit criteria OWN all blocking logic. Transition actions never block.
 
-### Transition Actions — Always Fire-and-Forget
-Execute after a transition completes. Never block the parent work item's flow.
-Types: `api_call | spawn | optional_spawn | notify`
-- `spawn` creates a work item that enters its own intake stage and lives independently. Parent never tracks it.
-- `optional_spawn` prompts the user after transition: "Create Release Notes work item?"
-- `api_call` fires HTTP request (log, Salesforce event, webhook). `api_on_failure`: `log | retry` only — no `block`.
+### Transition Actions — Always Fire-and-Forget (after commit)
+- `api_call` — HTTP request, logged, never blocks
+- `spawn` — creates work item in target org, inside transaction (fatal on failure)
+- `optional_spawn` — user prompted BEFORE transition fires; decision included in execute call
 
-### Cancel Pattern (replaces "Refactor")
-No special "refactor" action type. When a work item needs to become something different:
-1. Cancel current item (terminal transition with `requires_reason: true`)
-2. Create new work item of correct type
-3. Link new item's `origin_work_item_id` to cancelled item
-Full history preserved. Parent doesn't wait. Both are atomic primitives.
+### Transition Engine Design Decisions (locked)
+1. API exit criteria failure → **blocks** transition (treated as criteria not met)
+2. Optional spawn prompt → **before** transition fires (user decides first)
+3. Spawn action failure → **rolls back** entire transition (fatal)
+4. api_call actions → **fire and forget** after commit (never blocks)
+5. Neo4j sync → **async** via search_index_queue (never blocks response)
 
-### Pending Spawn State
-When a connection or transition action spawns a work item but required fields are missing, the item is created with `spawn_state: pending`. It appears in the intake stage backlog. A user completes the missing fields, checklist clears, item becomes active. Receiving org can reject it — source work item returns to `rejection_returns_to_stage_id`.
-
-### Service Classes (Kanban)
-Every work item has a service class governing how it flows through the system:
-- `Expedited` — bypasses WIP limits, max 1 concurrent
-- `Fixed Date` — SLA is date-driven
-- `Standard` — default FIFO
-- `Deferred` — fills spare capacity
-Defined in blueprint, attached to work item instances at runtime. `priority_order` drives replenishment sequencing.
-
-### Replenishment
-A pull operation — moves items from a backlog/intake stage into the first queued/ready stage. Respects WIP limits on the destination. Configurable cadence: `manual | daily | weekly | per_sprint`. Service class priority respected automatically.
-
-### Business Calendars
-Each org defines whether time is measured as wall clock or working time (e.g. M-F 9-5). All flow metrics store both wall clock seconds AND working time seconds. Calendar defined by: timezone, weekly working hours per day, holiday exceptions. Sub-orgs inherit parent calendar unless they define their own.
-
-**Critical example:** A request starting Monday 4:59pm and ending Tuesday 9:01am is either 2 minutes or 16h 2min depending on the org's calendar.
-
-### Work Item User Relationships
-No "assignee" field. Instead a `work_item_user_relationships` table with semantic types:
-`requested_by | owns | working_on | reviewing | approved_by | watching`
-Multiple users can have different relationship types to the same item simultaneously. All queryable: "show me all items I'm working_on across all orgs."
-
-### Universal Visibility Rules Engine
-One table (`visibility_rules`) controls access to any resource in the system. Replaces explicit permission tables. Scales to any org size — zero rows needed per new org added.
-
-**Resources:** `service_catalog_item | work_item_type | org | workflow`
-**Permission types:** `view | request | use`
-**Scope types (tree position — scale infinitely):**
-- `members_only | direct_children | all_descendants | siblings | ancestor_members | same_depth | all_authenticated`
-**Scope types (cross-tree — tag matching):**
-- `tag_match` — matches orgs tagged with `tag_key:tag_value`
-**Role scope:** `role_in_org | role_in_ancestor`
-**Effect:** `allow | deny` — DENY rules carve exceptions from broad ALLOW rules.
-**Evaluation:** rules ordered by `priority` (lower = first). First match wins. Default = members only.
-
-### Request Modes
-Every work item type and catalog item has a `request_mode`:
-- `user_requestable` — visible in catalog, any qualifying user can submit
-- `restricted` — visible only to users passing visibility rules
-- `automation_only` — hidden from all catalog views, only triggered by connections/actions
-
-### Inheritance Model
-Child orgs inherit from parent orgs. Walk-up logic: check own definition → check parent → check grandparent → system default. Configurable per resource type via `inheritance_policies`:
-- `own_only | inherit | inherit_and_extend | override`
-Applies to: workflows, work item types, service catalog, business calendar, roles.
-
-### Org Tags
-Orgs are tagged with key-value attributes (`division:finance`, `tier:executive`, `region:us-east`). Tags are used by visibility rules for cross-tree access patterns without explicit org-to-org relationships.
-
-### Multi-Role Membership
-Users can have multiple roles in the same org via `org_membership_roles` junction table. Primary role stored on `org_memberships`. Additional roles in `org_membership_roles`. Users can be members of multiple orgs simultaneously.
-
-### Role Inheritance
-Roles defined at a parent org can grant visibility and access in child orgs without explicit membership. Configured via `role_inheritance_policies`. Example: an `Executive` role in the parent org automatically grants catalog visibility in all child orgs.
+### Work Item Creation — Pending State
+Missing required fields → `spawn_state: 'pending'`, `pending_missing_fields: [...]`
+All required fields present → `spawn_state: 'active'`
+Never rejects on missing fields — item enters system and can be completed later.
 
 ---
 
-## Stage Taxonomy
+## Project Structure
 
-| Class | Type | Description |
-|---|---|---|
-| `intake` | waiting | Work received, not yet evaluated |
-| `triage` | working | Being evaluated for validity/fit |
-| `queued` | waiting | Accepted, prioritized, waiting to start |
-| `in-progress` | working | Actively being worked |
-| `blocked` | waiting | Cannot proceed, external dependency |
-| `review` | working | Being validated, tested, or approved |
-| `approved` | waiting | Passed review, ready for next phase |
-| `delivery` | working | Being released, shipped, deployed |
-| `done` | waiting | Complete (terminal) |
-| `cancelled` | waiting | Cancelled with reason (terminal) |
-
----
-
-## Flow Metrics
-
-All derived from stage transition timestamps — never manually entered. Both wall clock and working time stored.
-
-| Metric | Definition |
-|---|---|
-| **Cycle Time** | Time from first working stage entry to done |
-| **Lead Time** | Time from work item created to done |
-| **Throughput** | Items completed per time period |
-| **Arrival Rate** | Items entering the system per time period |
-| **Takt Time** | Available time divided by demand rate |
-| **WIP** | Count of items in working stages |
-| **Queue Depth** | Count of items in waiting stages |
-| **Flow Efficiency** | Working cycle time / working lead time |
-| **Stage SLA Health** | Time in stage vs. configured SLA |
-
----
-
-## Distributed Systems Patterns (Architectural Intent — Not Yet Designed)
-
-Do not design against these. Decisions made now should leave these doors open.
-
-- **Service Discovery** — orgs publish services, consumers browse and subscribe
-- **Event Bus** — publishers, subscribers, listeners. Candidate: Redis pub/sub, NATS, or Node.js EventEmitter to start
-- **Gossip Protocol** — peer-to-peer propagation of system state (new org registered, service deprecated, new version available)
-- **Federated Nodes** — multiple Flow OS instances at different companies participating in the same work fabric
-
-**What current schema already supports for this:**
-- Global URI addressing on every entity
-- Semantic versioning on work item types and workflows
-- `network_visible` flag on organizations
-- `is_published` and `request_mode` on work item types
-
----
-
-## System Default Seeds
-
-Shipped with every new installation. Marked `is_system_default: true`. Cannot be deleted.
-
-**Work Item Type Classes:** Task, Bug, Feature, Epic, Service Request, Project, Incident
-
-**Workflows:**
-- Simple Task — `intake → in-progress → done`
-- Standard Feature — `intake → triage → queued → in-progress → review → done`
-- Bug Triage — `intake → triage → queued → in-progress → review → delivery → done`
-- Service Request — `intake → triage → queued → in-progress → done`
-
-**Service Classes:** Expedited, Fixed Date, Standard, Deferred
-
-**Roles per org:** owner, admin, member, viewer, external
-
-**Org Template:** "Basic Team Board" — cloned to every new sub-org on creation
+```
+flowos/
+├── .env
+├── package.json
+├── docker-compose.yml
+├── context.md                     ← this file
+│
+├── api/
+│   ├── server.js                  ← Express app, mounts all routes, initLogger()
+│   └── routes/
+│       ├── workItems.js           ← CRUD + prepare/execute transition (URI as query param)
+│       ├── organizations.js
+│       ├── catalog.js             ← stub
+│       └── board.js               ← stub
+│
+├── admin/
+│   ├── api.js                     ← admin endpoints: summary, orgs, work-items, workflows,
+│   │                                 users, history, raw tables, logs SSE, SQL console
+│   ├── logger.js                  ← ring buffer log capture + SSE broadcaster
+│   ├── browser.html               ← Admin Data Browser UI (7 tabs)
+│   ├── devtools.html              ← DevTools UI (4 tabs)
+│   └── TODO.md                    ← admin tooling backlog
+│
+├── core/
+│   ├── uri.js                     ← generateUri() + parseUri()
+│   ├── calendar.js                ← resolveOrgCalendar() + calculateWorkingTime()
+│   ├── access.js                  ← canAccess() stub — visibility rules engine (TODO)
+│   └── inheritance.js             ← resolveInheritedPolicy() (TODO)
+│
+├── db/
+│   ├── postgres.js                ← pg pool: query() + getClient()
+│   ├── neo4j.js                   ← Neo4j driver: runQuery / runWriteQuery
+│   └── seeds/
+│       ├── seed.js                ← system defaults runner
+│       ├── seed_test_data.js      ← dev test user + work item, prints curl commands
+│       └── data/
+│           ├── roles.js
+│           ├── serviceClasses.js
+│           ├── workItemTypeClasses.js
+│           ├── workflows.js
+│           └── workItemTypes.js
+│
+├── graph/
+│   ├── sync.js                    ← syncToGraph() — stub, TODO
+│   └── hierarchy.js               ← getWorkItemHierarchy() — stub, TODO
+│
+└── runtime/
+    ├── transitions.js             ← prepareTransition() + executeTransition() — WORKING
+    ├── exitCriteria.js            ← evaluateExitCriteria() — WORKING
+    └── workItems.js               ← createWorkItem() + updateWorkItemFields() — WORKING
+```
 
 ---
 
-## What We Solve That Jira Doesn't
+## Running Locally
 
-| Problem | Jira | Flow OS |
-|---|---|---|
-| Workflow model | Flat status list (3 categories) | Directed graph with stage classes |
-| Cross-team board | Not possible without heavy config | Native via stage class normalization |
-| Timing visibility | Dot per day, no SLA context | Always-on, SLA-relative, working-time aware |
-| Work item hierarchy | Limited, clunky | Unlimited depth, frictionless |
-| Organization as service mesh | Not a concept | Core architecture |
-| External exposure | Limited | Native via service catalog |
-| Cross-org automation | Manual integrations | Native triggers and connections |
-| People vs. work focus | People-centric | Work item-centric |
-| Permissions at scale | Explicit rows per relationship | Policy engine — zero rows per new org |
-| Business hours in metrics | Not supported | Native calendar model |
-| Kanban service classes | Not supported | Native (Expedited, Fixed Date, Standard, Deferred) |
-| Replenishment | Manual, no system support | Native pull with configurable cadence |
+```bash
+docker compose up -d          # start postgres, neo4j, minio
+npm run dev                   # start server with --watch on port 3000
+npm run seed                  # seed system defaults
+npm run seed:test             # seed test user + work item, prints curl commands
+
+open http://localhost:3000/admin      # Admin Data Browser
+open http://localhost:3000/devtools   # DevTools (endpoints, sequences, logs, DB console)
+open http://localhost:3000/health     # health check
+```
 
 ---
 
-## MVP Scope
+## API Endpoints
 
-### In MVP
-- Organization hierarchy with inheritance
-- Service catalog with visibility rules
-- Work item types with class inheritance and request modes
-- Workflow engine (directed graph, all transition kinds, all exit criteria tiers)
-- Stage micro-states (waiting queue, WIP limits, review, evidence)
-- Work items (create, transition, decompose, cancel+link pattern)
-- Pending spawn state
-- Stage timing with business calendar support
-- Flow metrics (all, derived from timestamps, wall clock + working time)
-- Cross-org connections and triggers
-- Transition actions (api_call, spawn, optional_spawn)
-- Service classes (Expedited, Fixed Date, Standard, Deferred)
-- Replenishment (manual to start, scheduled later)
-- User roles and multi-org membership
-- Work item user relationships
-- Notifications (in-app)
-- Board views (personal + shared)
-- External exposure of catalog items (contact form → work item)
-- REST API (same visibility resolution as UI)
-- Board visualization (design TBD — pending UI brainstorm)
+### Work Items (URIs passed as query params — Express can't handle flowos:// in paths)
+```
+GET   /v1/work-items?uri=flowos://...
+POST  /v1/work-items
+      body: { work_item_type_id, owner_org_id, title, service_class_id?, parent_id?, field_values?, description? }
+PATCH /v1/work-items?uri=flowos://...
+      body: { field_values: { key: value } }
+GET   /v1/work-items/hierarchy?uri=flowos://...
+GET   /v1/work-items/transition/prepare?uri=flowos://...&to_stage_id=N
+POST  /v1/work-items/transition
+      body: { uri, to_stage_id, reason?, spawn_decisions?: { [actionId]: boolean } }
+```
 
-### Deliberately Deferred
-- Payment / wallet / token system
-- Deep third-party integrations (Salesforce etc. — architecture supports, not built)
-- Board UI for hierarchical work item visualization (needs whiteboard session first)
-- Mobile interface
-- Event bus / pub-sub / gossip protocol
-- Federated nodes
-- Full-text search (search index queue built, engine deferred)
-- Email / webhook notification channels (in-app only for MVP)
+### Organizations
+```
+GET /v1/organizations
+```
+
+### Admin API
+```
+GET  /admin/api/summary
+GET  /admin/api/organizations
+GET  /admin/api/work-items
+GET  /admin/api/workflows
+GET  /admin/api/users
+GET  /admin/api/transition-history
+GET  /admin/api/tables
+GET  /admin/api/tables/:schema/:table
+GET  /admin/api/logs
+GET  /admin/api/logs/stream          ← SSE live stream
+POST /admin/api/query                ← SELECT/EXPLAIN only
+     body: { sql }
+```
 
 ---
 
-## Open Design Questions
-1. **Board UI for hierarchy** — how to visualize work items with unlimited depth without creating "Jira board disaster"? Needs sketching session.
-2. **Frontend framework** — not yet decided.
-3. **Multi-tenancy** — how isolated are orgs at the data layer? Relevant for PostgreSQL schema partitioning.
-4. **API criteria sandboxing** — who can configure API exit criteria? Admin only? Needs security model.
-5. **Neo4j visualization layer** — Neo4j Bloom natively vs. custom with D3 or Cytoscape.js?
-6. **Work item type breaking changes** — when is a breaking version change allowed? How are connected orgs notified?
-7. **Event bus technology** — Redis pub/sub vs. NATS vs. Node.js EventEmitter. Start simple, design for upgrade.
-8. **URI format** — finalize naming convention. Proposal: `flowos://org-slug/entity-type/uuid`
-9. **Full-text search engine** — PostgreSQL tsvector to start, Elasticsearch later?
-10. **Object storage** — MinIO locally. Which managed service for production?
+## Seed Data (system defaults)
+
+| Entity | Count |
+|--------|-------|
+| Organizations | 1 (system org, slug: 'system') |
+| Roles | 5 (owner, admin, member, viewer, external) |
+| Service Classes | 4 (Expedited p0, Fixed Date p1, Standard p2, Deferred p3) |
+| Work Item Type Classes | 7 (Task, Feature, Bug, Epic, Project, Service Request, Incident) |
+| Work Item Types | 7 (one per class) |
+| Workflows | 4 (Simple Task, Standard Feature, Bug Triage, Service Request) |
+| Stages | 26 total |
+| Stage Transitions | ~37 total |
+
+### Simple Task Workflow (for test data)
+Inbox (id:1) → In Progress (id:2) → Review (id:3) → Done (id:4)
+Transition: Inbox → In Progress = transition id 1
+
+Always run `npm run seed:test` after a database reset — it prints exact IDs and curl commands for the current database.
+
+---
+
+## Schema History
+
+### Known Issues Fixed
+1. **Table ordering bug** — `replenishment_policies` referenced `workflows`/`stages` before they were defined. Fixed in blueprint_schema.sql v1.2.
+2. **Broken ALTER TABLE** — `fk_org_default_template` was missing its `ALTER TABLE` prefix. Fixed in v1.2.
+3. **Missing tables** — `exit_criteria`, `transition_actions`, `connections` weren't loading. Applied via `fix_blueprint_tables.sql` (one-time, already applied to current db).
+
+### Fix Files (already applied, keep for fresh setup)
+- `fix_blueprint_tables.sql` — creates exit_criteria, transition_actions, connections
+- `fix_schema.sql` — creates workflows, stages, stage_transitions (older fix)
+
+---
+
+## Load-Bearing Utilities
+
+1. **`generateUri(orgSlug, entityType)`** — globally unique URIs on every entity creation. WORKING.
+2. **`calculateWorkingTime(startTs, endTs, calendar)`** — converts timestamps to working-time seconds. Needs verification with real calendar data.
+3. **`canAccess(userId, resourceType, resourceId, permissionType)`** — universal visibility rule evaluator. STUBBED (always returns true).
+4. **`resolveOrgCalendar(orgId)`** — walks org tree to find effective business calendar. STUBBED.
+5. **`resolveInheritedPolicy(orgId, resourceType)`** — walks org tree for inheritance. STUBBED.
+6. **`syncToGraph(entityType, uri, operation, data)`** — syncs entity changes to Neo4j. STUBBED.
+7. **`getWorkItemHierarchy(workItemUri, userId)`** — Neo4j traversal for Work Item Detail View. STUBBED.
 
 ---
 
 ## Work Item Detail View — Hierarchy Navigator
 
-When a user clicks a work item on the Kanban board, they navigate to a detail view that shows the work item in full hierarchical context — like an org chart for work, centered on the selected item.
+When a user clicks a work item on the Kanban board, they see the full hierarchical context.
 
 ### What the view shows:
-- **Focus item** — the selected work item, center of the view
-- **Parent chain** — ancestors up the hierarchy (parent feature, parent epic, parent initiative) up to the permission boundary or root
-- **Siblings** — other children of the same parent (peer features, peer stories)
-- **Children** — all descendants downward, any depth (stories, tasks, sub-tasks)
-- **Cross-org spawned items** — work this item created in other orgs (e.g. the PMO estimation request this feature spawned), and what spawned this item if it was automation-created
-- **All nodes show:** current stage, stage class, SLA status, service class, spawn state, owning org
+- **Focus item** — center of the view
+- **Parent chain** — ancestors up the hierarchy to permission boundary or root
+- **Siblings** — other children of the same parent
+- **Children** — all descendants downward, any depth
+- **Cross-org spawned items** — work this item created in other orgs, and what spawned this item
 
-### Visual distinction:
-- `DECOMPOSES_INTO` children — "part of this work" (structural hierarchy)
-- `SPAWNED` children — "work this created elsewhere" (cross-org automation chain)
-- Both appear in the hierarchy view but are visually distinguished
+### All nodes show: current stage, stage class, SLA status, service class, spawn state, owning org
 
 ### Permission boundary behavior:
-- Walk up and down the tree, checking `canAccess(userId, 'work_item', resourceId, 'view')` at each node
-- If a node fails the check, stop that branch — do not reveal the node or anything beyond it
-- Show a visual indicator: "X more items exist but are not visible to you"
+- Check `canAccess()` at each node — stop that branch if it fails
+- Show indicator: "X more items exist but are not visible to you"
 - Never silently truncate — broken-looking trees destroy user trust
 
 ### Primary Neo4j query pattern:
-```
-// 1. Parent chain (up to permission boundary or root)
+```cypher
+// Parent chain
 MATCH path = (ancestor:WorkItem)-[:DECOMPOSES_INTO*]->(w:WorkItem {uri: $uri})
 RETURN ancestor, length(path) AS depth ORDER BY depth DESC
 
-// 2. Siblings
+// Siblings
 MATCH (parent:WorkItem)-[:DECOMPOSES_INTO]->(w:WorkItem {uri: $uri})
 MATCH (parent)-[:DECOMPOSES_INTO]->(sibling:WorkItem)
-WHERE sibling.uri <> $uri
-RETURN sibling
+WHERE sibling.uri <> $uri RETURN sibling
 
-// 3. All descendants (any depth)
+// All descendants
 MATCH (w:WorkItem {uri: $uri})-[:DECOMPOSES_INTO|SPAWNED*]->(descendant:WorkItem)
 RETURN descendant
 
-// 4. Cross-org spawned (both directions)
+// Cross-org spawned (both directions)
 MATCH (w:WorkItem {uri: $uri})-[:SPAWNED]->(spawned:WorkItem) RETURN spawned
 MATCH (origin:WorkItem)-[:SPAWNED]->(w:WorkItem {uri: $uri}) RETURN origin
 ```
 
 ### Data source split:
 - **Neo4j** — resolves the hierarchy (which items exist, how they relate)
-- **PostgreSQL** — fetches full property data for each item in the hierarchy
+- **PostgreSQL** — fetches full property data for each item
 - **Visibility engine** — filters each node before returning to client
 
-### Node.js module: `getWorkItemHierarchy(workItemUri, userId)`
-Returns a tree structure centered on the given work item, with permission filtering applied at each node. Used exclusively by the Work Item Detail View.
+---
+
+## Admin Tools
+
+### Admin Data Browser (http://localhost:3000/admin)
+Tabs: Summary · Organizations · Work Items · Workflows · Users · Transitions · Raw Tables
+- Summary: live counts, sync queue depth
+- Workflows: stage flow chips + full transition table
+- Raw Tables: browse any whitelisted blueprint/runtime table with pagination
+
+### DevTools (http://localhost:3000/devtools)
+Tabs: Endpoints · Sequences · Log Viewer · DB Console
+
+- **Endpoints** — fire any API call, syntax-highlighted JSON response
+- **Sequences** — multi-step automated flows (Create→Transition→Done, Create Pending Item)
+- **Log Viewer** — SSE live stream, level filters, autoscroll, clear
+- **DB Console** — SELECT/EXPLAIN only, Cmd+Enter runs, 6 pre-built snippets
+
+### Admin TODO (see admin/TODO.md)
+- Sync Queue monitor with retry button
+- Seed data manager (re-run scripts from browser)
+- Schema inspector (column definitions)
+- Work item detail view (click → inline history + fields)
+- Workflow visualizer (node/edge diagram)
+- More DevTools sequences (Bug lifecycle, Spawn, Pending→Active, Role restriction test)
 
 ---
 
-## File & Directory Structure
-
-```
-flowos/
-│
-├── .env.example                  ← copy to .env, fill in credentials
-├── package.json
-│
-├── api/
-│   ├── server.js                 ← Express app entry point (node api/server.js)
-│   ├── middleware/               ← TODO: auth.js, validate.js
-│   └── routes/
-│       ├── board.js              ← GET /v1/board/:orgUri
-│       ├── catalog.js            ← GET /v1/catalog/:orgUri, POST /:itemUri/request
-│       ├── organizations.js      ← GET /v1/organizations, GET /:uri
-│       └── workItems.js          ← GET /:uri, GET /:uri/hierarchy, POST /transition
-│
-├── board/
-│   └── boardQuery.js             ← 4-step board assembly (Neo4j org URIs → PostgreSQL items)
-│
-├── blueprint/                    ← TODO: org, workflow, work item type domain modules
-│
-├── core/                         ← load-bearing utilities — everything depends on these
-│   ├── access.js                 ← canAccess() — universal visibility rule evaluator
-│   ├── calendar.js               ← resolveOrgCalendar() + calculateWorkingTime()
-│   ├── inheritance.js            ← resolveInheritedPolicy() + resolveInheritedResource()
-│   └── uri.js                    ← generateUri() + parseUri()
-│
-├── db/
-│   ├── neo4j.js                  ← Neo4j driver: runQuery / runWriteQuery / runWriteTransaction
-│   ├── postgres.js               ← PostgreSQL pool: query() + getClient()
-│   └── seeds/                    ← TODO: blueprint_defaults.sql
-│
-├── graph/
-│   ├── hierarchy.js              ← getWorkItemHierarchy() — Work Item Detail View
-│   ├── orgTree.js                ← getDescendantOrgUris() + org node sync
-│   └── sync.js                   ← syncToGraph() — routes all entity changes to Neo4j
-│
-└── runtime/                      ← TODO: workItems.js, transitions.js, evidence.js, metrics.js
-```
-
-**Next files to create (in priority order):**
-1. `docker-compose.yml` — PostgreSQL + Neo4j + MinIO local environment
-2. `db/seeds/blueprint_defaults.sql` — system default roles, service classes, workflows, stages
-3. `runtime/transitions.js` — stage transition engine (exit criteria → action pipeline → Neo4j sync)
-4. `runtime/workItems.js` — work item creation, field validation, spawn state management
-5. `api/middleware/auth.js` — replace `userId = 1` stubs
+## Open Questions
+1. **Event sourcing** — full event log for work item state changes vs. current snapshot model?
+2. **Org hierarchy depth** — max depth? Performance implications for deep inheritance walks?
+3. **Multi-tenancy** — how isolated are orgs at the data layer?
+4. **API criteria sandboxing** — who can configure API exit criteria?
+5. **Neo4j visualization** — Neo4j Bloom natively vs. custom with D3 or Cytoscape.js?
+6. **Work item type breaking changes** — when allowed? How are connected orgs notified?
+7. **Event bus technology** — Redis pub/sub vs. NATS vs. Node.js EventEmitter. Start simple.
+8. **Full-text search** — PostgreSQL tsvector to start, Elasticsearch later?
+9. **Object storage** — MinIO locally. Which managed service for production?
 
 ---
 
+## What's Not Yet Built
+- Neo4j graph not yet seeded — sync queue fills but nothing processes it
+- `graph/sync.js` and `graph/hierarchy.js` are stubs
+- No auth middleware — all endpoints use `userId = 1` stub
+- `canCreate()` always returns true — visibility rules not enforced
+- Board endpoint (`/v1/board`) is a stub
+- Catalog endpoint (`/v1/catalog`) is a stub
+- No work item type fields seeded — required field validation never blocks creation
+- `core/calendar.js` working time needs verification with real calendar data
+- No background worker processing `search_index_queue`
 
-These are load-bearing utilities that everything else depends on:
-
-1. **`resolveOrgCalendar(orgId)`** — walks org tree to find effective business calendar. Used by all metric calculations.
-2. **`calculateWorkingTime(startTs, endTs, calendarId)`** — converts timestamps to working-time seconds. Used everywhere timing is displayed.
-3. **`canAccess(userId, resourceType, resourceId, permissionType)`** — universal visibility rule evaluator. Used by every query that returns resources.
-4. **`resolveInheritedPolicy(orgId, resourceType)`** — walks org tree to find effective inheritance policy. Used when resolving workflows, work item types, catalogs for a given org.
-5. **`generateUri(orgSlug, entityType)`** — generates globally unique URIs. Used on every entity creation.
-6. **`getDescendantOrgUris(orgUri)`** — Neo4j traversal returning all descendant org URIs. Used by board query and visibility resolution.
-7. **`getWorkItemHierarchy(workItemUri, userId)`** — Neo4j traversal returning full work item hierarchy (ancestors, siblings, descendants, spawned chains) with permission filtering at each node. Used by Work Item Detail View.
+## Next Up (prioritized)
+1. **Neo4j graph seeding** — seed system org + work item type nodes, make sync worker functional
+2. **Work item type fields** — seed required fields for Bug type so pending state actually triggers
+3. **Board query** — make `/v1/board` return real Kanban data
+4. **Admin Browser enhancements** — per admin/TODO.md
+5. **Auth middleware** — replace userId = 1 stubs
 
 ---
 
 ## Session Notes
 - Developer: Chris Tulino — Agile coaching, enterprise transformation, PMO leadership, mobile tech (Bank of America)
-- Preferred style: architectural correctness over velocity; modular Node.js; pass full objects between modules
-- UI brainstorm needed before building board component
-- **Completed:**
-  - Full PostgreSQL Blueprint schema (v1.1) — 20+ tables
-  - Full PostgreSQL Runtime schema (v0.4) — 16 tables
-  - Neo4j graph model (v0.2) — 7 node types, 18 relationship types, full query library, sync strategy
-  - Node.js project scaffold (17 files) — server running, health check responding correctly
-- **Server status:** Fully operational locally. Health check returns `"status":"ok"` with `postgres: true` and `neo4j: true`. Docker running PostgreSQL 16, Neo4j 5, and MinIO. Schemas loaded. Databases empty — system default seed data not yet created.
-- **Next session:** Seed system defaults (roles, service classes, workflows, stages), then implement the stage transition module
+- Preferred style: architectural correctness over velocity; modular Node.js; fix before build
+- Git: `christulino/flowos` (private), all work committed and pushed
+
+### What's been built (2 days):
+3 databases · 47 PostgreSQL tables (31 blueprint + 16 runtime) · 26 JS source files · 11 API endpoints · 9 seed scripts · 5 SQL schema files · 4 workflows · 26 stages · 37 stage transitions · 2 internal tools (Admin Browser + DevTools with 4 tabs each)
 
 ---
 *This file is the source of truth for project context. Update it at the end of every working session.*

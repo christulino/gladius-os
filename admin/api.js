@@ -358,8 +358,11 @@ router.post('/query', async (req, res, next) => {
       })
     }
 
-    // Hard limit — prevent runaway queries
-    const safeSql = sql.replace(/;+$/, '') + '\nLIMIT 500'
+    // Only append LIMIT if the query doesn't already have one
+    const alreadyLimited = /\bLIMIT\b/i.test(sql)
+    const safeSql = alreadyLimited
+      ? sql.replace(/;+$/, '')
+      : sql.replace(/;+$/, '') + '\nLIMIT 500'
 
     const start  = Date.now()
     const result = await query(safeSql)
@@ -375,6 +378,123 @@ router.post('/query', async (req, res, next) => {
     // Return DB errors as 422 so the console can display them nicely
     res.status(422).json({ error: err.message })
   }
+})
+
+// =============================================================================
+// EDIT — whitelisted field updates for admin browser
+// =============================================================================
+
+// Defines exactly which fields are editable per entity type
+const EDIT_RULES = {
+  'work_item': {
+    table:           'runtime.work_items',
+    allowed_fields:  ['title', 'description', 'field_values'],
+    field_types:     { title: 'text', description: 'text', field_values: 'json' },
+    id_column:       'id',
+  },
+  'organization': {
+    table:           'blueprint.organizations',
+    allowed_fields:  ['name', 'is_active'],
+    field_types:     { name: 'text', is_active: 'boolean' },
+    id_column:       'id',
+  },
+}
+
+/**
+ * PATCH /admin/api/edit/:entityType/:id
+ * Update whitelisted fields on a single record.
+ * Body: { field: value, ... }
+ */
+router.patch('/edit/:entityType/:id', async (req, res, next) => {
+  try {
+    const { entityType, id } = req.params
+    const rules = EDIT_RULES[entityType]
+
+    if (!rules) {
+      return res.status(403).json({
+        error: `Entity type "${entityType}" is not editable`,
+        allowed: Object.keys(EDIT_RULES),
+      })
+    }
+
+    const updates = req.body
+    if (!updates || !Object.keys(updates).length) {
+      return res.status(400).json({ error: 'No fields provided' })
+    }
+
+    // Filter to only allowed fields
+    const safeUpdates = {}
+    const rejected    = []
+    for (const [field, value] of Object.entries(updates)) {
+      if (rules.allowed_fields.includes(field)) {
+        safeUpdates[field] = value
+      } else {
+        rejected.push(field)
+      }
+    }
+
+    if (rejected.length) {
+      return res.status(403).json({
+        error:    `Fields not editable: ${rejected.join(', ')}`,
+        allowed:  rules.allowed_fields,
+      })
+    }
+
+    if (!Object.keys(safeUpdates).length) {
+      return res.status(400).json({ error: 'No valid fields to update' })
+    }
+
+    // Validate types
+    for (const [field, value] of Object.entries(safeUpdates)) {
+      const expectedType = rules.field_types[field]
+      if (expectedType === 'boolean' && typeof value !== 'boolean') {
+        return res.status(400).json({ error: `Field "${field}" must be a boolean` })
+      }
+      if (expectedType === 'text' && typeof value !== 'string') {
+        return res.status(400).json({ error: `Field "${field}" must be a string` })
+      }
+      if (expectedType === 'json' && typeof value !== 'object') {
+        return res.status(400).json({ error: `Field "${field}" must be an object` })
+      }
+    }
+
+    // Build parameterized UPDATE
+    const fields   = Object.keys(safeUpdates)
+    const values   = fields.map(f =>
+      rules.field_types[f] === 'json'
+        ? JSON.stringify(safeUpdates[f])
+        : safeUpdates[f]
+    )
+    const setClauses = fields.map((f, i) => `${f} = $${i + 1}`).join(', ')
+    values.push(new Date()) // updated_at
+    values.push(id)         // WHERE id = $N
+
+    const sql = `
+      UPDATE ${rules.table}
+      SET ${setClauses}, updated_at = $${fields.length + 1}
+      WHERE ${rules.id_column} = $${fields.length + 2}
+      RETURNING *
+    `
+
+    const result = await query(sql, values)
+    if (!result.rows.length) {
+      return res.status(404).json({ error: `${entityType} ${id} not found` })
+    }
+
+    res.json({ updated: result.rows[0], fields_changed: fields })
+  } catch (err) { next(err) }
+})
+
+/**
+ * GET /admin/api/edit/rules
+ * Returns the edit rules so the UI knows what's editable.
+ */
+router.get('/edit/rules', (_req, res) => {
+  const rules = {}
+  for (const [type, r] of Object.entries(EDIT_RULES)) {
+    rules[type] = { allowed_fields: r.allowed_fields, field_types: r.field_types }
+  }
+  res.json(rules)
 })
 
 export default router
