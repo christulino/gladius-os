@@ -14,7 +14,7 @@ import { readFile } from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
-import { initLogger }             from '../admin/logger.js'
+import { initLogger }                 from '../admin/logger.js'
 import { healthCheck as pgHealth }    from '../db/postgres.js'
 import { healthCheck as neo4jHealth } from '../db/neo4j.js'
 import workItemRoutes   from './routes/workItems.js'
@@ -55,22 +55,14 @@ app.use('/v1/catalog',       catalogRoutes)
 app.use('/v1/board',         boardRoutes)
 app.use('/admin/api',        adminApiRoutes)
 
-// Admin UI
-app.get('/admin', async (_req, res) => {
-  try {
-    const html = await readFile(join(__dirname, '../admin/browser.html'), 'utf8')
-    res.setHeader('Content-Type', 'text/html')
-    res.send(html)
-  } catch { res.status(500).send('Admin UI not found') }
-})
-
-// Dev Tools UI
-app.get('/devtools', async (_req, res) => {
-  try {
-    const html = await readFile(join(__dirname, '../admin/devtools.html'), 'utf8')
-    res.setHeader('Content-Type', 'text/html')
-    res.send(html)
-  } catch { res.status(500).send('DevTools UI not found') }
+// Serve React admin UI from admin-ui/dist
+// Falls back gracefully if build doesn't exist yet
+const adminDist = join(__dirname, '../admin-ui/dist')
+app.use('/admin', express.static(adminDist))
+app.get('/admin/*', (_req, res) => {
+  res.sendFile(join(adminDist, 'index.html'), err => {
+    if (err) res.status(503).send('Admin UI not built yet. Run: cd admin-ui && npm run build')
+  })
 })
 
 // Health check

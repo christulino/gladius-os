@@ -779,14 +779,19 @@ function escHtml(s) {
 }
 
 // ── DB CONSOLE ──
-let dbReady = false
+let dbReady    = false
+let dbLastSql  = ''
+let dbSortCol  = null
+let dbSortDir  = 'asc'
+let dbPage     = 0
+const DB_PAGE_SIZE = 50
 
 const SNIPPETS = [
-  { label:'work items',       sql:'SELECT wi.id, wi.title, s.name AS stage, wi.spawn_state\nFROM runtime.work_items wi\nJOIN blueprint.stages s ON s.id = wi.current_stage_id\nORDER BY wi.id DESC\nLIMIT 20' },
-  { label:'transition history', sql:'SELECT sth.id, wi.title, fs.name AS from_stage, ts.name AS to_stage,\n  sth.time_in_stage_seconds, sth.created_at\nFROM runtime.stage_transition_history sth\nJOIN runtime.work_items wi ON wi.id = sth.work_item_id\nJOIN blueprint.stages fs ON fs.id = sth.from_stage_id\nJOIN blueprint.stages ts ON ts.id = sth.to_stage_id\nORDER BY sth.id DESC LIMIT 20' },
+  { label:'work items',       sql:'SELECT wi.id, wi.title, s.name AS stage, wi.spawn_state\nFROM runtime.work_items wi\nJOIN blueprint.stages s ON s.id = wi.current_stage_id\nORDER BY wi.id DESC' },
+  { label:'transition history', sql:'SELECT sth.id, wi.title, fs.name AS from_stage, ts.name AS to_stage,\n  sth.time_in_stage_seconds, sth.created_at\nFROM runtime.stage_transition_history sth\nJOIN runtime.work_items wi ON wi.id = sth.work_item_id\nJOIN blueprint.stages fs ON fs.id = sth.from_stage_id\nJOIN blueprint.stages ts ON ts.id = sth.to_stage_id\nORDER BY sth.id DESC' },
   { label:'workflows + stages', sql:'SELECT w.name AS workflow, s.display_order, s.name AS stage,\n  s.stage_class, s.is_entry_stage, s.is_terminal\nFROM blueprint.stages s\nJOIN blueprint.workflows w ON w.id = s.workflow_id\nORDER BY w.id, s.display_order' },
   { label:'orgs + members',   sql:'SELECT o.name AS org, u.display_name, r.name AS role\nFROM blueprint.org_memberships om\nJOIN blueprint.organizations o ON o.id = om.org_id\nJOIN blueprint.users u ON u.id = om.user_id\nJOIN blueprint.roles r ON r.id = om.role_id\nWHERE om.is_active = true' },
-  { label:'sync queue',       sql:'SELECT * FROM runtime.search_index_queue\nORDER BY id DESC LIMIT 20' },
+  { label:'sync queue',       sql:'SELECT * FROM runtime.search_index_queue\nORDER BY id DESC' },
   { label:'all tables',       sql:"SELECT table_schema, table_name,\n  (SELECT COUNT(*) FROM information_schema.columns c WHERE c.table_name = t.table_name AND c.table_schema = t.table_schema) AS col_count\nFROM information_schema.tables t\nWHERE table_schema IN ('blueprint','runtime')\nORDER BY table_schema, table_name" },
 ]
 
@@ -797,7 +802,6 @@ function initDbConsole() {
     `<button class="snippet-btn" onclick="loadSnippet(${i})">${s.label}</button>`
   ).join('')
 
-  // Cmd+Enter / Ctrl+Enter to run
   document.getElementById('sql-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) runQuery()
   })
@@ -805,28 +809,64 @@ function initDbConsole() {
 
 function loadSnippet(i) {
   document.getElementById('sql-input').value = SNIPPETS[i].sql
+  dbSortCol = null
+  dbSortDir = 'asc'
+  dbPage    = 0
 }
 
-async function runQuery() {
-  const sql = document.getElementById('sql-input').value.trim()
+async function runQuery(sortCol, sortDir, page) {
+  let sql = document.getElementById('sql-input').value.trim()
   if (!sql) return
 
-  const btn     = document.getElementById('db-run-btn')
-  const metaEl  = document.getElementById('db-meta')
-  const bodyEl  = document.getElementById('db-results-body')
+  // Persist for re-runs on sort/page
+  if (sortCol !== undefined) {
+    dbSortCol = sortCol
+    dbSortDir = sortDir
+  } else if (sortCol === null) {
+    dbSortCol = null
+    dbSortDir = 'asc'
+  }
+  if (page !== undefined) dbPage = page
+  dbLastSql = sql
 
-  btn.disabled = true
+  // Inject ORDER BY if sorting
+  if (dbSortCol) {
+    // Strip existing ORDER BY clause before injecting new one
+    sql = sql.replace(/\bORDER\s+BY\b[\s\S]*?(?=\bLIMIT\b|\bOFFSET\b|$)/i, '')
+    sql = sql.trimEnd() + `\nORDER BY "${dbSortCol}" ${dbSortDir}`
+  }
+
+  const btn    = document.getElementById('db-run-btn')
+  const metaEl = document.getElementById('db-meta')
+  const bodyEl = document.getElementById('db-results-body')
+
+  btn.disabled    = true
   btn.textContent = '⟳ Running'
   metaEl.textContent = ''
-  bodyEl.innerHTML = '<div class="db-empty-msg">Running...</div>'
+  bodyEl.innerHTML   = '<div class="db-empty-msg">Running...</div>'
 
   try {
-    const res  = await fetch('/admin/api/query', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ sql }),
-    })
-    const data = await res.json()
+    // Inject LIMIT/OFFSET for pagination
+    const baseSql  = sql.replace(/;+$/, '').replace(/\bLIMIT\s+\d+(\s+OFFSET\s+\d+)?/i, '')
+    const pagedSql = `${baseSql.trimEnd()}\nLIMIT ${DB_PAGE_SIZE} OFFSET ${dbPage * DB_PAGE_SIZE}`
+
+    // Also run count query (strip ORDER BY for performance)
+    const countSql = `SELECT COUNT(*) AS __total FROM (${baseSql.replace(/\bORDER\s+BY\b[\s\S]*/i,'')}) __q`
+
+    const [res, countRes] = await Promise.all([
+      fetch('/admin/api/query', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql: pagedSql }),
+      }),
+      fetch('/admin/api/query', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql: countSql }),
+      }).catch(() => null)
+    ])
+
+    const data      = await res.json()
+    const countData = countRes?.ok ? await countRes.json() : null
+    const total     = parseInt(countData?.rows?.[0]?.__total ?? data.count)
 
     if (!res.ok) {
       bodyEl.innerHTML = `<div class="db-error">✗ ${escHtml(data.error)}</div>`
@@ -834,7 +874,8 @@ async function runQuery() {
       return
     }
 
-    metaEl.textContent = `${data.count} row${data.count !== 1 ? 's' : ''} · ${data.duration_ms}ms`
+    const totalPages = Math.ceil(total / DB_PAGE_SIZE)
+    metaEl.textContent = `${data.count} of ${total} rows · ${data.duration_ms}ms`
 
     if (!data.rows.length) {
       bodyEl.innerHTML = '<div class="db-empty-msg">No rows returned</div>'
@@ -842,10 +883,23 @@ async function runQuery() {
     }
 
     const cols = data.columns.map(c => c.name)
+
+    const sortArrow = col => {
+      if (col !== dbSortCol) return `<span style="opacity:0.3;margin-left:4px">⇅</span>`
+      return dbSortDir === 'asc'
+        ? `<span style="color:var(--accent);margin-left:4px">↑</span>`
+        : `<span style="color:var(--accent);margin-left:4px">↓</span>`
+    }
+
+    const nextDir = col => col === dbSortCol && dbSortDir === 'asc' ? 'desc' : 'asc'
+
     bodyEl.innerHTML = `
       <div class="db-table-wrap">
         <table>
-          <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+          <thead><tr>${cols.map(c => `
+            <th style="cursor:pointer;user-select:none" onclick="runQuery('${c}','${nextDir(c)}',0)">
+              ${c}${sortArrow(c)}
+            </th>`).join('')}</tr></thead>
           <tbody>
             ${data.rows.map(row => `
               <tr>${cols.map(c => {
@@ -862,12 +916,20 @@ async function runQuery() {
           </tbody>
         </table>
       </div>
+      ${totalPages > 1 ? `
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--border)">
+          <button class="snippet-btn" onclick="runQuery(undefined,undefined,${dbPage-1})" ${dbPage===0?'disabled':''}>← Prev</button>
+          <button class="snippet-btn" onclick="runQuery(undefined,undefined,${dbPage+1})" ${dbPage>=totalPages-1?'disabled':''}>Next →</button>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:auto">
+            Page ${dbPage+1} of ${totalPages} · ${total} total rows
+          </span>
+        </div>` : ''}
     `
   } catch (err) {
     bodyEl.innerHTML = `<div class="db-error">✗ ${escHtml(err.message)}</div>`
     metaEl.textContent = 'error'
   } finally {
-    btn.disabled = false
+    btn.disabled    = false
     btn.textContent = '▶ Run'
   }
 }
