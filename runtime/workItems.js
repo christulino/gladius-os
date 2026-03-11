@@ -39,6 +39,9 @@ export async function createWorkItem(params, userId) {
     parent_id,
     field_values = {},
     description,
+    due_date,
+    is_expedited = false,
+    work_nature = 'delivery',
   } = params
 
   // =========================================================================
@@ -194,8 +197,9 @@ export async function createWorkItem(params, userId) {
         pending_missing_fields,
         field_values,
         sequence_number, display_key,
+        due_date, is_expedited, work_nature,
         entered_current_stage_at, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,$13,$14,$15,$15,$15)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$18)
       RETURNING *
     `, [
       uri,
@@ -212,6 +216,9 @@ export async function createWorkItem(params, userId) {
       JSON.stringify(field_values),
       seqNum,
       displayKey,
+      due_date || null,
+      !!is_expedited,
+      work_nature || 'delivery',
       now,
     ])
 

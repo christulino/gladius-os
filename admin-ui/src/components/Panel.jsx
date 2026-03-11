@@ -17,21 +17,21 @@ export function PanelHeader({ className, children }) {
 }
 
 export function PanelTitle({ children }) {
-  return <span className="font-mono text-[11px] uppercase tracking-wider text-primary">{children}</span>
+  return <span className="text-sm font-semibold text-foreground">{children}</span>
 }
 
 export function PanelMeta({ children }) {
-  return <span className="font-mono text-[11px] text-muted-foreground">{children}</span>
+  return <span className="text-xs text-muted-foreground">{children}</span>
 }
 
 export function LoadingState() {
-  return <div className="flex-1 flex items-center justify-center text-muted-foreground font-mono text-xs py-16">Loading...</div>
+  return <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs py-16">Loading...</div>
 }
 
 export function ErrorState({ message }) {
-  return <div className="flex-1 flex items-center justify-center text-destructive font-mono text-xs py-16">{message}</div>
+  return <div className="flex-1 flex items-center justify-center text-destructive text-xs py-16">{message}</div>
 }
 
 export function EmptyState({ message = 'No data' }) {
-  return <div className="flex-1 flex items-center justify-center text-muted-foreground font-mono text-xs py-16">{message}</div>
+  return <div className="flex-1 flex items-center justify-center text-muted-foreground text-xs py-16">{message}</div>
 }

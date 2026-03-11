@@ -73,10 +73,10 @@ export function EditDrawer({ open, onOpenChange, entityType, entityId, row, onSa
           <SheetDescription>ID: {entityId}</SheetDescription>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
           {fields.map(f => (
             <div key={f.key} className="flex flex-col gap-1.5">
-              <label className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {f.label}
               </label>
 
@@ -86,7 +86,7 @@ export function EditDrawer({ open, onOpenChange, entityType, entityId, row, onSa
                     checked={!!values[f.key]}
                     onCheckedChange={v => set(f.key, v)}
                   />
-                  <span className="font-mono text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {values[f.key] ? 'Yes' : 'No'}
                   </span>
                 </div>
@@ -95,7 +95,7 @@ export function EditDrawer({ open, onOpenChange, entityType, entityId, row, onSa
                   value={values[f.key] ?? ''}
                   onChange={e => set(f.key, e.target.value)}
                   rows={f.type === 'json' ? 8 : 4}
-                  className="w-full bg-background border border-border rounded text-xs font-mono text-foreground p-2.5 resize-y focus:outline-none focus:border-accent"
+                  className="w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 resize-y focus:outline-none focus:border-primary"
                   spellCheck={false}
                 />
               ) : (
@@ -103,14 +103,14 @@ export function EditDrawer({ open, onOpenChange, entityType, entityId, row, onSa
                   type="text"
                   value={values[f.key] ?? ''}
                   onChange={e => set(f.key, e.target.value)}
-                  className="w-full bg-background border border-border rounded text-xs font-mono text-foreground px-2.5 py-2 focus:outline-none focus:border-accent"
+                  className="w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
                 />
               )}
             </div>
           ))}
 
           {message && (
-            <div className={`font-mono text-[11px] px-3 py-2 rounded ${
+            <div className={`text-xs px-3 py-2 rounded ${
               message.type === 'success'
                 ? 'bg-primary/10 text-primary'
                 : 'bg-destructive/10 text-destructive'

@@ -49,7 +49,7 @@ export default function LogViewer() {
       <PanelHeader>
         <PanelTitle>Log Viewer</PanelTitle>
         <div className="flex items-center gap-2">
-          <span className={cn('font-mono text-[10px]', connected ? 'text-primary' : 'text-muted-foreground')}>
+          <span className={cn('text-xs', connected ? 'text-primary' : 'text-muted-foreground')}>
             {connected ? '● live' : '○ disconnected'}
           </span>
           <div className="flex gap-1">
@@ -61,7 +61,7 @@ export default function LogViewer() {
               >{f}</Button>
             ))}
           </div>
-          <label className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground cursor-pointer ml-1">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer ml-1">
             <input type="checkbox" checked={autoscroll} onChange={e => setAutoscroll(e.target.checked)} className="w-3 h-3" />
             autoscroll
           </label>
@@ -74,21 +74,21 @@ export default function LogViewer() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {visible.length === 0 ? (
-          <div className="flex items-center justify-center h-32 font-mono text-xs text-muted-foreground">
+          <div className="flex items-center justify-center h-32 text-xs text-muted-foreground">
             {connected ? 'Waiting for logs...' : 'Connecting...'}
           </div>
         ) : visible.map((entry, i) => {
           const ts = new Date(entry.ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
           return (
             <div key={entry.id ?? i}
-              className="grid border-b border-border/40 hover:bg-white/[0.015] transition-colors py-0.5"
+              className="grid border-b border-border/40 hover:bg-black/[0.03] transition-colors py-0.5"
               style={{ gridTemplateColumns: '72px 40px 1fr' }}
             >
-              <span className="px-3 font-mono text-[10px] text-muted-foreground py-1">{ts}</span>
-              <span className={cn('font-mono text-[10px] py-1 text-center', LEVEL_COLOR[entry.level] ?? 'text-muted-foreground')}>
+              <span className="px-3 text-xs text-muted-foreground py-1">{ts}</span>
+              <span className={cn('text-xs py-1 text-center', LEVEL_COLOR[entry.level] ?? 'text-muted-foreground')}>
                 {entry.level}
               </span>
-              <span className={cn('font-mono text-[11px] px-2 py-1 break-all whitespace-pre-wrap', LEVEL_COLOR[entry.level] ?? 'text-foreground')}>
+              <span className={cn('text-xs px-2 py-1 break-all whitespace-pre-wrap', LEVEL_COLOR[entry.level] ?? 'text-foreground')}>
                 {entry.message}
               </span>
             </div>

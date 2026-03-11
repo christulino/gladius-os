@@ -68,7 +68,7 @@ export default function Users() {
           <div className="w-7 h-7 rounded-full border border-border overflow-hidden bg-muted flex items-center justify-center flex-shrink-0">
             {url
               ? <img src={url} alt={name} className="w-full h-full object-cover" />
-              : <span className="text-[10px] text-muted-foreground font-mono">{name?.[0]?.toUpperCase() ?? '?'}</span>
+              : <span className="text-xs text-muted-foreground">{name?.[0]?.toUpperCase() ?? '?'}</span>
             }
           </div>
         )
@@ -86,7 +86,7 @@ export default function Users() {
       accessorKey: 'is_system', header: 'Type',
       cell: ({ getValue }) => getValue()
         ? <Badge variant="blue">system</Badge>
-        : <span className="text-muted-foreground text-[11px]">human</span>,
+        : <span className="text-muted-foreground text-xs">human</span>,
     },
     {
       accessorKey: 'memberships', header: 'Memberships', enableSorting: false,

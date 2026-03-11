@@ -77,22 +77,22 @@ function PermissionsPanel({ role, onClose, onSaved }) {
     <Sheet open onOpenChange={open => !open && onClose()}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle className="font-mono text-sm">{role.name}</SheetTitle>
-          <p className="font-mono text-[10px] text-muted-foreground pt-0.5">
+          <SheetTitle>{role.name}</SheetTitle>
+          <p className="text-xs text-muted-foreground pt-0.5">
             {role.org_name} · Global permission defaults
           </p>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
-            <p className="font-mono text-xs text-muted-foreground py-8 text-center">Loading...</p>
+            <p className="text-xs text-muted-foreground py-8 text-center">Loading...</p>
           ) : (
             <div className="flex flex-col gap-6">
               {SCOPE_ORDER.filter(s => grouped[s]).map(scope => (
                 <div key={scope}>
                   <div className="mb-3">
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-primary">{SCOPE_LABELS[scope]}</p>
-                    <p className="font-mono text-[10px] text-muted-foreground/60 mt-0.5">{SCOPE_HINTS[scope]}</p>
+                    <p className="text-xs font-medium uppercase tracking-wide text-primary">{SCOPE_LABELS[scope]}</p>
+                    <p className="text-xs text-muted-foreground/60 mt-0.5">{SCOPE_HINTS[scope]}</p>
                   </div>
                   <div className="flex flex-col gap-2">
                     {grouped[scope].map(row => {
@@ -104,8 +104,8 @@ function PermissionsPanel({ role, onClose, onSaved }) {
                           changed ? 'bg-primary/5 border border-primary/20' : 'border border-transparent',
                         ].join(' ')}>
                           <div className="flex flex-col gap-0.5 min-w-0">
-                            <span className="font-mono text-xs text-foreground truncate">{row.name}</span>
-                            <span className="font-mono text-[10px] text-muted-foreground truncate">{row.slug}</span>
+                            <span className="text-xs text-foreground truncate">{row.name}</span>
+                            <span className="text-xs text-muted-foreground truncate">{row.slug}</span>
                           </div>
                           <Switch checked={granted} onCheckedChange={() => toggle(row.slug, granted)} />
                         </div>
@@ -119,7 +119,7 @@ function PermissionsPanel({ role, onClose, onSaved }) {
 
           {message && (
             <div className={[
-              'mt-4 font-mono text-[11px] px-3 py-2 rounded',
+              'mt-4 text-xs px-3 py-2 rounded',
               message.type === 'success' ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive border border-destructive/20',
             ].join(' ')}>
               {message.text}

@@ -5,9 +5,9 @@ import { LoadingState, ErrorState } from '@/components/Panel'
 function StatCard({ label, value, sub, valueColor = 'text-primary' }) {
   return (
     <div className="bg-card border border-border rounded-md p-4">
-      <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground mb-2">{label}</div>
-      <div className={`font-mono text-3xl leading-none ${valueColor}`}>{value ?? '—'}</div>
-      {sub && <div className="font-mono text-[10px] text-muted-foreground mt-1.5">{sub}</div>}
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">{label}</div>
+      <div className={`text-3xl leading-none ${valueColor}`}>{value ?? '—'}</div>
+      {sub && <div className="text-xs text-muted-foreground mt-1.5">{sub}</div>}
     </div>
   )
 }

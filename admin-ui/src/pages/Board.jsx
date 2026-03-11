@@ -39,7 +39,7 @@ function OrgMultiSelect({ orgs, selected, onChange }) {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 bg-card border border-border rounded px-2.5 py-1.5 text-xs font-mono text-foreground hover:border-primary/50 transition-colors min-w-[160px] max-w-[280px]"
+        className="flex items-center gap-2 bg-card border border-border rounded px-2.5 py-1.5 text-xs text-foreground hover:border-primary/50 transition-colors min-w-[160px] max-w-[280px]"
       >
         <span className="truncate flex-1 text-left">{label}</span>
         <span className="text-muted-foreground flex-shrink-0">▾</span>
@@ -59,17 +59,17 @@ function OrgMultiSelect({ orgs, selected, onChange }) {
                 className="accent-primary"
               />
               <span className="text-xs text-foreground">{org.name}</span>
-              <span className="font-mono text-[10px] text-muted-foreground ml-auto">{org.slug}</span>
+              <span className="text-xs text-muted-foreground ml-auto">{org.slug}</span>
             </label>
           ))}
           <div className="border-t border-border mt-1 pt-1 px-3 pb-1 flex gap-2">
             <button
               onClick={() => onChange(orgs.map(o => o.id))}
-              className="font-mono text-[10px] text-primary hover:underline"
+              className="text-xs text-primary hover:underline"
             >all</button>
             <button
               onClick={() => onChange([])}
-              className="font-mono text-[10px] text-muted-foreground hover:underline"
+              className="text-xs text-muted-foreground hover:underline"
             >none</button>
           </div>
         </div>
@@ -98,7 +98,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
           if (e.key === 'Enter') { e.target.blur() }
           if (e.key === 'Escape') setEditing(false)
         }}
-        className="w-12 font-mono text-[10px] text-center bg-background border border-primary rounded px-1 py-0.5 focus:outline-none"
+        className="w-12 text-xs text-center bg-background border border-primary rounded px-1 py-0.5 focus:outline-none"
         autoFocus
       />
     )
@@ -107,7 +107,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
   if (!limit) {
     return (
       <span
-        className={`font-mono text-[10px] text-muted-foreground ${editable ? 'cursor-pointer hover:text-primary' : ''}`}
+        className={`text-xs text-muted-foreground ${editable ? 'cursor-pointer hover:text-primary' : ''}`}
         onClick={() => { if (editable) { setDraft(''); setEditing(true) } }}
         title={editable ? 'Click to set WIP limit' : undefined}
       >
@@ -119,7 +119,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
   const over = count > limit
   return (
     <span
-      className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
+      className={`text-xs px-1.5 py-0.5 rounded border ${
         over ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border bg-muted/60 text-muted-foreground'
       } ${editable ? 'cursor-pointer' : ''}`}
       onClick={() => { if (editable) { setDraft(String(limit)); setEditing(true) } }}
@@ -190,12 +190,6 @@ export default function Board({ setTab }) {
     [primaryOrgId]
   )
 
-  // Service classes for create form
-  const { data: scData } = useApi(
-    () => primaryOrgId ? api.serviceClasses(primaryOrgId) : Promise.resolve({ rows: [] }),
-    [primaryOrgId]
-  )
-
   const stages = boardData?.stages ?? []
   const allItems = [...(boardData?.items ?? []), ...extraItems]
   const wipLimits = boardData?.wip_limits ?? {}
@@ -207,12 +201,17 @@ export default function Board({ setTab }) {
     itemsByStage[item.current_stage_id].push(item)
   }
 
-  const serviceClassOptions = (scData?.rows ?? []).map(sc => ({ label: sc.name, value: String(sc.id) }))
-
   const createFields = [
     { key: 'title', label: 'Title', type: 'text', required: true, placeholder: 'What needs to happen?' },
     { key: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional context...' },
-    ...(serviceClassOptions.length > 0 ? [{ key: 'service_class_id', label: 'Service Class', type: 'select', options: serviceClassOptions }] : []),
+    { key: 'due_date', label: 'Due Date', type: 'date', hint: 'Items with a due date are treated as fixed-date priority.' },
+    { key: 'is_expedited', label: 'Expedite', type: 'boolean', hint: 'Drop everything — this needs immediate attention.' },
+    {
+      key: 'work_nature', label: 'Work Nature', type: 'select',
+      options: [{ label: 'Delivery', value: 'delivery' }, { label: 'Improvement', value: 'improvement' }],
+      defaultValue: 'delivery',
+      hint: 'Improvement work is pulled when there is capacity.',
+    },
   ]
 
   // Create work item in the org where the type lives (or primary org)
@@ -222,7 +221,9 @@ export default function Board({ setTab }) {
       description:       values.description || undefined,
       work_item_type_id: selectedType?.id,
       owner_org_id:      primaryOrgId,
-      service_class_id:  values.service_class_id || undefined,
+      due_date:          values.due_date || undefined,
+      is_expedited:      values.is_expedited || false,
+      work_nature:       values.work_nature || 'delivery',
     })
   }
 
@@ -239,7 +240,7 @@ export default function Board({ setTab }) {
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-border flex-shrink-0 bg-card">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-border flex-shrink-0 bg-card">
         {orgsData?.rows?.length > 0 && (
           <OrgMultiSelect
             orgs={orgsData.rows}
@@ -249,13 +250,13 @@ export default function Board({ setTab }) {
         )}
 
         {boardData?.workflow_name && (
-          <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+          <span className="text-xs text-muted-foreground uppercase tracking-wide">
             {boardData.workflow_name}
           </span>
         )}
 
         {!boardLoading && boardData && (
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {allItems.length} active
           </span>
         )}
@@ -263,7 +264,6 @@ export default function Board({ setTab }) {
         <div className="ml-auto">
           <Button
             size="sm"
-            className="font-mono text-xs"
             onClick={() => setLibraryOpen(true)}
             disabled={!primaryOrgId}
           >
@@ -276,27 +276,27 @@ export default function Board({ setTab }) {
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
         {boardLoading && (
           <div className="flex items-center justify-center h-full">
-            <span className="font-mono text-xs text-muted-foreground">Loading...</span>
+            <span className="text-xs text-muted-foreground">Loading...</span>
           </div>
         )}
         {boardError && (
           <div className="flex items-center justify-center h-full">
-            <span className="font-mono text-xs text-destructive">{boardError}</span>
+            <span className="text-xs text-destructive">{boardError}</span>
           </div>
         )}
         {!boardLoading && !boardError && selectedOrgIds.length === 0 && (
           <div className="flex items-center justify-center h-full">
-            <span className="font-mono text-xs text-muted-foreground">Select an org to view the board.</span>
+            <span className="text-xs text-muted-foreground">Select an org to view the board.</span>
           </div>
         )}
         {!boardLoading && !boardError && stages.length === 0 && selectedOrgIds.length > 0 && (
           <div className="flex items-center justify-center h-full">
-            <span className="font-mono text-xs text-muted-foreground">No workflow configured for this org.</span>
+            <span className="text-xs text-muted-foreground">No workflow configured for this org.</span>
           </div>
         )}
 
         {!boardLoading && !boardError && stages.length > 0 && (
-          <div className="flex flex-row gap-3 h-full px-5 py-4 w-max">
+          <div className="flex flex-row gap-3 h-full px-4 py-3 w-max">
             {stages.map(stage => {
               const stageItems = itemsByStage[stage.id] ?? []
               const orgWip = wipLimits[stage.name]
@@ -321,10 +321,10 @@ export default function Board({ setTab }) {
                   </div>
 
                   {/* Cards */}
-                  <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
+                  <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5">
                     {stageItems.length === 0 ? (
                       <div className="flex items-center justify-center h-14 border border-dashed border-border/50 rounded">
-                        <span className="font-mono text-[10px] text-muted-foreground/40">—</span>
+                        <span className="text-xs text-muted-foreground/40">—</span>
                       </div>
                     ) : (
                       stageItems.map(item => (

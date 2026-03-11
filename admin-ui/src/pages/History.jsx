@@ -31,7 +31,7 @@ export default function History() {
       cell: ({ getValue }) => <Badge variant="default">{getValue()}</Badge> },
     { accessorKey: 'time_in_stage_seconds', header: 'Time in Stage',
       cell: ({ getValue }) => (
-        <span className="font-mono text-right block">{fmtDuration(getValue())}</span>
+        <span className="text-xs tabular-nums text-right block">{fmtDuration(getValue())}</span>
       )},
     { accessorKey: 'transitioned_by',  header: 'By',
       cell: ({ getValue }) => <span className="text-muted-foreground">{getValue() ?? '—'}</span> },

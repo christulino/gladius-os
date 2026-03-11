@@ -115,7 +115,7 @@ export default function WitTypes() {
   const columns = [
     {
       accessorKey: 'icon', header: '',
-      cell: ({ getValue }) => <span className="text-xl leading-none">{getValue() ?? ''}</span>,
+      cell: ({ getValue }) => <span className="text-sm leading-none">{getValue() ?? ''}</span>,
     },
     {
       accessorKey: 'name', header: 'Type Name',
@@ -123,10 +123,10 @@ export default function WitTypes() {
         <div className="flex flex-col gap-0.5">
           <span className="font-medium">{getValue()}</span>
           {row.original.key_prefix && (
-            <span className="font-mono text-[9px] text-muted-foreground">{row.original.key_prefix}</span>
+            <span className="text-xs text-muted-foreground">{row.original.key_prefix}</span>
           )}
           {!row.original.is_active && (
-            <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">inactive</span>
+            <span className="text-xs text-muted-foreground uppercase tracking-wide">inactive</span>
           )}
         </div>
       ),
@@ -134,7 +134,7 @@ export default function WitTypes() {
     {
       accessorKey: 'class_name', header: 'Based On',
       cell: ({ getValue }) => (
-        <span className="font-mono text-[10px] text-muted-foreground italic">{getValue()}</span>
+        <span className="text-xs text-muted-foreground italic">{getValue()}</span>
       ),
     },
     {
@@ -143,11 +143,11 @@ export default function WitTypes() {
         const name = getValue()
         const isCustomized = row.original.workflow_id && row.original.class_default_workflow_id &&
           row.original.workflow_id !== row.original.class_default_workflow_id
-        if (!name) return <span className="font-mono text-[10px] text-muted-foreground/40">none</span>
+        if (!name) return <span className="text-xs text-muted-foreground/40">none</span>
         return (
           <div className="flex items-center gap-1">
-            <span className="font-mono text-[10px] text-muted-foreground">{name}</span>
-            {isCustomized && <Badge variant="amber" className="text-[8px]">customized</Badge>}
+            <span className="text-xs text-muted-foreground">{name}</span>
+            {isCustomized && <Badge variant="amber">customized</Badge>}
           </div>
         )
       },
@@ -161,7 +161,7 @@ export default function WitTypes() {
       cell: ({ getValue }) => {
         const v = getValue()
         const labels = { user_requestable: 'requestable', restricted: 'restricted', automation_only: 'auto only' }
-        return <span className="font-mono text-[10px] text-muted-foreground">{labels[v] ?? v}</span>
+        return <span className="text-xs text-muted-foreground">{labels[v] ?? v}</span>
       },
     },
     {
@@ -192,7 +192,7 @@ export default function WitTypes() {
         <PanelHeader>
           <div className="flex flex-col gap-0.5">
             <PanelTitle>Service Catalog — Work Item Types</PanelTitle>
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Each org defines its own types, based on shared template classes.
             </p>
           </div>
@@ -201,7 +201,7 @@ export default function WitTypes() {
             <select
               value={filterOrg}
               onChange={e => setFilterOrg(e.target.value)}
-              className="bg-background border border-border rounded text-xs font-mono text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
+              className="bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
             >
               <option value="all">All orgs</option>
               {orgs.map(o => (
@@ -216,7 +216,7 @@ export default function WitTypes() {
                 onChange={e => setShowInactive(e.target.checked)}
                 className="accent-primary"
               />
-              <span className="font-mono text-[10px] text-muted-foreground">show inactive</span>
+              <span className="text-xs text-muted-foreground">show inactive</span>
             </label>
 
             {data && <PanelMeta>{filtered.length} type{filtered.length !== 1 ? 's' : ''}</PanelMeta>}
