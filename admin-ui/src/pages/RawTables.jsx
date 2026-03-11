@@ -51,7 +51,7 @@ export default function RawTables() {
       {/* Table selector */}
       <div className="flex flex-wrap gap-1.5 p-3 border-b border-border">
         {blueprint.length > 0 && (
-          <span className="font-mono text-[10px] text-muted-foreground self-center mr-1">blueprint:</span>
+          <span className="text-xs text-muted-foreground self-center mr-1">blueprint:</span>
         )}
         {blueprint.map(t => (
           <Button key={t} size="sm" variant={selected === t ? 'accent' : 'outline'}
@@ -59,7 +59,7 @@ export default function RawTables() {
           >{t.replace('blueprint.', '')}</Button>
         ))}
         {runtime.length > 0 && (
-          <span className="font-mono text-[10px] text-muted-foreground self-center ml-2 mr-1">runtime:</span>
+          <span className="text-xs text-muted-foreground self-center ml-2 mr-1">runtime:</span>
         )}
         {runtime.map(t => (
           <Button key={t} size="sm"

@@ -133,13 +133,13 @@ export default function DbConsole() {
       const v = getValue()
       if (v === null) return <span className="text-muted-foreground/40">null</span>
       if (typeof v === 'object') return (
-        <span className="text-accent font-mono text-[11px] truncate block max-w-[200px]">{JSON.stringify(v)}</span>
+        <span className="text-accent text-xs truncate block max-w-[200px]">{JSON.stringify(v)}</span>
       )
       if (typeof v === 'boolean') return (
         <span className={v ? 'text-primary' : 'text-muted-foreground'}>{String(v)}</span>
       )
       return (
-        <span className="font-mono text-[11px] truncate block max-w-[240px]" title={String(v)}>{String(v)}</span>
+        <span className="text-xs truncate block max-w-[240px]" title={String(v)}>{String(v)}</span>
       )
     },
   })) ?? []
@@ -152,7 +152,7 @@ export default function DbConsole() {
       <Panel>
         <PanelHeader>
           <PanelTitle>SQL Console</PanelTitle>
-          <span className="font-mono text-[10px] text-muted-foreground">SELECT / EXPLAIN only · Cmd+Enter to run</span>
+          <span className="text-xs text-muted-foreground">SELECT / EXPLAIN only · Cmd+Enter to run</span>
           <Button
             variant="default" size="sm"
             onClick={run} disabled={running || !sql.trim()}
@@ -167,7 +167,7 @@ export default function DbConsole() {
           placeholder="SELECT * FROM runtime.work_items LIMIT 10"
           spellCheck={false}
           rows={6}
-          className="w-full bg-background text-accent font-mono text-xs p-3 resize-y focus:outline-none border-b border-border"
+          className="w-full bg-background text-accent text-xs p-3 resize-y focus:outline-none border-b border-border"
         />
 
         <div className="flex flex-wrap gap-1.5 p-2.5">
@@ -189,13 +189,13 @@ export default function DbConsole() {
         </PanelHeader>
 
         {error ? (
-          <div className="p-4 font-mono text-xs text-destructive">✗ {error}</div>
+          <div className="p-4 text-xs text-destructive">✗ {error}</div>
         ) : !result ? (
-          <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground py-16">
+          <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground py-16">
             Run a query to see results
           </div>
         ) : result.rows.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center font-mono text-xs text-muted-foreground py-16">
+          <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground py-16">
             No rows returned
           </div>
         ) : (

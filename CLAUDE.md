@@ -2,7 +2,7 @@
 
 > This file is read automatically by Claude Code on session start.
 > It is the source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-03-10 (Session 6)
+> Last updated: 2026-03-11 (Session 7 — UI style system, derived class of service)
 
 ---
 
@@ -37,6 +37,22 @@ intellectual foundation and the eight design constraints that serve as absolute 
 - **Inheritance over explicit configuration** — child orgs inherit from parents. Walk up the tree
 - **Policies over process steps** — workflows are sets of policies, not sequences of mandatory activities
 - **The workflow is measured, not the worker** — assignee data exists for routing and coordination, not surveillance
+
+---
+
+## UI Design System
+
+**The complete UI style guide lives in `admin-ui/current-style.md`.** Read it before making any frontend changes.
+
+Key rules (see style guide for full detail):
+- **No top bar** — logo/app name in sidebar
+- **One overlay pattern: the right-side drawer** — pushes content left, no modals, no inline panels
+- **Cartography light theme** — warm parchment, forest green primary, higher contrast than typical soft themes
+- **All sans-serif (Inter)** — no `font-mono` anywhere
+- **3 font sizes only** — `text-xs` (12px) for body, `text-sm` (14px) for titles. No arbitrary pixel sizes.
+- **Board is primary** — compact cards with four-corner encoding (icon, assignee, key+timer, status indicators)
+- **Sidebar nav groups:** Board, Catalog (Orgs, Types), Configure (Workflows, Classes), Admin (Users, Roles), Reports, Dev Tools
+- **Tufte density** — encode info in symbols/color/position, not sprawl
 
 ---
 
@@ -319,14 +335,29 @@ MATCH (origin:WorkItem)-[:SPAWNED]->(w:WorkItem {uri: $uri}) RETURN origin
 
 ---
 
-## Service Classes (v1)
+## Service Classes — Derived, Not Selected
 
-Fields: name, color, sort_order, cost_of_delay_profile (enum: expedite / fixed-date /
-standard / intangible), sla_hours, sla_warning_pct.
+Class of service is **derived from natural fields** on each work item, never explicitly
+selected by the user. The user never needs to learn Kanban vocabulary.
 
-The `cost_of_delay_profile` enum is architectural — it determines how the system
-interprets aging, scheduling, and metrics. Adding it later requires retroactive decisions.
-Adding other fields later is just adding columns.
+| Input | Derived Class |
+|-------|---------------|
+| `is_expedited = true` | **Expedite** — drop everything |
+| `due_date IS NOT NULL` | **Fixed Date** — has a deadline |
+| `work_nature = 'improvement'` | **Deferred** — pull when capacity allows |
+| none of the above | **Standard** — committed delivery work |
+
+Columns on `runtime.work_items`:
+- `due_date TIMESTAMPTZ` — optional, shown on card when set
+- `is_expedited BOOLEAN DEFAULT FALSE` — urgency checkbox
+- `work_nature TEXT DEFAULT 'delivery'` — `'delivery'` or `'improvement'`
+
+The derived class is computed in SQL via CASE expression in board and detail queries.
+Board cards show accent color by derived class (red/amber/green/gray).
+Fixed-date cards always show the due date, even if it makes the card taller.
+
+The legacy `service_classes` table and `service_class_id` FK still exist for backward
+compatibility but are no longer used in the creation flow or card display.
 
 WIP allocation per class, spillover policies, and inheritance model are v2.
 
@@ -389,6 +420,8 @@ Always run `npm run seed:test` after a database reset — prints exact IDs and c
 4. **Migration 004** — `org_wip_limits`, `work_item_class_fields`, `work_item_links` tables.
    `key_prefix` on work item types, `sequence_number`/`display_key` on work items.
    Display key format: `PREFIX.SEQ` (e.g. BUG.42). Uses `runtime.work_item_seq` sequence.
+5. **Migration 005** — `due_date`, `is_expedited`, `work_nature` on work items.
+   Derived class of service computed in queries (expedite/fixed_date/standard/deferred).
 
 ---
 
@@ -403,8 +436,8 @@ Always run `npm run seed:test` after a database reset — prints exact IDs and c
 - Transition engine — two-phase prepare/execute, spawn actions, api_call fire-and-forget
 - Work item creation with pending state, display key generation (prefix.seq)
 - React + Vite + shadcn admin UI (cartography light theme, 14 pages):
-  Team Board (columns, cards, WIP indicators, org multiselect), Work Item Detail modal
-  (inline edit, transitions, comments, linking), Workflow Editor (stages, transitions),
+  Team Board (columns, cards, WIP indicators, org multiselect), Work Item Detail drawer
+  (inline edit, transitions, comments, linking, urgency/scheduling), Workflow Editor (stages, transitions),
   Service Catalog (WIT Classes with fields, WIT Types with workflow inheritance),
   Raw Tables browser, DB Console, Log Viewer, Summary
 - Org-level WIP limits (keyed by stage name, soft/hard enforcement)
@@ -466,7 +499,8 @@ These are not aspirational. When a product decision conflicts with one of these,
 
 ### What's been built (across all sessions):
 3 databases · ~50 PostgreSQL tables · 30+ JS source files · 40+ API endpoints ·
-9 seed scripts · 5 SQL schema files + 3 migrations · 5 workflows · 26 stages · 37 transitions ·
-React admin UI (14 pages, cartography light theme) · Work item detail modal ·
-Transition engine · Display keys · Org WIP limits · Class fields ·
+9 seed scripts · 5 SQL schema files + 4 migrations · 5 workflows · 26 stages · 37 transitions ·
+React admin UI (14 pages, cartography light theme, Tufte-inspired style system) ·
+Work item detail drawer · Derived class of service · Transition engine ·
+Display keys · Org WIP limits · Class fields ·
 Design document (flowos-design-doc.docx, ~950 paragraphs)

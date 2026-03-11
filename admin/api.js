@@ -405,6 +405,7 @@ router.get('/workflows', async (req, res, next) => {
              o.name AS owner_org_name
       FROM blueprint.workflows w
       JOIN blueprint.organizations o ON o.id = w.owner_org_id
+      WHERE w.is_active = true
       ORDER BY w.id ASC
     `)
 
@@ -414,6 +415,7 @@ router.get('/workflows', async (req, res, next) => {
         (SELECT COUNT(*) FROM blueprint.exit_criteria ec WHERE ec.stage_id = s.id AND ec.is_active = true) AS exit_criteria_count
       FROM blueprint.stages s
       JOIN blueprint.workflows w ON w.id = s.workflow_id
+      WHERE s.is_active = true
       ORDER BY s.workflow_id ASC, s.display_order ASC
     `)
 
@@ -422,8 +424,8 @@ router.get('/workflows', async (req, res, next) => {
         fs.name AS from_stage_name,
         ts.name AS to_stage_name
       FROM blueprint.stage_transitions st
-      JOIN blueprint.stages fs ON fs.id = st.from_stage_id
-      JOIN blueprint.stages ts ON ts.id = st.to_stage_id
+      JOIN blueprint.stages fs ON fs.id = st.from_stage_id AND fs.is_active = true
+      JOIN blueprint.stages ts ON ts.id = st.to_stage_id AND ts.is_active = true
       ORDER BY st.from_stage_id ASC
     `)
 
@@ -565,7 +567,7 @@ router.get('/work-item-type-classes', async (req, res, next) => {
         c.id, c.uri, c.name, c.description, c.is_system_default, c.is_active,
         c.owner_org_id, o.name AS owner_org_name,
         c.default_workflow_id, w.name AS default_workflow_name,
-        (SELECT COUNT(*) FROM blueprint.work_item_types wit WHERE wit.class_id = c.id) AS type_count
+        (SELECT COUNT(*) FROM blueprint.work_item_types wit WHERE wit.class_id = c.id AND wit.is_active = true) AS type_count
       FROM blueprint.work_item_type_classes c
       JOIN blueprint.organizations o ON o.id = c.owner_org_id
       LEFT JOIN blueprint.workflows w ON w.id = c.default_workflow_id
@@ -1084,14 +1086,14 @@ router.get('/workflows/:id', async (req, res, next) => {
                is_entry_stage, is_terminal, counts_toward_throughput,
                sla_hours, wip_limit, is_active
         FROM blueprint.stages
-        WHERE workflow_id = $1
+        WHERE workflow_id = $1 AND is_active = true
         ORDER BY display_order ASC
       `, [req.params.id]),
       query(`
         SELECT id, from_stage_id, to_stage_id, transition_label, transition_kind, requires_reason
         FROM blueprint.stage_transitions
         WHERE from_stage_id IN (
-          SELECT id FROM blueprint.stages WHERE workflow_id = $1
+          SELECT id FROM blueprint.stages WHERE workflow_id = $1 AND is_active = true
         )
       `, [req.params.id]),
     ])
@@ -1315,12 +1317,19 @@ router.patch('/stages/:id', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// DELETE /admin/api/stages/:id — deactivate stage (soft delete)
+// DELETE /admin/api/stages/:id — deactivate stage and remove its transitions
 router.delete('/stages/:id', async (req, res, next) => {
   try {
+    const stageId = req.params.id
+    // Remove transitions to/from this stage first
+    await query(
+      'DELETE FROM blueprint.stage_transitions WHERE from_stage_id = $1 OR to_stage_id = $1',
+      [stageId]
+    )
+    // Soft-delete the stage
     const result = await query(
       'UPDATE blueprint.stages SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
-      [req.params.id]
+      [stageId]
     )
     if (!result.rows.length) return res.status(404).json({ error: 'Stage not found' })
     res.json({ deleted: result.rows[0].id })
@@ -1403,13 +1412,18 @@ router.get('/board', async (req, res, next) => {
         SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id,
                wi.entered_current_stage_at, wi.updated_at, wi.display_key,
                wi.service_class_id, wi.description, wi.current_substate,
+               wi.due_date, wi.is_expedited, wi.work_nature,
                wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
                s.name AS current_stage_name, s.stage_class AS current_stage_class,
-               sc.name AS service_class_name, sc.color AS service_class_color
+               CASE
+                 WHEN wi.is_expedited = true THEN 'expedite'
+                 WHEN wi.due_date IS NOT NULL THEN 'fixed_date'
+                 WHEN wi.work_nature = 'improvement' THEN 'deferred'
+                 ELSE 'standard'
+               END AS derived_service_class
         FROM runtime.work_items wi
         JOIN blueprint.work_item_types wit     ON wit.id = wi.work_item_type_id
         JOIN blueprint.stages s                ON s.id   = wi.current_stage_id
-        LEFT JOIN blueprint.service_classes sc ON sc.id  = wi.service_class_id
         WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active' AND s.workflow_id = $2
         ORDER BY wi.entered_current_stage_at ASC
       `, [orgId, workflow_id]),
@@ -1446,7 +1460,7 @@ router.get('/board', async (req, res, next) => {
 
 router.post('/work-items', async (req, res, next) => {
   try {
-    const { title, work_item_type_id, owner_org_id, service_class_id, description } = req.body
+    const { title, work_item_type_id, owner_org_id, service_class_id, description, due_date, is_expedited, work_nature } = req.body
     if (!title?.trim())       return res.status(400).json({ error: 'title is required' })
     if (!work_item_type_id)   return res.status(400).json({ error: 'work_item_type_id is required' })
     if (!owner_org_id)        return res.status(400).json({ error: 'owner_org_id is required' })
@@ -1457,6 +1471,9 @@ router.post('/work-items', async (req, res, next) => {
       owner_org_id:       parseInt(owner_org_id),
       service_class_id:   service_class_id ? parseInt(service_class_id) : undefined,
       description:        description?.trim() || undefined,
+      due_date:           due_date || undefined,
+      is_expedited:       !!is_expedited,
+      work_nature:        work_nature || 'delivery',
     }, 1 /* stub userId */)
 
     res.status(201).json(workItem)
@@ -1488,7 +1505,7 @@ router.get('/class-fields', async (req, res, next) => {
     if (!classId) return res.status(400).json({ error: 'class_id is required' })
     const result = await query(`
       SELECT * FROM blueprint.work_item_class_fields
-      WHERE class_id = $1
+      WHERE class_id = $1 AND is_active = true
       ORDER BY display_order ASC, id ASC
     `, [classId])
     res.json({ rows: result.rows, count: result.rowCount })
@@ -1636,16 +1653,21 @@ router.get('/work-items/:id', async (req, res, next) => {
         wi.field_values, wi.pending_missing_fields,
         wi.parent_id, wi.created_at, wi.updated_at, wi.entered_current_stage_at,
         wi.current_stage_id, wi.workflow_id, wi.service_class_id,
+        wi.due_date, wi.is_expedited, wi.work_nature,
         wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
         wit.key_prefix,
         s.name AS current_stage_name, s.stage_class AS current_stage_class, s.is_terminal,
-        sc.name AS service_class_name, sc.color AS service_class_color,
-        o.name AS org_name, o.slug AS org_slug, o.id AS owner_org_id
+        o.name AS org_name, o.slug AS org_slug, o.id AS owner_org_id,
+        CASE
+          WHEN wi.is_expedited = true THEN 'expedite'
+          WHEN wi.due_date IS NOT NULL THEN 'fixed_date'
+          WHEN wi.work_nature = 'improvement' THEN 'deferred'
+          ELSE 'standard'
+        END AS derived_service_class
       FROM runtime.work_items wi
       JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
       JOIN blueprint.stages s ON s.id = wi.current_stage_id
       JOIN blueprint.organizations o ON o.id = wi.owner_org_id
-      LEFT JOIN blueprint.service_classes sc ON sc.id = wi.service_class_id
       WHERE wi.id = $1
     `, [req.params.id])
     if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
@@ -1656,12 +1678,15 @@ router.get('/work-items/:id', async (req, res, next) => {
 // PATCH /admin/api/work-items/:id — update title, description, field_values
 router.patch('/work-items/:id', async (req, res, next) => {
   try {
-    const { title, description, field_values } = req.body
+    const { title, description, field_values, due_date, is_expedited, work_nature } = req.body
     const fields = []
     const vals   = []
-    if (title !== undefined)       { fields.push(`title = $${fields.length + 1}`);       vals.push(title.trim()) }
-    if (description !== undefined) { fields.push(`description = $${fields.length + 1}`); vals.push(description || null) }
-    if (field_values !== undefined) { fields.push(`field_values = $${fields.length + 1}`); vals.push(JSON.stringify(field_values)) }
+    if (title !== undefined)        { fields.push(`title = $${fields.length + 1}`);        vals.push(title.trim()) }
+    if (description !== undefined)  { fields.push(`description = $${fields.length + 1}`);  vals.push(description || null) }
+    if (field_values !== undefined) { fields.push(`field_values = $${fields.length + 1}`);  vals.push(JSON.stringify(field_values)) }
+    if (due_date !== undefined)     { fields.push(`due_date = $${fields.length + 1}`);      vals.push(due_date || null) }
+    if (is_expedited !== undefined) { fields.push(`is_expedited = $${fields.length + 1}`);  vals.push(!!is_expedited) }
+    if (work_nature !== undefined)  { fields.push(`work_nature = $${fields.length + 1}`);   vals.push(work_nature) }
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
     fields.push(`updated_at = NOW()`)
     vals.push(parseInt(req.params.id))

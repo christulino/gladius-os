@@ -64,7 +64,7 @@ export function DataTable({
     <div className={cn('flex flex-col min-h-0', className)}>
       {/* Table */}
       <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-xs font-mono">
+        <table className="w-full border-collapse text-xs">
           <thead className="sticky top-0 z-10 bg-card">
             {table.getHeaderGroups().map(hg => (
               <tr key={hg.id}>
@@ -75,7 +75,7 @@ export function DataTable({
                     <th
                       key={header.id}
                       className={cn(
-                        'px-3 py-2 text-left text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border whitespace-nowrap select-none',
+                        'px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground border-b border-border whitespace-nowrap select-none',
                         canSort && 'cursor-pointer hover:text-foreground'
                       )}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
@@ -106,12 +106,12 @@ export function DataTable({
                 key={row.id}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                 className={cn(
-                  'border-b border-border/50 hover:bg-black/[0.025] transition-colors',
+                  'border-b border-border/40 hover:bg-black/[0.03] transition-colors',
                   onRowClick && 'cursor-pointer'
                 )}
               >
                 {row.getVisibleCells().map(cell => (
-                  <td key={cell.id} className="px-3 py-1.5 text-foreground max-w-[280px]">
+                  <td key={cell.id} className="px-3 py-1.5 text-xs text-foreground max-w-[280px]">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}
@@ -134,7 +134,7 @@ export function DataTable({
             onClick={() => table.nextPage()}
             disabled={curPage >= totalPages - 1}
           >Next →</Button>
-          <span className="ml-auto text-[10px] text-muted-foreground font-mono">
+          <span className="ml-auto text-xs text-muted-foreground">
             {curPage * curSize + 1}–{Math.min((curPage + 1) * curSize, totalCount)} of {totalCount}
           </span>
         </div>

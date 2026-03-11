@@ -115,32 +115,32 @@ function ClassFieldsEditor({ classId }) {
     } catch (err) { console.error(err) }
   }
 
-  if (loading) return <span className="font-mono text-[10px] text-muted-foreground">Loading fields...</span>
+  if (loading) return <span className="text-xs text-muted-foreground">Loading fields...</span>
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Class Fields</span>
+        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Class Fields</span>
         <button
           onClick={() => setAdding(!adding)}
-          className="font-mono text-[10px] text-primary hover:underline"
+          className="text-xs text-primary hover:underline"
         >
           {adding ? 'cancel' : '+ add field'}
         </button>
       </div>
 
       {fields.length === 0 && !adding && (
-        <span className="font-mono text-[10px] text-muted-foreground/60">No fields defined yet.</span>
+        <span className="text-xs text-muted-foreground/60">No fields defined yet.</span>
       )}
 
       {fields.map(f => (
         <div key={f.id} className="flex items-center gap-2 text-xs border border-border/50 rounded px-2.5 py-1.5">
-          <span className="font-mono text-[10px] text-muted-foreground w-20 truncate">{f.field_key}</span>
+          <span className="text-xs text-muted-foreground w-20 truncate">{f.field_key}</span>
           <span className="flex-1 truncate">{f.field_label}</span>
-          <Badge variant="muted" className="text-[8px]">{f.field_type}</Badge>
+          <Badge variant="muted">{f.field_type}</Badge>
           <label className="flex items-center gap-1 cursor-pointer">
             <input type="checkbox" checked={f.is_required} onChange={() => toggleRequired(f)} className="accent-primary" />
-            <span className="font-mono text-[9px] text-muted-foreground">req</span>
+            <span className="text-xs text-muted-foreground">req</span>
           </label>
           <button onClick={() => removeField(f)} className="text-destructive/60 hover:text-destructive text-xs">×</button>
         </div>
@@ -153,7 +153,7 @@ function ClassFieldsEditor({ classId }) {
               value={newField.field_key}
               onChange={e => setNewField({ ...newField, field_key: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
               placeholder="field_key"
-              className="text-xs font-mono bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
+              className="text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
             />
             <input
               value={newField.field_label}
@@ -166,15 +166,15 @@ function ClassFieldsEditor({ classId }) {
             <select
               value={newField.field_type}
               onChange={e => setNewField({ ...newField, field_type: e.target.value })}
-              className="text-xs bg-card border border-border rounded px-2 py-1.5 font-mono flex-1"
+              className="text-xs bg-card border border-border rounded px-2 py-1.5 flex-1"
             >
               {FIELD_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <label className="flex items-center gap-1 cursor-pointer">
               <input type="checkbox" checked={newField.is_required} onChange={e => setNewField({ ...newField, is_required: e.target.checked })} className="accent-primary" />
-              <span className="font-mono text-[9px] text-muted-foreground">required</span>
+              <span className="text-xs text-muted-foreground">required</span>
             </label>
-            <Button size="sm" className="font-mono text-xs" onClick={addField}>Add</Button>
+            <Button size="sm" onClick={addField}>Add</Button>
           </div>
         </div>
       )}
@@ -203,8 +203,8 @@ export default function WitClasses() {
     {
       accessorKey: 'default_workflow_name', header: 'Default Workflow',
       cell: ({ getValue }) => getValue()
-        ? <span className="font-mono text-[10px] text-muted-foreground">{getValue()}</span>
-        : <span className="font-mono text-[10px] text-muted-foreground/40">none</span>,
+        ? <span className="text-xs text-muted-foreground">{getValue()}</span>
+        : <span className="text-xs text-muted-foreground/40">none</span>,
     },
     {
       accessorKey: 'owner_org_name', header: 'Owner',
@@ -213,7 +213,7 @@ export default function WitClasses() {
     {
       accessorKey: 'type_count', header: 'Types Built',
       cell: ({ getValue }) => (
-        <span className="font-mono text-[11px] text-muted-foreground text-right block">{getValue()}</span>
+        <span className="text-xs text-muted-foreground text-right block">{getValue()}</span>
       ),
     },
     {
@@ -236,7 +236,7 @@ export default function WitClasses() {
         <PanelHeader>
           <div className="flex flex-col gap-0.5">
             <PanelTitle>Work Item Type Classes</PanelTitle>
-            <p className="font-mono text-[10px] text-muted-foreground">
+            <p className="text-xs text-muted-foreground">
               Global templates. Orgs create their own types based on these classes.
             </p>
           </div>

@@ -8,7 +8,7 @@
     /* ── Cartography Theme ─────────────────────────────────────────────────── */
     /* Surfaces — warm parchment scale */
     --background:           38 18% 88%;   /* #E8E1D5 — aged parchment */
-    --foreground:           28 22% 11%;   /* #1D1610 — near-black, warm */
+    --foreground:           28 25% 10%;   /* #1D1610 — near-black, warm */
 
     --card:                 36 26% 96%;   /* #F6F2EB — light paper */
     --card-foreground:      28 22% 11%;
@@ -26,7 +26,7 @@
 
     /* Muted — slightly darker parchment for table headers, etc. */
     --muted:                36 14% 83%;   /* #D9D1C4 */
-    --muted-foreground:     28 13% 46%;   /* #7C7163 — warm stone */
+    --muted-foreground:     28 16% 38%;   /* #7C7163 — warm stone */
 
     /* Accent — muted map blue (water, lakes) */
     --accent:               208 40% 36%;  /* #356D91 */
@@ -37,7 +37,7 @@
     --destructive-foreground: 38 30% 96%;
 
     /* Structural */
-    --border:               35 18% 75%;   /* #C7BFB0 — warm tan line */
+    --border:               35 20% 70%;   /* #C7BFB0 — warm tan line */
     --input:                35 18% 75%;
     --ring:                 152 38% 28%;  /* same as primary */
 
@@ -65,5 +65,4 @@
   ::-webkit-scrollbar-thumb:hover { background: hsl(28 13% 36%); }
 }
 
-.font-mono { font-family: 'Inter', 'Helvetica Neue', Helvetica, -apple-system, sans-serif; }
 .font-sans  { font-family: 'Inter', 'Helvetica Neue', Helvetica, -apple-system, sans-serif; }

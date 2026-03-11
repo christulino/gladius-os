@@ -34,13 +34,13 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex flex-col gap-0 p-0">
         <SheetHeader className="px-4 pt-4 pb-3 border-b border-border">
-          <SheetTitle className="font-mono text-sm">New Work Item</SheetTitle>
+          <SheetTitle className="text-sm font-semibold">New Work Item</SheetTitle>
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search types..."
-            className="mt-2 w-full bg-background border border-border rounded text-xs font-mono text-foreground px-2.5 py-2 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
+            className="mt-2 w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
             autoFocus
           />
         </SheetHeader>
@@ -48,19 +48,19 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
         <div className="flex-1 overflow-y-auto">
           {Object.keys(grouped).length === 0 ? (
             <div className="flex items-center justify-center h-32">
-              <span className="font-mono text-xs text-muted-foreground">No types found</span>
+              <span className="text-xs text-muted-foreground">No types found</span>
             </div>
           ) : (
             Object.entries(grouped).map(([className, items]) => (
               <div key={className}>
-                <div className="font-mono text-[10px] text-muted-foreground uppercase tracking-widest px-4 py-2 border-b border-border/50 bg-card/50 sticky top-0">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-2 border-b border-border/50 bg-card/50 sticky top-0">
                   {className}
                 </div>
                 {items.map(type => (
                   <button
                     key={type.id}
                     onClick={() => handleSelect(type)}
-                    className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-white/[0.03] border-b border-border/30 transition-colors"
+                    className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-black/[0.03] border-b border-border/30 transition-colors"
                   >
                     <div className="flex-shrink-0 mt-0.5">
                       {type.icon ? (
@@ -75,7 +75,7 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
                     <div className="min-w-0 flex flex-col gap-0.5">
                       <span className="text-xs font-medium text-foreground">{type.name}</span>
                       {type.description && (
-                        <span className="font-mono text-[10px] text-muted-foreground line-clamp-2 leading-relaxed">
+                        <span className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                           {type.description}
                         </span>
                       )}
@@ -97,7 +97,7 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
           <Button
             variant="outline"
             size="sm"
-            className="w-full font-mono text-xs"
+            className="w-full text-xs"
             onClick={() => {
               onOpenChange(false)
               onManageTypes()

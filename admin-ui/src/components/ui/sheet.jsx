@@ -42,7 +42,7 @@ const SheetHeader = ({ className, ...props }) => (
   <div className={cn('flex flex-col gap-1 p-4 border-b border-border', className)} {...props} />
 )
 const SheetTitle = forwardRef(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn('font-mono text-[11px] uppercase tracking-widest text-primary', className)} {...props} />
+  <DialogPrimitive.Title ref={ref} className={cn('text-sm font-semibold text-foreground', className)} {...props} />
 ))
 SheetTitle.displayName = 'SheetTitle'
 const SheetDescription = forwardRef(({ className, ...props }, ref) => (

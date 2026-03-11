@@ -24,7 +24,7 @@ export default function Workflows() {
             <Badge variant="blue">v{wf.version}</Badge>
             <span className="font-medium text-sm">{wf.name}</span>
             {wf.description && <span className="text-xs text-muted-foreground">{wf.description}</span>}
-            <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            <span className="ml-auto text-xs text-muted-foreground">
               {wf.stages.length} stages · {wf.transitions.length} transitions
             </span>
           </div>
@@ -35,7 +35,7 @@ export default function Workflows() {
                 {i > 0 && <span className="text-border text-xs">→</span>}
                 <span
                   className={[
-                    'font-mono text-[10px] px-2 py-0.5 rounded border',
+                    'text-xs px-2 py-0.5 rounded border',
                     s.is_entry_stage ? 'border-primary text-primary'
                     : s.stage_class === 'done' ? 'border-primary/50 text-primary/70'
                     : s.stage_class === 'cancelled' ? 'border-destructive/50 text-destructive/70'
@@ -50,17 +50,17 @@ export default function Workflows() {
             ))}
           </div>
           {/* Transitions table */}
-          <table className="w-full text-xs font-mono">
+          <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border">
                 {['From', 'To', 'Label', 'Kind', 'Requires Reason'].map(h => (
-                  <th key={h} className="px-3 py-1.5 text-left text-[10px] uppercase tracking-wider text-muted-foreground">{h}</th>
+                  <th key={h} className="px-3 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {wf.transitions.map(t => (
-                <tr key={t.id} className="border-b border-border/50 hover:bg-white/[0.02]">
+                <tr key={t.id} className="border-b border-border/50 hover:bg-black/[0.03]">
                   <td className="px-3 py-1.5">{t.from_stage_name}</td>
                   <td className="px-3 py-1.5">{t.to_stage_name}</td>
                   <td className="px-3 py-1.5 text-muted-foreground">{t.transition_label ?? '—'}</td>

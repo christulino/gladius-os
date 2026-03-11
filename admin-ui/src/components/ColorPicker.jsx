@@ -68,7 +68,7 @@ export function ColorPicker({ value, onChange }) {
           onChange={handleHexInput}
           placeholder="#000000"
           maxLength={7}
-          className="w-28 bg-background border border-border rounded text-sm font-mono text-foreground px-2.5 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
+          className="w-28 bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
         />
       </div>
 
