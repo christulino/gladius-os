@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '@/lib/api'
 import { useApi } from '@/hooks/useApi'
-import { formatElapsed } from '@/lib/utils'
 import { WorkItemCard } from '@/components/WorkItemCard'
+import { WorkItemDetail } from '@/components/WorkItemDetail'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 
 // ─── Multiselect Org Picker ───────────────────────────────────────────────────
@@ -79,82 +78,53 @@ function OrgMultiSelect({ orgs, selected, onChange }) {
   )
 }
 
-// ─── Work Item Detail Sheet ───────────────────────────────────────────────────
-
-function ItemDetail({ item, open, onOpenChange }) {
-  const [elapsed, setElapsed] = useState(() =>
-    item ? formatElapsed(item.entered_current_stage_at) : ''
-  )
-
-  useEffect(() => {
-    if (!item) return
-    setElapsed(formatElapsed(item.entered_current_stage_at))
-    const id = setInterval(() => {
-      setElapsed(formatElapsed(item.entered_current_stage_at))
-    }, 60_000)
-    return () => clearInterval(id)
-  }, [item])
-
-  if (!item) return null
-  const accentColor = item.service_class_color || 'hsl(var(--border))'
-
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex flex-col gap-0">
-        <SheetHeader className="pb-4 border-b border-border">
-          <SheetTitle className="font-mono text-sm leading-snug">{item.title}</SheetTitle>
-          <div className="flex flex-wrap gap-2 mt-2">
-            <span
-              className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border"
-              style={{ borderColor: item.work_item_type_color || 'hsl(var(--border))', color: item.work_item_type_color || 'hsl(var(--muted-foreground))' }}
-            >
-              {item.work_item_type_icon && `${item.work_item_type_icon} `}{item.work_item_type_name}
-            </span>
-            <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm border border-border text-muted-foreground">
-              {item.current_stage_name}
-            </span>
-            {item.service_class_name && (
-              <span
-                className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-sm"
-                style={{ background: `${accentColor}22`, color: accentColor }}
-              >
-                {item.service_class_name}
-              </span>
-            )}
-          </div>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
-          <div className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Time in stage</span>
-            <span className="font-mono text-2xl tabular-nums">{elapsed}</span>
-            <span className="font-mono text-[10px] text-muted-foreground/50">DDD:HH:MM</span>
-          </div>
-          {item.description && (
-            <div className="flex flex-col gap-1.5">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Description</span>
-              <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{item.description}</p>
-            </div>
-          )}
-          <div className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">URI</span>
-            <span className="font-mono text-[10px] text-muted-foreground/60 break-all">{item.uri}</span>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
 // ─── WIP Indicator ────────────────────────────────────────────────────────────
 
-function WipIndicator({ count, limit }) {
-  if (!limit) return <span className="font-mono text-[10px] text-muted-foreground">{count}</span>
+function WipIndicator({ count, limit, onEdit, editable }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  if (editing) {
+    return (
+      <input
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false)
+          const val = parseInt(draft)
+          if (val > 0) onEdit?.(val)
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.target.blur() }
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        className="w-12 font-mono text-[10px] text-center bg-background border border-primary rounded px-1 py-0.5 focus:outline-none"
+        autoFocus
+      />
+    )
+  }
+
+  if (!limit) {
+    return (
+      <span
+        className={`font-mono text-[10px] text-muted-foreground ${editable ? 'cursor-pointer hover:text-primary' : ''}`}
+        onClick={() => { if (editable) { setDraft(''); setEditing(true) } }}
+        title={editable ? 'Click to set WIP limit' : undefined}
+      >
+        {count}
+      </span>
+    )
+  }
+
   const over = count > limit
   return (
-    <span className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
-      over ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border bg-muted/60 text-muted-foreground'
-    }`}>
+    <span
+      className={`font-mono text-[10px] px-1.5 py-0.5 rounded border ${
+        over ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border bg-muted/60 text-muted-foreground'
+      } ${editable ? 'cursor-pointer' : ''}`}
+      onClick={() => { if (editable) { setDraft(String(limit)); setEditing(true) } }}
+      title={editable ? 'Click to edit WIP limit' : undefined}
+    >
       {count}/{limit}
     </span>
   )
@@ -169,11 +139,11 @@ export default function Board({ setTab }) {
       return stored ? JSON.parse(stored) : []
     } catch { return [] }
   })
-  const [selectedItem, setSelectedItem] = useState(null)
-  const [detailOpen,   setDetailOpen]   = useState(false)
-  const [libraryOpen,  setLibraryOpen]  = useState(false)
-  const [selectedType, setSelectedType] = useState(null)
-  const [createOpen,   setCreateOpen]   = useState(false)
+  const [detailItemId, setDetailItemId]   = useState(null)
+  const [detailOpen,   setDetailOpen]     = useState(false)
+  const [libraryOpen,  setLibraryOpen]    = useState(false)
+  const [selectedType, setSelectedType]   = useState(null)
+  const [createOpen,   setCreateOpen]     = useState(false)
 
   const { data: orgsData } = useApi(() => api.organizations(), [])
 
@@ -192,6 +162,7 @@ export default function Board({ setTab }) {
 
   // Use first selected org as primary (for workflow resolution)
   const primaryOrgId = selectedOrgIds[0] ?? null
+  const isMultiOrg = selectedOrgIds.length > 1
 
   // Board data keyed by org
   const { data: boardData, loading: boardLoading, error: boardError, reload: reloadBoard } = useApi(
@@ -227,6 +198,7 @@ export default function Board({ setTab }) {
 
   const stages = boardData?.stages ?? []
   const allItems = [...(boardData?.items ?? []), ...extraItems]
+  const wipLimits = boardData?.wip_limits ?? {}
 
   // Group items by stage
   const itemsByStage = {}
@@ -252,6 +224,16 @@ export default function Board({ setTab }) {
       owner_org_id:      primaryOrgId,
       service_class_id:  values.service_class_id || undefined,
     })
+  }
+
+  async function handleWipEdit(stageName, newLimit) {
+    if (!primaryOrgId) return
+    try {
+      await api.setOrgWipLimit({ org_id: primaryOrgId, stage_name: stageName, wip_limit: newLimit })
+      reloadBoard()
+    } catch (err) {
+      console.error('Failed to set WIP limit:', err)
+    }
   }
 
   return (
@@ -317,18 +299,25 @@ export default function Board({ setTab }) {
           <div className="flex flex-row gap-3 h-full px-5 py-4 w-max">
             {stages.map(stage => {
               const stageItems = itemsByStage[stage.id] ?? []
-              const wipOver    = stage.wip_limit && stageItems.length > stage.wip_limit
+              const orgWip = wipLimits[stage.name]
+              const wipLimit = isMultiOrg ? null : (orgWip?.wip_limit ?? stage.wip_limit)
+              const wipOver = wipLimit && stageItems.length > wipLimit
 
               return (
                 <div key={stage.id} className="flex flex-col w-[240px] flex-shrink-0 h-full">
                   {/* Column header */}
-                  <div className={`flex items-center gap-2 px-2 pb-2 mb-2 border-b flex-shrink-0 ${
-                    wipOver ? 'border-destructive/40' : 'border-border'
+                  <div className={`flex items-center gap-2 px-3 py-2 mb-2 rounded-t flex-shrink-0 ${
+                    wipOver ? 'bg-destructive/10 border border-destructive/40' : 'bg-muted/30 border border-transparent'
                   }`}>
-                    <span className="font-mono text-[11px] font-medium text-foreground truncate flex-1">
+                    <span className="text-sm font-semibold text-foreground truncate flex-1">
                       {stage.name}
                     </span>
-                    <WipIndicator count={stageItems.length} limit={stage.wip_limit} />
+                    <WipIndicator
+                      count={stageItems.length}
+                      limit={wipLimit}
+                      editable={!isMultiOrg}
+                      onEdit={(val) => handleWipEdit(stage.name, val)}
+                    />
                   </div>
 
                   {/* Cards */}
@@ -339,7 +328,7 @@ export default function Board({ setTab }) {
                       </div>
                     ) : (
                       stageItems.map(item => (
-                        <WorkItemCard key={item.id} item={item} onClick={i => { setSelectedItem(i); setDetailOpen(true) }} />
+                        <WorkItemCard key={item.id} item={item} onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }} />
                       ))
                     )}
                   </div>
@@ -369,8 +358,13 @@ export default function Board({ setTab }) {
         onSaved={() => reloadBoard()}
       />
 
-      {/* Item Detail */}
-      <ItemDetail item={selectedItem} open={detailOpen} onOpenChange={setDetailOpen} />
+      {/* Work Item Detail Modal */}
+      <WorkItemDetail
+        workItemId={detailItemId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        onChanged={reloadBoard}
+      />
     </div>
   )
 }

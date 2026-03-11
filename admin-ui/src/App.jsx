@@ -10,7 +10,7 @@ import Users         from '@/pages/Users'
 import WitClasses    from '@/pages/WitClasses'
 import WitTypes      from '@/pages/WitTypes'
 import WorkItems     from '@/pages/WorkItems'
-import Workflows     from '@/pages/Workflows'
+import WorkflowManager from '@/pages/WorkflowManager'
 import History       from '@/pages/History'
 import RawTables     from '@/pages/RawTables'
 import LogViewer     from '@/pages/LogViewer'
@@ -28,7 +28,7 @@ const NAV = [
 
   { id: 'witclasses',    label: 'Type Classes',    section: 'Catalog' },
   { id: 'wittypes',      label: 'Work Item Types', section: null },
-  { id: 'workflows',     label: 'Workflows',       section: null },
+  { id: 'workflows',     label: 'Workflow Editor', section: null },
 
   { id: 'workitems',     label: 'Work Items',      section: 'Runtime' },
   { id: 'history',       label: 'Transitions',     section: null },
@@ -47,7 +47,7 @@ const PAGES = {
   users:         Users,
   witclasses:    WitClasses,
   wittypes:      WitTypes,
-  workflows:     Workflows,
+  workflows:     WorkflowManager,
   workitems:     WorkItems,
   history:       History,
   raw:           RawTables,
@@ -122,7 +122,7 @@ export default function App() {
         {/* Main */}
         <main className={[
           'flex-1 flex flex-col min-h-0',
-          tab === 'board' ? 'overflow-hidden' : 'overflow-auto p-5 gap-4',
+          tab === 'board' || tab === 'workflows' ? 'overflow-hidden' : 'overflow-auto p-5 gap-4',
         ].join(' ')}>
           <Page setTab={setTab} />
         </main>

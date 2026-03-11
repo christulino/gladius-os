@@ -1,12 +1,13 @@
 /** @type {import('tailwindcss').Config} */
+// Note: using export default (ESM) — tailwindcss handles this via jiti
 export default {
   darkMode: ['class'],
   content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
   theme: {
     extend: {
       fontFamily: {
-        mono: ['"IBM Plex Mono"', 'monospace'],
-        sans: ['"IBM Plex Sans"', 'sans-serif'],
+        mono: ['Inter', 'Helvetica Neue', 'Helvetica', '-apple-system', 'sans-serif'],
+        sans: ['Inter', 'Helvetica Neue', 'Helvetica', '-apple-system', 'sans-serif'],
       },
       colors: {
         // Flow OS design tokens mapped to shadcn CSS variable names
