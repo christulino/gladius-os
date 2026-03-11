@@ -392,4 +392,51 @@ export const workflows = [
     ],
   },
 
+  // =========================================================================
+  // 5. PERSONAL KANBAN
+  // Lightweight personal workflow for individual task management.
+  // Used by personal work items (owner_user_id set, no org).
+  // =========================================================================
+  {
+    name:        'Personal Kanban',
+    description: 'Simple personal task board. Inbox → Doing → Done.',
+    version:     '1.0.0',
+    is_system_default: true,
+    stages: [
+      {
+        key:           'inbox',
+        name:          'Inbox',
+        stage_class:   'intake',
+        stage_type:    'waiting',
+        display_order: 1,
+        is_entry_stage: true,
+        is_terminal:   false,
+      },
+      {
+        key:           'doing',
+        name:          'Doing',
+        stage_class:   'in-progress',
+        stage_type:    'working',
+        display_order: 2,
+        is_entry_stage: false,
+        is_terminal:   false,
+      },
+      {
+        key:           'done',
+        name:          'Done',
+        stage_class:   'done',
+        stage_type:    'waiting',
+        display_order: 3,
+        is_entry_stage: false,
+        is_terminal:   true,
+      },
+    ],
+    transitions: [
+      { from: 'inbox', to: 'doing', label: 'Start',   kind: 'forward'  },
+      { from: 'doing', to: 'done',  label: 'Complete', kind: 'forward'  },
+      { from: 'doing', to: 'inbox', label: 'Pause',    kind: 'backward' },
+      { from: 'done',  to: 'doing', label: 'Reopen',   kind: 'backward' },
+    ],
+  },
+
 ]

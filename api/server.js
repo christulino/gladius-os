@@ -11,6 +11,7 @@
 
 import express      from 'express'
 import { readFile } from 'fs/promises'
+import { mkdir }    from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
@@ -30,6 +31,10 @@ initLogger()
 
 const app  = express()
 const PORT = process.env.PORT || 3000
+
+// Ensure uploads directory exists
+const uploadsDir = join(__dirname, '../public/uploads/avatars')
+mkdir(uploadsDir, { recursive: true }).catch(() => {})
 
 // =============================================================================
 // MIDDLEWARE
@@ -54,6 +59,9 @@ app.use('/v1/organizations', orgRoutes)
 app.use('/v1/catalog',       catalogRoutes)
 app.use('/v1/board',         boardRoutes)
 app.use('/admin/api',        adminApiRoutes)
+
+// Serve uploaded files (avatars, etc.)
+app.use('/uploads', express.static(join(__dirname, '../public/uploads')))
 
 // Serve React admin UI from admin-ui/dist
 // Falls back gracefully if build doesn't exist yet

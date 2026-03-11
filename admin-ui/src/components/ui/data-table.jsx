@@ -13,6 +13,7 @@ import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 export function DataTable({
   columns,
   data,
+  onRowClick,
   // For server-side sorting/paging pass these + onSortChange + onPageChange
   pageCount,
   manualSorting    = false,
@@ -101,7 +102,14 @@ export function DataTable({
             ) : rows.length === 0 ? (
               <tr><td colSpan={columns.length} className="px-3 py-10 text-center text-muted-foreground">No results</td></tr>
             ) : rows.map(row => (
-              <tr key={row.id} className="border-b border-border/50 hover:bg-white/[0.02] transition-colors">
+              <tr
+                key={row.id}
+                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                className={cn(
+                  'border-b border-border/50 hover:bg-black/[0.025] transition-colors',
+                  onRowClick && 'cursor-pointer'
+                )}
+              >
                 {row.getVisibleCells().map(cell => (
                   <td key={cell.id} className="px-3 py-1.5 text-foreground max-w-[280px]">
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}

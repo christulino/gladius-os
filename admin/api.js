@@ -7,9 +7,18 @@
  * In production these should be behind authentication.
  */
 
-import { Router } from 'express'
-import { query }  from '../db/postgres.js'
+import { Router }     from 'express'
+import { query }      from '../db/postgres.js'
 import { getBuffer, sseHandler } from './logger.js'
+import { generateUri } from '../core/uri.js'
+import { createWorkItem, ValidationError } from '../runtime/workItems.js'
+import { writeFile }  from 'fs/promises'
+import { mkdir }      from 'fs/promises'
+import { randomUUID } from 'crypto'
+import { fileURLToPath } from 'url'
+import { dirname, join, extname } from 'path'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const router = Router()
 
@@ -46,6 +55,229 @@ const ALLOWED_TABLES = {
 }
 
 // =============================================================================
+// ORG TYPES
+// =============================================================================
+
+router.get('/org-types', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT id, name, slug, description, sort_order, is_active, created_at
+      FROM blueprint.org_types
+      ORDER BY sort_order ASC, name ASC
+    `)
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/org-types', async (req, res, next) => {
+  try {
+    const { name, slug, description, sort_order } = req.body
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+    if (!slug?.trim()) return res.status(400).json({ error: 'slug is required' })
+
+    const result = await query(`
+      INSERT INTO blueprint.org_types (name, slug, description, sort_order)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `, [name.trim(), slug.trim().toLowerCase(), description?.trim() || null, sort_order ?? 0])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Slug already exists' })
+    next(err)
+  }
+})
+
+router.patch('/org-types/:id', async (req, res, next) => {
+  try {
+    const { name, slug, description, sort_order, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.org_types
+      SET
+        name        = COALESCE($1, name),
+        slug        = COALESCE($2, slug),
+        description = COALESCE($3, description),
+        sort_order  = COALESCE($4, sort_order),
+        is_active   = COALESCE($5, is_active),
+        updated_at  = NOW()
+      WHERE id = $6
+      RETURNING *
+    `, [
+      name?.trim() || null,
+      slug?.trim().toLowerCase() || null,
+      description !== undefined ? (description?.trim() || null) : null,
+      sort_order ?? null,
+      is_active ?? null,
+      req.params.id,
+    ])
+    if (!result.rows.length) return res.status(404).json({ error: 'Org type not found' })
+    res.json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Slug already exists' })
+    next(err)
+  }
+})
+
+// =============================================================================
+// ROLES
+// =============================================================================
+
+router.get('/roles', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT
+        r.id, r.uri, r.name, r.description, r.is_system_default, r.is_active,
+        r.org_id, o.name AS org_name, o.slug AS org_slug,
+        (
+          SELECT json_agg(json_build_object(
+            'slug', p.slug, 'name', p.name, 'scope', p.scope, 'granted', rp.granted
+          ) ORDER BY p.scope, p.slug)
+          FROM blueprint.role_permissions rp
+          JOIN blueprint.permissions p ON p.id = rp.permission_id
+          WHERE rp.role_id = r.id AND rp.org_id IS NULL
+        ) AS permissions
+      FROM blueprint.roles r
+      JOIN blueprint.organizations o ON o.id = r.org_id
+      ORDER BY r.org_id ASC, r.is_system_default DESC, r.name ASC
+    `)
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/roles', async (req, res, next) => {
+  try {
+    const { name, description, org_id } = req.body
+    if (!name?.trim())  return res.status(400).json({ error: 'name is required' })
+    if (!org_id)        return res.status(400).json({ error: 'org_id is required' })
+
+    const orgCheck = await query('SELECT id, slug FROM blueprint.organizations WHERE id = $1', [org_id])
+    if (!orgCheck.rows.length) return res.status(404).json({ error: 'Organization not found' })
+
+    const uri = generateUri(orgCheck.rows[0].slug, 'roles')
+    const result = await query(`
+      INSERT INTO blueprint.roles (uri, org_id, name, description, is_system_default)
+      VALUES ($1, $2, $3, $4, false)
+      RETURNING *
+    `, [uri, org_id, name.trim(), description?.trim() || null])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'A role with that name already exists in this org' })
+    next(err)
+  }
+})
+
+router.patch('/roles/:id', async (req, res, next) => {
+  try {
+    const { name, description, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.roles
+      SET name        = COALESCE($1, name),
+          description = COALESCE($2, description),
+          is_active   = COALESCE($3, is_active),
+          updated_at  = NOW()
+      WHERE id = $4
+      RETURNING *
+    `, [name?.trim() || null, description !== undefined ? (description?.trim() || null) : null, is_active ?? null, req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Role not found' })
+    res.json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'A role with that name already exists in this org' })
+    next(err)
+  }
+})
+
+// =============================================================================
+// PERMISSIONS
+// =============================================================================
+
+router.get('/permissions', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT id, slug, name, description, scope, category
+      FROM blueprint.permissions
+      WHERE is_active = true
+      ORDER BY scope ASC, category ASC, name ASC
+    `)
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// GET /admin/api/role-permissions?role_id=N&org_id=N
+// Returns the effective permission set for a role, with override status.
+router.get('/role-permissions', async (req, res, next) => {
+  try {
+    const { role_id, org_id } = req.query
+    if (!role_id) return res.status(400).json({ error: 'role_id is required' })
+
+    // Get all permissions with global default and optional org override
+    const result = await query(`
+      SELECT
+        p.id AS permission_id, p.slug, p.name, p.scope, p.category,
+        global_rp.granted AS global_granted,
+        org_rp.granted    AS org_granted,
+        -- Effective: org override wins if it exists
+        COALESCE(org_rp.granted, global_rp.granted, false) AS effective_granted,
+        (org_rp.id IS NOT NULL) AS has_org_override
+      FROM blueprint.permissions p
+      LEFT JOIN blueprint.role_permissions global_rp
+        ON global_rp.permission_id = p.id
+        AND global_rp.role_id = $1
+        AND global_rp.org_id IS NULL
+      LEFT JOIN blueprint.role_permissions org_rp
+        ON org_rp.permission_id = p.id
+        AND org_rp.role_id = $1
+        AND org_rp.org_id = $2
+      WHERE p.is_active = true
+      ORDER BY p.scope ASC, p.category ASC, p.name ASC
+    `, [role_id, org_id || null])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// PUT /admin/api/role-permissions
+// Bulk replace role permissions for a role+org scope.
+// Deletes existing rows for that scope then inserts the new set.
+// Body: { role_id, org_id (nullable), permissions: [{slug, granted}] }
+router.put('/role-permissions', async (req, res, next) => {
+  try {
+    const { role_id, org_id, permissions: perms } = req.body
+    if (!role_id)              return res.status(400).json({ error: 'role_id is required' })
+    if (!Array.isArray(perms)) return res.status(400).json({ error: 'permissions array is required' })
+
+    const slugToId = await query('SELECT id, slug FROM blueprint.permissions WHERE is_active = true')
+    const permMap  = Object.fromEntries(slugToId.rows.map(r => [r.slug, r.id]))
+
+    // Delete existing entries for this role+org scope, then re-insert
+    if (org_id) {
+      await query(
+        'DELETE FROM blueprint.role_permissions WHERE role_id = $1 AND org_id = $2',
+        [role_id, org_id]
+      )
+    } else {
+      await query(
+        'DELETE FROM blueprint.role_permissions WHERE role_id = $1 AND org_id IS NULL',
+        [role_id]
+      )
+    }
+
+    let inserted = 0
+    for (const { slug, granted } of perms) {
+      const permId = permMap[slug]
+      if (!permId) continue
+      await query(
+        'INSERT INTO blueprint.role_permissions (role_id, permission_id, org_id, granted) VALUES ($1, $2, $3, $4)',
+        [role_id, permId, org_id || null, granted]
+      )
+      inserted++
+    }
+
+    res.json({ updated: inserted })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
 // ORGANIZATIONS
 // =============================================================================
 
@@ -63,6 +295,52 @@ router.get('/organizations', async (req, res, next) => {
       ORDER BY o.id ASC
     `)
     res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/organizations', async (req, res, next) => {
+  try {
+    const { name, slug, org_type, parent_id, description } = req.body
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+    if (!slug?.trim()) return res.status(400).json({ error: 'slug is required' })
+    if (!org_type)     return res.status(400).json({ error: 'org_type is required' })
+
+    // Validate org_type against lookup table
+    const typeCheck = await query('SELECT slug FROM blueprint.org_types WHERE slug = $1 AND is_active = true', [org_type])
+    if (!typeCheck.rows.length) return res.status(400).json({ error: `Unknown org_type: ${org_type}` })
+
+    const uri = generateUri(slug.trim().toLowerCase(), 'orgs')
+    const result = await query(`
+      INSERT INTO blueprint.organizations (uri, slug, name, description, org_type, parent_id)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [uri, slug.trim().toLowerCase(), name.trim(), description?.trim() || null, org_type, parent_id || null])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Slug already exists' })
+    next(err)
+  }
+})
+
+router.patch('/organizations/:id', async (req, res, next) => {
+  try {
+    const { name, description, org_type, parent_id, is_active } = req.body
+    const fields = []
+    const vals   = []
+    if (name        !== undefined) { fields.push(`name = $${fields.length + 1}`);        vals.push(name.trim()) }
+    if (description !== undefined) { fields.push(`description = $${fields.length + 1}`); vals.push(description || null) }
+    if (org_type    !== undefined) { fields.push(`org_type = $${fields.length + 1}`);    vals.push(org_type) }
+    if (parent_id   !== undefined) { fields.push(`parent_id = $${fields.length + 1}`);   vals.push(parent_id || null) }
+    if (is_active   !== undefined) { fields.push(`is_active = $${fields.length + 1}`);   vals.push(is_active === true || is_active === 'true') }
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
+    vals.push(parseInt(req.params.id))
+    const result = await query(
+      `UPDATE blueprint.organizations SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`,
+      vals
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Not found' })
+    res.json(result.rows[0])
   } catch (err) { next(err) }
 })
 
@@ -208,6 +486,208 @@ router.get('/users', async (req, res, next) => {
     }))
 
     res.json({ rows: result, count: result.length })
+  } catch (err) { next(err) }
+})
+
+router.patch('/users/:id', async (req, res, next) => {
+  try {
+    const { display_name, email, avatar_url, is_system, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.users
+      SET display_name = COALESCE($1, display_name),
+          email        = COALESCE($2, email),
+          avatar_url   = COALESCE($3, avatar_url),
+          is_system    = COALESCE($4, is_system),
+          is_active    = COALESCE($5, is_active),
+          updated_at   = NOW()
+      WHERE id = $6
+      RETURNING *
+    `, [
+      display_name?.trim() || null,
+      email?.trim().toLowerCase() || null,
+      avatar_url !== undefined ? (avatar_url?.trim() || null) : null,
+      is_system ?? null,
+      is_active ?? null,
+      req.params.id,
+    ])
+    if (!result.rows.length) return res.status(404).json({ error: 'User not found' })
+    res.json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Email already exists' })
+    next(err)
+  }
+})
+
+router.post('/users', async (req, res, next) => {
+  try {
+    const { email, display_name, avatar_url, is_system, org_id, role_id } = req.body
+    if (!email?.trim())        return res.status(400).json({ error: 'email is required' })
+    if (!display_name?.trim()) return res.status(400).json({ error: 'display_name is required' })
+
+    const orgSlug = 'system' // URIs for users always scoped to system in absence of auth
+    const uri = generateUri(orgSlug, 'users')
+
+    const userResult = await query(`
+      INSERT INTO blueprint.users (uri, email, display_name, avatar_url, is_system)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [uri, email.trim().toLowerCase(), display_name.trim(), avatar_url?.trim() || null, is_system ?? false])
+
+    const user = userResult.rows[0]
+
+    // Optional first membership
+    if (org_id && role_id) {
+      await query(`
+        INSERT INTO blueprint.org_memberships (user_id, org_id, role_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id, org_id) DO NOTHING
+      `, [user.id, org_id, role_id])
+    }
+
+    res.status(201).json(user)
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Email already exists' })
+    next(err)
+  }
+})
+
+// =============================================================================
+// WORK ITEM TYPE CLASSES
+// =============================================================================
+
+router.get('/work-item-type-classes', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT
+        c.id, c.uri, c.name, c.description, c.is_system_default, c.is_active,
+        c.owner_org_id, o.name AS owner_org_name,
+        (SELECT COUNT(*) FROM blueprint.work_item_types wit WHERE wit.class_id = c.id) AS type_count
+      FROM blueprint.work_item_type_classes c
+      JOIN blueprint.organizations o ON o.id = c.owner_org_id
+      ORDER BY c.is_system_default DESC, c.name ASC
+    `)
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.patch('/work-item-type-classes/:id', async (req, res, next) => {
+  try {
+    const { name, description, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.work_item_type_classes
+      SET name        = COALESCE($1, name),
+          description = COALESCE($2, description),
+          is_active   = COALESCE($3, is_active),
+          updated_at  = NOW()
+      WHERE id = $4
+      RETURNING *
+    `, [name?.trim() || null, description !== undefined ? (description?.trim() || null) : null, is_active ?? null, req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Class not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.post('/work-item-type-classes', async (req, res, next) => {
+  try {
+    const { name, description, owner_org_id } = req.body
+    if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
+    if (!owner_org_id)   return res.status(400).json({ error: 'owner_org_id is required' })
+
+    const orgCheck = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
+    if (!orgCheck.rows.length) return res.status(404).json({ error: 'Organization not found' })
+
+    const uri = generateUri(orgCheck.rows[0].slug, 'work-item-type-classes')
+    const result = await query(`
+      INSERT INTO blueprint.work_item_type_classes (uri, name, description, owner_org_id, is_system_default)
+      VALUES ($1, $2, $3, $4, false)
+      RETURNING *
+    `, [uri, name.trim(), description?.trim() || null, owner_org_id])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// WORK ITEM TYPES
+// =============================================================================
+
+router.get('/work-item-types', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT
+        wit.id, wit.uri, wit.name, wit.description, wit.version,
+        wit.request_mode, wit.is_published, wit.is_system_default, wit.is_active,
+        wit.icon, wit.color,
+        wit.class_id, c.name AS class_name,
+        wit.owner_org_id, o.name AS owner_org_name, o.slug AS owner_org_slug
+      FROM blueprint.work_item_types wit
+      JOIN blueprint.work_item_type_classes c ON c.id = wit.class_id
+      JOIN blueprint.organizations o ON o.id = wit.owner_org_id
+      ORDER BY o.name ASC, wit.name ASC
+    `)
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.patch('/work-item-types/:id', async (req, res, next) => {
+  try {
+    const { name, description, request_mode, icon, color, is_published, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.work_item_types
+      SET name         = COALESCE($1, name),
+          description  = COALESCE($2, description),
+          request_mode = COALESCE($3, request_mode),
+          icon         = COALESCE($4, icon),
+          color        = COALESCE($5, color),
+          is_published = COALESCE($6, is_published),
+          is_active    = COALESCE($7, is_active),
+          updated_at   = NOW()
+      WHERE id = $8
+      RETURNING *
+    `, [
+      name?.trim() || null,
+      description !== undefined ? (description?.trim() || null) : null,
+      request_mode || null,
+      icon !== undefined ? (icon?.trim() || null) : null,
+      color !== undefined ? (color?.trim() || null) : null,
+      is_published ?? null,
+      is_active ?? null,
+      req.params.id,
+    ])
+    if (!result.rows.length) return res.status(404).json({ error: 'Work item type not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.post('/work-item-types', async (req, res, next) => {
+  try {
+    const { name, description, class_id, owner_org_id, request_mode, icon, color, is_published } = req.body
+    if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
+    if (!class_id)       return res.status(400).json({ error: 'class_id is required' })
+    if (!owner_org_id)   return res.status(400).json({ error: 'owner_org_id is required' })
+
+    const orgCheck = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
+    if (!orgCheck.rows.length) return res.status(404).json({ error: 'Organization not found' })
+
+    const classCheck = await query('SELECT id FROM blueprint.work_item_type_classes WHERE id = $1', [class_id])
+    if (!classCheck.rows.length) return res.status(404).json({ error: 'Work item type class not found' })
+
+    const uri = generateUri(orgCheck.rows[0].slug, 'work-item-types')
+    const result = await query(`
+      INSERT INTO blueprint.work_item_types
+        (uri, name, description, class_id, owner_org_id, request_mode, icon, color, is_published, is_system_default)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
+      RETURNING *
+    `, [
+      uri, name.trim(), description?.trim() || null,
+      class_id, owner_org_id,
+      request_mode || 'user_requestable',
+      icon?.trim() || null,
+      color?.trim() || null,
+      is_published ?? false,
+    ])
+
+    res.status(201).json(result.rows[0])
   } catch (err) { next(err) }
 })
 
@@ -483,6 +963,172 @@ router.patch('/edit/:entityType/:id', async (req, res, next) => {
 
     res.json({ updated: result.rows[0], fields_changed: fields })
   } catch (err) { next(err) }
+})
+
+// =============================================================================
+// UPLOADS
+// =============================================================================
+
+// POST /admin/api/upload/avatar
+// Body: { data: "data:image/...;base64,...", filename: "original.jpg" }
+// Returns: { url: "/uploads/avatars/<uuid>.<ext>" }
+router.post('/upload/avatar', async (req, res, next) => {
+  try {
+    const { data, filename } = req.body
+    if (!data) return res.status(400).json({ error: 'data is required' })
+
+    // Parse data URL: "data:<mime>;base64,<bytes>"
+    const match = data.match(/^data:([^;]+);base64,(.+)$/)
+    if (!match) return res.status(400).json({ error: 'data must be a base64 data URL' })
+
+    const mime     = match[1]
+    const bytes    = Buffer.from(match[2], 'base64')
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+    if (!allowedMimes.includes(mime)) {
+      return res.status(400).json({ error: `Unsupported image type: ${mime}` })
+    }
+    if (bytes.length > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Image must be under 2 MB' })
+    }
+
+    // Determine extension
+    const mimeToExt = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' }
+    const ext = mimeToExt[mime] || extname(filename || '.jpg') || '.jpg'
+
+    const avatarsDir = join(__dirname, '../public/uploads/avatars')
+    await mkdir(avatarsDir, { recursive: true })
+
+    const fname = `${randomUUID()}${ext}`
+    await writeFile(join(avatarsDir, fname), bytes)
+
+    res.json({ url: `/uploads/avatars/${fname}` })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// BOARD
+// =============================================================================
+
+router.get('/service-classes', async (req, res, next) => {
+  try {
+    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
+    const result = await query(`
+      SELECT id, name, color, icon, priority_order, can_bypass_wip
+      FROM blueprint.service_classes
+      WHERE is_active = true AND ($1::int IS NULL OR org_id = $1)
+      ORDER BY priority_order ASC
+    `, [orgId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.get('/service-library', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+    const result = await query(`
+      SELECT wit.id, wit.name, wit.description, wit.icon, wit.color,
+             wit.request_mode, wit.is_system_default,
+             c.name AS class_name, wit.owner_org_id, o.name AS owner_org_name
+      FROM blueprint.work_item_types wit
+      JOIN blueprint.work_item_type_classes c ON c.id = wit.class_id
+      JOIN blueprint.organizations o          ON o.id = wit.owner_org_id
+      WHERE wit.is_published = true AND wit.is_active = true
+        AND (wit.is_system_default = true OR wit.owner_org_id = $1)
+      ORDER BY wit.is_system_default DESC, c.name ASC, wit.name ASC
+    `, [orgId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.get('/board', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+
+    // Resolve org
+    const orgResult = await query(
+      'SELECT id, name, slug FROM blueprint.organizations WHERE id = $1 AND is_active = true',
+      [orgId]
+    )
+    if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
+    const org = orgResult.rows[0]
+
+    // Resolve workflow — prefer org-owned, fall back to system default
+    const workflowResult = await query(`
+      SELECT w.id AS workflow_id, w.name AS workflow_name
+      FROM blueprint.workflows w
+      WHERE w.is_active = true
+        AND (w.owner_org_id = $1 OR w.is_system_default = true)
+      ORDER BY CASE WHEN w.owner_org_id = $1 THEN 0 ELSE 1 END ASC, w.id ASC
+      LIMIT 1
+    `, [orgId])
+
+    if (!workflowResult.rows.length) {
+      return res.json({ org, workflow_id: null, workflow_name: null, stages: [], items: [], service_classes: [] })
+    }
+    const { workflow_id, workflow_name } = workflowResult.rows[0]
+
+    // Run stages, items, and service classes in parallel
+    const [stagesResult, itemsResult, scResult] = await Promise.all([
+      query(`
+        SELECT id, name, stage_class, display_order, wip_limit, is_entry_stage, is_terminal, sla_hours
+        FROM blueprint.stages
+        WHERE workflow_id = $1 AND is_active = true
+        ORDER BY display_order ASC
+      `, [workflow_id]),
+      query(`
+        SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id,
+               wi.entered_current_stage_at, wi.service_class_id, wi.description,
+               wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
+               s.name AS current_stage_name, s.stage_class AS current_stage_class,
+               sc.name AS service_class_name, sc.color AS service_class_color
+        FROM runtime.work_items wi
+        JOIN blueprint.work_item_types wit     ON wit.id = wi.work_item_type_id
+        JOIN blueprint.stages s                ON s.id   = wi.current_stage_id
+        LEFT JOIN blueprint.service_classes sc ON sc.id  = wi.service_class_id
+        WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active' AND s.workflow_id = $2
+        ORDER BY wi.entered_current_stage_at ASC
+      `, [orgId, workflow_id]),
+      query(`
+        SELECT id, name, color, icon, priority_order
+        FROM blueprint.service_classes
+        WHERE org_id = $1 AND is_active = true
+        ORDER BY priority_order ASC
+      `, [orgId]),
+    ])
+
+    res.json({
+      org,
+      workflow_id,
+      workflow_name,
+      stages:          stagesResult.rows,
+      items:           itemsResult.rows,
+      service_classes: scResult.rows,
+    })
+  } catch (err) { next(err) }
+})
+
+router.post('/work-items', async (req, res, next) => {
+  try {
+    const { title, work_item_type_id, owner_org_id, service_class_id, description } = req.body
+    if (!title?.trim())       return res.status(400).json({ error: 'title is required' })
+    if (!work_item_type_id)   return res.status(400).json({ error: 'work_item_type_id is required' })
+    if (!owner_org_id)        return res.status(400).json({ error: 'owner_org_id is required' })
+
+    const workItem = await createWorkItem({
+      title:              title.trim(),
+      work_item_type_id:  parseInt(work_item_type_id),
+      owner_org_id:       parseInt(owner_org_id),
+      service_class_id:   service_class_id ? parseInt(service_class_id) : undefined,
+      description:        description?.trim() || undefined,
+    }, 1 /* stub userId */)
+
+    res.status(201).json(workItem)
+  } catch (err) {
+    if (err instanceof ValidationError) return res.status(400).json({ error: err.message })
+    next(err)
+  }
 })
 
 /**
