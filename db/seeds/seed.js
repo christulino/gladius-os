@@ -19,7 +19,10 @@
 import 'dotenv/config'
 import { query, getClient } from '../../db/postgres.js'
 import { generateSystemUri, generateUri } from '../../core/uri.js'
+import { orgTypes }            from './data/orgTypes.js'
 import { roles }               from './data/roles.js'
+import { permissions }         from './data/permissions.js'
+import { rolePermissions }     from './data/rolePermissions.js'
 import { serviceClasses }      from './data/serviceClasses.js'
 import { workItemTypeClasses }  from './data/workItemTypeClasses.js'
 import { workflows }            from './data/workflows.js'
@@ -34,10 +37,24 @@ async function seed() {
     await client.query('BEGIN')
 
     // =========================================================================
-    // 1. SYSTEM ORG
+    // 1. ORG TYPES
+    // Must exist before system org (org_type references slug)
+    // =========================================================================
+    console.log('  Seeding org types...')
+    for (const ot of orgTypes) {
+      await client.query(`
+        INSERT INTO blueprint.org_types (name, slug, sort_order)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order
+      `, [ot.name, ot.slug, ot.sort_order])
+      console.log(`     ✓ Org type: ${ot.name}`)
+    }
+
+    // =========================================================================
+    // 2. SYSTEM ORG
     // Home for all system-level entities
     // =========================================================================
-    console.log('  Creating system org...')
+    console.log('\n  Creating system org...')
     const systemOrgUri = generateSystemUri('orgs')
     const systemOrgResult = await client.query(`
       INSERT INTO blueprint.organizations
@@ -69,7 +86,48 @@ async function seed() {
     }
 
     // =========================================================================
-    // 3. WORK ITEM TYPE CLASSES
+    // 3. PERMISSIONS
+    // =========================================================================
+    console.log('\n  Seeding permissions...')
+    const permissionIds = {}
+    for (const perm of permissions) {
+      const result = await client.query(`
+        INSERT INTO blueprint.permissions (slug, name, description, scope, category)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description
+        RETURNING id, slug
+      `, [perm.slug, perm.name, perm.description, perm.scope, perm.category])
+      permissionIds[perm.slug] = result.rows[0].id
+      console.log(`     ✓ Permission: ${perm.slug}`)
+    }
+
+    // =========================================================================
+    // 4. ROLE PERMISSIONS (global defaults)
+    // =========================================================================
+    console.log('\n  Seeding role permissions...')
+    for (const rp of rolePermissions) {
+      const roleId = roleIds[rp.role_name]
+      if (!roleId) {
+        console.warn(`     ⚠ Skipping role permissions for "${rp.role_name}": role not found`)
+        continue
+      }
+      for (const slug of rp.permissions) {
+        const permId = permissionIds[slug]
+        if (!permId) {
+          console.warn(`       ⚠ Permission slug "${slug}" not found — skipping`)
+          continue
+        }
+        await client.query(`
+          INSERT INTO blueprint.role_permissions (role_id, permission_id, org_id, granted)
+          VALUES ($1, $2, NULL, true)
+          ON CONFLICT DO NOTHING
+        `, [roleId, permId])
+      }
+      console.log(`     ✓ ${rp.permissions.length} permissions → ${rp.role_name}`)
+    }
+
+    // =========================================================================
+    // 6. WORK ITEM TYPE CLASSES
     // =========================================================================
     console.log('\n  Seeding work item type classes...')
     const classIds = {}
@@ -97,7 +155,7 @@ async function seed() {
     }
 
     // =========================================================================
-    // 4. SERVICE CLASSES
+    // 7. SERVICE CLASSES
     // =========================================================================
     console.log('\n  Seeding service classes...')
     for (const sc of serviceClasses) {
@@ -120,7 +178,7 @@ async function seed() {
     }
 
     // =========================================================================
-    // 5. WORKFLOWS → STAGES → TRANSITIONS
+    // 8. WORKFLOWS → STAGES → TRANSITIONS
     // =========================================================================
     console.log('\n  Seeding workflows...')
     const workflowIds  = {}
@@ -213,7 +271,7 @@ async function seed() {
     }
 
     // =========================================================================
-    // 6. WORK ITEM TYPES
+    // 9. WORK ITEM TYPES
     // =========================================================================
     console.log('\n  Seeding work item types...')
     for (const wit of workItemTypes) {
