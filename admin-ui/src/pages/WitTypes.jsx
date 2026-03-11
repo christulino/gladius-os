@@ -61,9 +61,13 @@ const CREATE_FIELDS = [
     hint: 'Emoji or identifier shown on board cards.',
   },
   {
-    key: 'color', label: 'Color', type: 'text',
-    placeholder: '#6366f1',
+    key: 'color', label: 'Color', type: 'color',
     hint: 'Hex color for card accents. Used as visual identity on the board.',
+  },
+  {
+    key: 'key_prefix', label: 'Key Prefix', type: 'text',
+    placeholder: 'e.g. TSK, BUG, SR',
+    hint: 'Short prefix for display keys (e.g. BUG.42). Auto-uppercased.',
   },
   {
     key: 'is_published', label: 'Publish to Catalog', type: 'boolean',
@@ -76,8 +80,9 @@ const EDIT_FIELDS = [
   { key: 'name',         label: 'Type Name',           type: 'text',     required: true },
   { key: 'description',  label: 'Description',         type: 'textarea' },
   { key: 'request_mode', label: 'Request Mode',        type: 'select',   options: REQUEST_MODE_OPTIONS },
+  { key: 'key_prefix',   label: 'Key Prefix',          type: 'text',     placeholder: 'e.g. TSK' },
   { key: 'icon',         label: 'Icon',                type: 'text',     placeholder: '🎫' },
-  { key: 'color',        label: 'Color',               type: 'text',     placeholder: '#6366f1' },
+  { key: 'color',        label: 'Color',               type: 'color' },
   {
     key: 'is_published', label: 'Published in Catalog', type: 'boolean',
     hint: 'Controls visibility in the service library when creating work items.',
@@ -110,13 +115,16 @@ export default function WitTypes() {
   const columns = [
     {
       accessorKey: 'icon', header: '',
-      cell: ({ getValue }) => <span className="text-base">{getValue() ?? ''}</span>,
+      cell: ({ getValue }) => <span className="text-xl leading-none">{getValue() ?? ''}</span>,
     },
     {
       accessorKey: 'name', header: 'Type Name',
       cell: ({ getValue, row }) => (
         <div className="flex flex-col gap-0.5">
           <span className="font-medium">{getValue()}</span>
+          {row.original.key_prefix && (
+            <span className="font-mono text-[9px] text-muted-foreground">{row.original.key_prefix}</span>
+          )}
           {!row.original.is_active && (
             <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider">inactive</span>
           )}
@@ -128,6 +136,21 @@ export default function WitTypes() {
       cell: ({ getValue }) => (
         <span className="font-mono text-[10px] text-muted-foreground italic">{getValue()}</span>
       ),
+    },
+    {
+      accessorKey: 'workflow_name', header: 'Workflow',
+      cell: ({ getValue, row }) => {
+        const name = getValue()
+        const isCustomized = row.original.workflow_id && row.original.class_default_workflow_id &&
+          row.original.workflow_id !== row.original.class_default_workflow_id
+        if (!name) return <span className="font-mono text-[10px] text-muted-foreground/40">none</span>
+        return (
+          <div className="flex items-center gap-1">
+            <span className="font-mono text-[10px] text-muted-foreground">{name}</span>
+            {isCustomized && <Badge variant="amber" className="text-[8px]">customized</Badge>}
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'owner_org_name', header: 'Org Catalog',

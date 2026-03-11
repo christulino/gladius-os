@@ -8,7 +8,7 @@
  */
 
 import { Router }     from 'express'
-import { query }      from '../db/postgres.js'
+import { query, getClient } from '../db/postgres.js'
 import { getBuffer, sseHandler } from './logger.js'
 import { generateUri } from '../core/uri.js'
 import { createWorkItem, ValidationError } from '../runtime/workItems.js'
@@ -42,6 +42,8 @@ const ALLOWED_TABLES = {
   'blueprint.business_calendars':            'blueprint',
   'blueprint.visibility_rules':              'blueprint',
   'blueprint.service_catalog_items':         'blueprint',
+  'blueprint.org_wip_limits':               'blueprint',
+  'blueprint.work_item_class_fields':       'blueprint',
   // runtime
   'runtime.work_items':                      'runtime',
   'runtime.stage_transition_history':        'runtime',
@@ -52,6 +54,7 @@ const ALLOWED_TABLES = {
   'runtime.flow_metrics_snapshots':          'runtime',
   'runtime.search_index_queue':              'runtime',
   'runtime.transition_action_log':           'runtime',
+  'runtime.work_item_links':                'runtime',
 }
 
 // =============================================================================
@@ -561,9 +564,11 @@ router.get('/work-item-type-classes', async (req, res, next) => {
       SELECT
         c.id, c.uri, c.name, c.description, c.is_system_default, c.is_active,
         c.owner_org_id, o.name AS owner_org_name,
+        c.default_workflow_id, w.name AS default_workflow_name,
         (SELECT COUNT(*) FROM blueprint.work_item_types wit WHERE wit.class_id = c.id) AS type_count
       FROM blueprint.work_item_type_classes c
       JOIN blueprint.organizations o ON o.id = c.owner_org_id
+      LEFT JOIN blueprint.workflows w ON w.id = c.default_workflow_id
       ORDER BY c.is_system_default DESC, c.name ASC
     `)
     res.json({ rows: result.rows, count: result.rowCount })
@@ -572,16 +577,23 @@ router.get('/work-item-type-classes', async (req, res, next) => {
 
 router.patch('/work-item-type-classes/:id', async (req, res, next) => {
   try {
-    const { name, description, is_active } = req.body
+    const { name, description, is_active, default_workflow_id } = req.body
     const result = await query(`
       UPDATE blueprint.work_item_type_classes
-      SET name        = COALESCE($1, name),
-          description = COALESCE($2, description),
-          is_active   = COALESCE($3, is_active),
-          updated_at  = NOW()
-      WHERE id = $4
+      SET name                = COALESCE($1, name),
+          description         = COALESCE($2, description),
+          is_active           = COALESCE($3, is_active),
+          default_workflow_id = $4,
+          updated_at          = NOW()
+      WHERE id = $5
       RETURNING *
-    `, [name?.trim() || null, description !== undefined ? (description?.trim() || null) : null, is_active ?? null, req.params.id])
+    `, [
+      name?.trim() || null,
+      description !== undefined ? (description?.trim() || null) : null,
+      is_active ?? null,
+      default_workflow_id !== undefined ? (default_workflow_id || null) : undefined,
+      req.params.id,
+    ])
     if (!result.rows.length) return res.status(404).json({ error: 'Class not found' })
     res.json(result.rows[0])
   } catch (err) { next(err) }
@@ -589,7 +601,7 @@ router.patch('/work-item-type-classes/:id', async (req, res, next) => {
 
 router.post('/work-item-type-classes', async (req, res, next) => {
   try {
-    const { name, description, owner_org_id } = req.body
+    const { name, description, owner_org_id, default_workflow_id } = req.body
     if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
     if (!owner_org_id)   return res.status(400).json({ error: 'owner_org_id is required' })
 
@@ -598,10 +610,10 @@ router.post('/work-item-type-classes', async (req, res, next) => {
 
     const uri = generateUri(orgCheck.rows[0].slug, 'work-item-type-classes')
     const result = await query(`
-      INSERT INTO blueprint.work_item_type_classes (uri, name, description, owner_org_id, is_system_default)
-      VALUES ($1, $2, $3, $4, false)
+      INSERT INTO blueprint.work_item_type_classes (uri, name, description, owner_org_id, is_system_default, default_workflow_id)
+      VALUES ($1, $2, $3, $4, false, $5)
       RETURNING *
-    `, [uri, name.trim(), description?.trim() || null, owner_org_id])
+    `, [uri, name.trim(), description?.trim() || null, owner_org_id, default_workflow_id || null])
 
     res.status(201).json(result.rows[0])
   } catch (err) { next(err) }
@@ -617,12 +629,15 @@ router.get('/work-item-types', async (req, res, next) => {
       SELECT
         wit.id, wit.uri, wit.name, wit.description, wit.version,
         wit.request_mode, wit.is_published, wit.is_system_default, wit.is_active,
-        wit.icon, wit.color,
-        wit.class_id, c.name AS class_name,
-        wit.owner_org_id, o.name AS owner_org_name, o.slug AS owner_org_slug
+        wit.icon, wit.color, wit.key_prefix,
+        wit.class_id, c.name AS class_name, c.default_workflow_id AS class_default_workflow_id,
+        wit.owner_org_id, o.name AS owner_org_name, o.slug AS owner_org_slug,
+        witw.workflow_id, w.name AS workflow_name
       FROM blueprint.work_item_types wit
       JOIN blueprint.work_item_type_classes c ON c.id = wit.class_id
       JOIN blueprint.organizations o ON o.id = wit.owner_org_id
+      LEFT JOIN blueprint.work_item_type_workflows witw ON witw.work_item_type_id = wit.id AND witw.is_current = true
+      LEFT JOIN blueprint.workflows w ON w.id = witw.workflow_id
       ORDER BY o.name ASC, wit.name ASC
     `)
     res.json({ rows: result.rows, count: result.rowCount })
@@ -631,7 +646,7 @@ router.get('/work-item-types', async (req, res, next) => {
 
 router.patch('/work-item-types/:id', async (req, res, next) => {
   try {
-    const { name, description, request_mode, icon, color, is_published, is_active } = req.body
+    const { name, description, request_mode, icon, color, is_published, is_active, key_prefix } = req.body
     const result = await query(`
       UPDATE blueprint.work_item_types
       SET name         = COALESCE($1, name),
@@ -641,8 +656,9 @@ router.patch('/work-item-types/:id', async (req, res, next) => {
           color        = COALESCE($5, color),
           is_published = COALESCE($6, is_published),
           is_active    = COALESCE($7, is_active),
+          key_prefix   = COALESCE($8, key_prefix),
           updated_at   = NOW()
-      WHERE id = $8
+      WHERE id = $9
       RETURNING *
     `, [
       name?.trim() || null,
@@ -652,6 +668,7 @@ router.patch('/work-item-types/:id', async (req, res, next) => {
       color !== undefined ? (color?.trim() || null) : null,
       is_published ?? null,
       is_active ?? null,
+      key_prefix !== undefined ? (key_prefix?.trim().toUpperCase() || null) : null,
       req.params.id,
     ])
     if (!result.rows.length) return res.status(404).json({ error: 'Work item type not found' })
@@ -661,7 +678,7 @@ router.patch('/work-item-types/:id', async (req, res, next) => {
 
 router.post('/work-item-types', async (req, res, next) => {
   try {
-    const { name, description, class_id, owner_org_id, request_mode, icon, color, is_published } = req.body
+    const { name, description, class_id, owner_org_id, request_mode, icon, color, is_published, key_prefix } = req.body
     if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
     if (!class_id)       return res.status(400).json({ error: 'class_id is required' })
     if (!owner_org_id)   return res.status(400).json({ error: 'owner_org_id is required' })
@@ -669,25 +686,67 @@ router.post('/work-item-types', async (req, res, next) => {
     const orgCheck = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
     if (!orgCheck.rows.length) return res.status(404).json({ error: 'Organization not found' })
 
-    const classCheck = await query('SELECT id FROM blueprint.work_item_type_classes WHERE id = $1', [class_id])
+    const classCheck = await query('SELECT id, default_workflow_id FROM blueprint.work_item_type_classes WHERE id = $1', [class_id])
     if (!classCheck.rows.length) return res.status(404).json({ error: 'Work item type class not found' })
 
-    const uri = generateUri(orgCheck.rows[0].slug, 'work-item-types')
-    const result = await query(`
-      INSERT INTO blueprint.work_item_types
-        (uri, name, description, class_id, owner_org_id, request_mode, icon, color, is_published, is_system_default)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false)
-      RETURNING *
-    `, [
-      uri, name.trim(), description?.trim() || null,
-      class_id, owner_org_id,
-      request_mode || 'user_requestable',
-      icon?.trim() || null,
-      color?.trim() || null,
-      is_published ?? false,
-    ])
+    const client = await getClient()
+    let witRow
+    try {
+      await client.query('BEGIN')
 
-    res.status(201).json(result.rows[0])
+      const uri = generateUri(orgCheck.rows[0].slug, 'work-item-types')
+      const result = await client.query(`
+        INSERT INTO blueprint.work_item_types
+          (uri, name, description, class_id, owner_org_id, request_mode, icon, color, is_published, is_system_default, key_prefix)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10)
+        RETURNING *
+      `, [
+        uri, name.trim(), description?.trim() || null,
+        class_id, owner_org_id,
+        request_mode || 'user_requestable',
+        icon?.trim() || null,
+        color?.trim() || null,
+        is_published ?? false,
+        key_prefix?.trim().toUpperCase() || null,
+      ])
+      witRow = result.rows[0]
+
+      // Auto-link class default workflow if available
+      const defaultWorkflowId = classCheck.rows[0].default_workflow_id
+      if (defaultWorkflowId) {
+        await client.query(`
+          INSERT INTO blueprint.work_item_type_workflows (work_item_type_id, workflow_id, is_current)
+          VALUES ($1, $2, true)
+          ON CONFLICT DO NOTHING
+        `, [witRow.id, defaultWorkflowId])
+      }
+
+      // Copy class fields to type fields
+      const classFields = await client.query(`
+        SELECT field_key, field_label, field_type, field_options, field_group, is_required, display_order
+        FROM blueprint.work_item_class_fields
+        WHERE class_id = $1 AND is_active = true
+        ORDER BY display_order ASC
+      `, [class_id])
+
+      for (const f of classFields.rows) {
+        await client.query(`
+          INSERT INTO blueprint.work_item_type_fields
+            (work_item_type_id, field_key, field_label, field_type, field_options, field_group, is_required, display_order, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+          ON CONFLICT DO NOTHING
+        `, [witRow.id, f.field_key, f.field_label, f.field_type, f.field_options, f.field_group, f.is_required, f.display_order])
+      }
+
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    res.status(201).json(witRow)
   } catch (err) { next(err) }
 })
 
@@ -1006,6 +1065,269 @@ router.post('/upload/avatar', async (req, res, next) => {
 })
 
 // =============================================================================
+// WORKFLOW MANAGER
+// =============================================================================
+
+// GET /admin/api/workflows/:id — single workflow with full stage+transition detail
+router.get('/workflows/:id', async (req, res, next) => {
+  try {
+    const wfResult = await query(
+      'SELECT id, uri, name, description, version, is_system_default, is_active, owner_org_id FROM blueprint.workflows WHERE id = $1',
+      [req.params.id]
+    )
+    if (!wfResult.rows.length) return res.status(404).json({ error: 'Workflow not found' })
+    const wf = wfResult.rows[0]
+
+    const [stagesResult, transResult] = await Promise.all([
+      query(`
+        SELECT id, name, stage_class, stage_type, stage_function, display_order,
+               is_entry_stage, is_terminal, counts_toward_throughput,
+               sla_hours, wip_limit, is_active
+        FROM blueprint.stages
+        WHERE workflow_id = $1
+        ORDER BY display_order ASC
+      `, [req.params.id]),
+      query(`
+        SELECT id, from_stage_id, to_stage_id, transition_label, transition_kind, requires_reason
+        FROM blueprint.stage_transitions
+        WHERE from_stage_id IN (
+          SELECT id FROM blueprint.stages WHERE workflow_id = $1
+        )
+      `, [req.params.id]),
+    ])
+
+    // Attach from_stage_ids to each stage
+    const stages = stagesResult.rows.map(stage => ({
+      ...stage,
+      from_stage_ids: transResult.rows
+        .filter(t => t.to_stage_id === stage.id)
+        .map(t => t.from_stage_id),
+    }))
+
+    res.json({ workflow: wf, stages, transitions: transResult.rows })
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/workflows — create workflow with default stages
+router.post('/workflows', async (req, res, next) => {
+  try {
+    const { name, description, owner_org_id } = req.body
+    if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
+    if (!owner_org_id)   return res.status(400).json({ error: 'owner_org_id is required' })
+
+    const orgResult = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
+    if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
+
+    const uri = generateUri(orgResult.rows[0].slug, 'workflows')
+
+    const client = await getClient()
+    let workflow
+    try {
+      await client.query('BEGIN')
+
+      const wfResult = await client.query(`
+        INSERT INTO blueprint.workflows (uri, name, description, owner_org_id, version, is_system_default, is_active)
+        VALUES ($1, $2, $3, $4, '1.0.0', false, true)
+        RETURNING *
+      `, [uri, name.trim(), description?.trim() || null, owner_org_id])
+      workflow = wfResult.rows[0]
+
+      // Create default stages: Intake, In Progress, Done, Cancelled
+      const defaultStages = [
+        { name: 'Intake',      stage_class: 'intake',      stage_type: 'waiting', stage_function: 'queue',   display_order: 1, is_entry_stage: true,  is_terminal: false, counts_toward_throughput: true },
+        { name: 'In Progress', stage_class: 'in-progress', stage_type: 'working', stage_function: 'action',  display_order: 2, is_entry_stage: false, is_terminal: false, counts_toward_throughput: true },
+        { name: 'Done',        stage_class: 'done',        stage_type: 'waiting', stage_function: 'deliver', display_order: 3, is_entry_stage: false, is_terminal: true,  counts_toward_throughput: true },
+        { name: 'Cancelled',   stage_class: 'cancelled',   stage_type: 'waiting', stage_function: 'deliver', display_order: 4, is_entry_stage: false, is_terminal: true,  counts_toward_throughput: false },
+      ]
+
+      const stageIds = {}
+      for (const s of defaultStages) {
+        const sUri = generateUri(orgResult.rows[0].slug, 'stages')
+        const sResult = await client.query(`
+          INSERT INTO blueprint.stages
+            (uri, workflow_id, name, stage_class, stage_type, stage_function,
+             display_order, is_entry_stage, is_terminal, counts_toward_throughput, is_active)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)
+          RETURNING id
+        `, [sUri, workflow.id, s.name, s.stage_class, s.stage_type, s.stage_function,
+            s.display_order, s.is_entry_stage, s.is_terminal, s.counts_toward_throughput])
+        stageIds[s.name] = sResult.rows[0].id
+      }
+
+      // Default transitions
+      const defaultTransitions = [
+        { from: 'Intake', to: 'In Progress', label: 'Start', kind: 'forward' },
+        { from: 'In Progress', to: 'Done', label: 'Complete', kind: 'forward' },
+        { from: 'In Progress', to: 'Intake', label: 'Put Back', kind: 'backward' },
+        { from: 'Intake', to: 'Cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
+        { from: 'In Progress', to: 'Cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
+      ]
+
+      const tUri = generateUri(orgResult.rows[0].slug, 'transitions')
+      for (const t of defaultTransitions) {
+        await client.query(`
+          INSERT INTO blueprint.stage_transitions
+            (uri, from_stage_id, to_stage_id, transition_label, transition_kind, requires_reason)
+          VALUES ($1,$2,$3,$4,$5,$6)
+        `, [tUri, stageIds[t.from], stageIds[t.to], t.label, t.kind, t.requires_reason ?? false])
+      }
+
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    res.status(201).json(workflow)
+  } catch (err) { next(err) }
+})
+
+// PATCH /admin/api/workflows/:id — update workflow metadata
+router.patch('/workflows/:id', async (req, res, next) => {
+  try {
+    const { name, description, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.workflows
+      SET name        = COALESCE($1, name),
+          description = COALESCE($2, description),
+          is_active   = COALESCE($3, is_active),
+          updated_at  = NOW()
+      WHERE id = $4
+      RETURNING *
+    `, [name?.trim() || null, description !== undefined ? (description?.trim() || null) : null, is_active ?? null, req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Workflow not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/stages — add a stage to a workflow
+router.post('/stages', async (req, res, next) => {
+  try {
+    const { workflow_id, name, stage_class, stage_type, stage_function,
+            display_order, is_entry_stage, is_terminal, counts_toward_throughput,
+            sla_hours, wip_limit } = req.body
+    if (!workflow_id)  return res.status(400).json({ error: 'workflow_id is required' })
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+
+    const wfResult = await query(
+      'SELECT w.id, o.slug FROM blueprint.workflows w JOIN blueprint.organizations o ON o.id = w.owner_org_id WHERE w.id = $1',
+      [workflow_id]
+    )
+    if (!wfResult.rows.length) return res.status(404).json({ error: 'Workflow not found' })
+
+    const uri = generateUri(wfResult.rows[0].slug, 'stages')
+    const result = await query(`
+      INSERT INTO blueprint.stages
+        (uri, workflow_id, name, stage_class, stage_type, stage_function,
+         display_order, is_entry_stage, is_terminal, counts_toward_throughput,
+         sla_hours, wip_limit, is_active)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
+      RETURNING *
+    `, [
+      uri, workflow_id, name.trim(),
+      stage_class || 'queued', stage_type || 'waiting', stage_function || null,
+      display_order ?? 99, is_entry_stage ?? false, is_terminal ?? false,
+      counts_toward_throughput ?? true,
+      sla_hours || null, wip_limit || null,
+    ])
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// PATCH /admin/api/stages/:id — update stage + sync transitions
+router.patch('/stages/:id', async (req, res, next) => {
+  try {
+    const {
+      name, stage_class, stage_type, stage_function,
+      display_order, is_entry_stage, is_terminal, counts_toward_throughput,
+      sla_hours, wip_limit,
+      from_stage_ids,   // array of stage IDs that can transition TO this stage
+    } = req.body
+    const stageId = parseInt(req.params.id)
+
+    // Fetch current stage for org slug (for URI generation)
+    const stageResult = await query(
+      'SELECT s.*, w.owner_org_id, o.slug FROM blueprint.stages s JOIN blueprint.workflows w ON w.id = s.workflow_id JOIN blueprint.organizations o ON o.id = w.owner_org_id WHERE s.id = $1',
+      [stageId]
+    )
+    if (!stageResult.rows.length) return res.status(404).json({ error: 'Stage not found' })
+
+    const client = await getClient()
+    let updatedStage
+    try {
+      await client.query('BEGIN')
+
+      const updateResult = await client.query(`
+        UPDATE blueprint.stages SET
+          name                     = COALESCE($1, name),
+          stage_class              = COALESCE($2, stage_class),
+          stage_type               = COALESCE($3, stage_type),
+          stage_function           = COALESCE($4, stage_function),
+          display_order            = COALESCE($5, display_order),
+          is_entry_stage           = COALESCE($6, is_entry_stage),
+          is_terminal              = COALESCE($7, is_terminal),
+          counts_toward_throughput = COALESCE($8, counts_toward_throughput),
+          sla_hours                = $9,
+          wip_limit                = $10,
+          updated_at               = NOW()
+        WHERE id = $11
+        RETURNING *
+      `, [
+        name?.trim() || null,
+        stage_class || null,
+        stage_type || null,
+        stage_function !== undefined ? (stage_function || null) : null,
+        display_order ?? null,
+        is_entry_stage ?? null,
+        is_terminal ?? null,
+        counts_toward_throughput ?? null,
+        sla_hours !== undefined ? (sla_hours || null) : undefined,
+        wip_limit !== undefined ? (wip_limit || null) : undefined,
+        stageId,
+      ])
+      updatedStage = updateResult.rows[0]
+
+      // Sync transitions (from_stage_ids)
+      if (Array.isArray(from_stage_ids)) {
+        await client.query('DELETE FROM blueprint.stage_transitions WHERE to_stage_id = $1', [stageId])
+        const slug = stageResult.rows[0].slug
+        for (const fromId of from_stage_ids) {
+          const uri = generateUri(slug, 'transitions')
+          await client.query(`
+            INSERT INTO blueprint.stage_transitions (uri, from_stage_id, to_stage_id, transition_kind)
+            VALUES ($1, $2, $3, 'forward')
+            ON CONFLICT DO NOTHING
+          `, [uri, fromId, stageId])
+        }
+      }
+
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    res.json(updatedStage)
+  } catch (err) { next(err) }
+})
+
+// DELETE /admin/api/stages/:id — deactivate stage (soft delete)
+router.delete('/stages/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'UPDATE blueprint.stages SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Stage not found' })
+    res.json({ deleted: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
 // BOARD
 // =============================================================================
 
@@ -1069,8 +1391,8 @@ router.get('/board', async (req, res, next) => {
     }
     const { workflow_id, workflow_name } = workflowResult.rows[0]
 
-    // Run stages, items, and service classes in parallel
-    const [stagesResult, itemsResult, scResult] = await Promise.all([
+    // Run stages, items, service classes, and org WIP limits in parallel
+    const [stagesResult, itemsResult, scResult, wipResult] = await Promise.all([
       query(`
         SELECT id, name, stage_class, display_order, wip_limit, is_entry_stage, is_terminal, sla_hours
         FROM blueprint.stages
@@ -1079,7 +1401,8 @@ router.get('/board', async (req, res, next) => {
       `, [workflow_id]),
       query(`
         SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id,
-               wi.entered_current_stage_at, wi.service_class_id, wi.description,
+               wi.entered_current_stage_at, wi.updated_at, wi.display_key,
+               wi.service_class_id, wi.description, wi.current_substate,
                wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
                s.name AS current_stage_name, s.stage_class AS current_stage_class,
                sc.name AS service_class_name, sc.color AS service_class_color
@@ -1096,7 +1419,18 @@ router.get('/board', async (req, res, next) => {
         WHERE org_id = $1 AND is_active = true
         ORDER BY priority_order ASC
       `, [orgId]),
+      query(`
+        SELECT stage_name, wip_limit, enforcement_type
+        FROM blueprint.org_wip_limits
+        WHERE org_id = $1
+      `, [orgId]),
     ])
+
+    // Build WIP limits map keyed by stage_name
+    const wipLimits = {}
+    for (const row of wipResult.rows) {
+      wipLimits[row.stage_name] = { wip_limit: row.wip_limit, enforcement_type: row.enforcement_type }
+    }
 
     res.json({
       org,
@@ -1105,6 +1439,7 @@ router.get('/board', async (req, res, next) => {
       stages:          stagesResult.rows,
       items:           itemsResult.rows,
       service_classes: scResult.rows,
+      wip_limits:      wipLimits,
     })
   } catch (err) { next(err) }
 })
@@ -1141,6 +1476,400 @@ router.get('/edit/rules', (_req, res) => {
     rules[type] = { allowed_fields: r.allowed_fields, field_types: r.field_types }
   }
   res.json(rules)
+})
+
+// =============================================================================
+// CLASS FIELDS CRUD
+// =============================================================================
+
+router.get('/class-fields', async (req, res, next) => {
+  try {
+    const classId = parseInt(req.query.class_id)
+    if (!classId) return res.status(400).json({ error: 'class_id is required' })
+    const result = await query(`
+      SELECT * FROM blueprint.work_item_class_fields
+      WHERE class_id = $1
+      ORDER BY display_order ASC, id ASC
+    `, [classId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/class-fields', async (req, res, next) => {
+  try {
+    const { class_id, field_key, field_label, field_type, field_options, field_group, is_required, display_order } = req.body
+    if (!class_id)            return res.status(400).json({ error: 'class_id is required' })
+    if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
+    if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
+    if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    const result = await query(`
+      INSERT INTO blueprint.work_item_class_fields
+        (class_id, field_key, field_label, field_type, field_options, field_group, is_required, display_order)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING *
+    `, [class_id, field_key.trim(), field_label.trim(), field_type.trim(),
+        field_options ? JSON.stringify(field_options) : null,
+        field_group?.trim() || null, is_required ?? false, display_order ?? 0])
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Field key already exists for this class' })
+    next(err)
+  }
+})
+
+router.patch('/class-fields/:id', async (req, res, next) => {
+  try {
+    const { field_label, field_type, field_options, field_group, is_required, display_order, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.work_item_class_fields
+      SET field_label   = COALESCE($1, field_label),
+          field_type    = COALESCE($2, field_type),
+          field_options = COALESCE($3, field_options),
+          field_group   = COALESCE($4, field_group),
+          is_required   = COALESCE($5, is_required),
+          display_order = COALESCE($6, display_order),
+          is_active     = COALESCE($7, is_active),
+          updated_at    = NOW()
+      WHERE id = $8
+      RETURNING *
+    `, [
+      field_label?.trim() || null, field_type?.trim() || null,
+      field_options ? JSON.stringify(field_options) : null,
+      field_group !== undefined ? (field_group?.trim() || null) : null,
+      is_required ?? null, display_order ?? null, is_active ?? null,
+      req.params.id,
+    ])
+    if (!result.rows.length) return res.status(404).json({ error: 'Class field not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.delete('/class-fields/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'DELETE FROM blueprint.work_item_class_fields WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Class field not found' })
+    res.json({ deleted: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// ORG WIP LIMITS
+// =============================================================================
+
+router.get('/org-wip-limits', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+    const result = await query(`
+      SELECT * FROM blueprint.org_wip_limits
+      WHERE org_id = $1
+      ORDER BY stage_name ASC
+    `, [orgId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.put('/org-wip-limits', async (req, res, next) => {
+  try {
+    const { org_id, stage_name, wip_limit, enforcement_type } = req.body
+    if (!org_id)           return res.status(400).json({ error: 'org_id is required' })
+    if (!stage_name?.trim()) return res.status(400).json({ error: 'stage_name is required' })
+    if (!wip_limit || wip_limit < 1) return res.status(400).json({ error: 'wip_limit must be > 0' })
+    const result = await query(`
+      INSERT INTO blueprint.org_wip_limits (org_id, stage_name, wip_limit, enforcement_type)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (org_id, stage_name) DO UPDATE SET
+        wip_limit        = EXCLUDED.wip_limit,
+        enforcement_type = EXCLUDED.enforcement_type,
+        updated_at       = NOW()
+      RETURNING *
+    `, [org_id, stage_name.trim(), wip_limit, enforcement_type || 'soft'])
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.delete('/org-wip-limits/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'DELETE FROM blueprint.org_wip_limits WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'WIP limit not found' })
+    res.json({ deleted: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// WORK ITEM DETAIL + ACTIONS
+// =============================================================================
+
+import { prepareTransition, executeTransition } from '../runtime/transitions.js'
+
+// GET /admin/api/work-items/search — search by title or display_key
+router.get('/work-items/search', async (req, res, next) => {
+  try {
+    const q = (req.query.q || '').trim()
+    if (!q) return res.json({ rows: [], count: 0 })
+    const result = await query(`
+      SELECT wi.id, wi.display_key, wi.title, s.name AS current_stage_name, o.name AS org_name
+      FROM runtime.work_items wi
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      JOIN blueprint.organizations o ON o.id = wi.owner_org_id
+      WHERE wi.title ILIKE $1 OR wi.display_key ILIKE $1
+      ORDER BY wi.id DESC
+      LIMIT 20
+    `, [`%${q}%`])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// GET /admin/api/work-items/:id — full detail
+router.get('/work-items/:id', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT
+        wi.id, wi.uri, wi.title, wi.description,
+        wi.spawn_state, wi.current_substate, wi.display_key, wi.sequence_number,
+        wi.field_values, wi.pending_missing_fields,
+        wi.parent_id, wi.created_at, wi.updated_at, wi.entered_current_stage_at,
+        wi.current_stage_id, wi.workflow_id, wi.service_class_id,
+        wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
+        wit.key_prefix,
+        s.name AS current_stage_name, s.stage_class AS current_stage_class, s.is_terminal,
+        sc.name AS service_class_name, sc.color AS service_class_color,
+        o.name AS org_name, o.slug AS org_slug, o.id AS owner_org_id
+      FROM runtime.work_items wi
+      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      JOIN blueprint.organizations o ON o.id = wi.owner_org_id
+      LEFT JOIN blueprint.service_classes sc ON sc.id = wi.service_class_id
+      WHERE wi.id = $1
+    `, [req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// PATCH /admin/api/work-items/:id — update title, description, field_values
+router.patch('/work-items/:id', async (req, res, next) => {
+  try {
+    const { title, description, field_values } = req.body
+    const fields = []
+    const vals   = []
+    if (title !== undefined)       { fields.push(`title = $${fields.length + 1}`);       vals.push(title.trim()) }
+    if (description !== undefined) { fields.push(`description = $${fields.length + 1}`); vals.push(description || null) }
+    if (field_values !== undefined) { fields.push(`field_values = $${fields.length + 1}`); vals.push(JSON.stringify(field_values)) }
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
+    fields.push(`updated_at = NOW()`)
+    vals.push(parseInt(req.params.id))
+    const result = await query(
+      `UPDATE runtime.work_items SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`,
+      vals
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/:id/substate — update substate
+router.post('/work-items/:id/substate', async (req, res, next) => {
+  try {
+    const { substate } = req.body
+    if (!['active', 'blocked'].includes(substate)) {
+      return res.status(400).json({ error: 'substate must be "active" or "blocked"' })
+    }
+    const result = await query(`
+      UPDATE runtime.work_items
+      SET current_substate = $1, updated_at = NOW()
+      WHERE id = $2
+      RETURNING id, current_substate
+    `, [substate, req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// GET /admin/api/work-items/:id/transitions — available transitions
+router.get('/work-items/:id/transitions', async (req, res, next) => {
+  try {
+    const wi = await query('SELECT current_stage_id FROM runtime.work_items WHERE id = $1', [req.params.id])
+    if (!wi.rows.length) return res.status(404).json({ error: 'Work item not found' })
+    const result = await query(`
+      SELECT st.id, st.to_stage_id, st.transition_label, st.transition_kind, st.requires_reason,
+             ts.name AS to_stage_name, ts.stage_class AS to_stage_class, ts.is_terminal
+      FROM blueprint.stage_transitions st
+      JOIN blueprint.stages ts ON ts.id = st.to_stage_id
+      WHERE st.from_stage_id = $1 AND st.is_active = true AND ts.is_active = true
+      ORDER BY ts.display_order ASC
+    `, [wi.rows[0].current_stage_id])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/:id/transition — execute transition
+router.post('/work-items/:id/transition', async (req, res, next) => {
+  try {
+    const { to_stage_id, reason } = req.body
+    if (!to_stage_id) return res.status(400).json({ error: 'to_stage_id is required' })
+    const result = await executeTransition(
+      parseInt(req.params.id),
+      parseInt(to_stage_id),
+      1, // stub userId
+      { reason }
+    )
+    if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
+    res.json(result)
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// COMMENTS
+// =============================================================================
+
+router.get('/work-items/:id/comments', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT c.id, c.body, c.parent_comment_id, c.is_system_generated, c.is_edited,
+             c.created_at, c.updated_at,
+             u.display_name AS author_name, u.avatar_url AS author_avatar
+      FROM runtime.work_item_comments c
+      LEFT JOIN blueprint.users u ON u.id = c.author_user_id
+      WHERE c.work_item_id = $1
+      ORDER BY c.created_at ASC
+    `, [req.params.id])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/work-items/:id/comments', async (req, res, next) => {
+  try {
+    const { body, parent_comment_id } = req.body
+    if (!body?.trim()) return res.status(400).json({ error: 'body is required' })
+    const uri = generateUri('system', 'comments')
+    const result = await query(`
+      INSERT INTO runtime.work_item_comments (uri, work_item_id, author_user_id, body, parent_comment_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+    `, [uri, req.params.id, 1 /* stub userId */, body.trim(), parent_comment_id || null])
+
+    // Update work item updated_at
+    await query('UPDATE runtime.work_items SET updated_at = NOW() WHERE id = $1', [req.params.id])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// USER RELATIONSHIPS
+// =============================================================================
+
+router.get('/work-items/:id/relationships', async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT r.id, r.user_id, r.relationship_type, r.is_active, r.assigned_at,
+             u.display_name, u.email, u.avatar_url
+      FROM runtime.work_item_user_relationships r
+      JOIN blueprint.users u ON u.id = r.user_id
+      WHERE r.work_item_id = $1 AND r.is_active = true
+      ORDER BY r.assigned_at ASC
+    `, [req.params.id])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/work-items/:id/relationships', async (req, res, next) => {
+  try {
+    const { user_id, relationship_type } = req.body
+    if (!user_id)            return res.status(400).json({ error: 'user_id is required' })
+    if (!relationship_type)  return res.status(400).json({ error: 'relationship_type is required' })
+    const result = await query(`
+      INSERT INTO runtime.work_item_user_relationships (work_item_id, user_id, relationship_type, assigned_at, is_active)
+      VALUES ($1, $2, $3, NOW(), true)
+      RETURNING *
+    `, [req.params.id, user_id, relationship_type])
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Relationship already exists' })
+    next(err)
+  }
+})
+
+router.delete('/work-item-relationships/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'UPDATE runtime.work_item_user_relationships SET is_active = false WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Relationship not found' })
+    res.json({ deleted: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+router.post('/work-items/:id/links', async (req, res, next) => {
+  try {
+    const { target_work_item_id, link_type } = req.body
+    if (!target_work_item_id) return res.status(400).json({ error: 'target_work_item_id is required' })
+    if (!link_type)           return res.status(400).json({ error: 'link_type is required' })
+
+    const sourceId = parseInt(req.params.id)
+
+    if (link_type === 'parent') {
+      // Set target as parent of source
+      await query('UPDATE runtime.work_items SET parent_id = $1, updated_at = NOW() WHERE id = $2', [target_work_item_id, sourceId])
+      return res.json({ linked: true, link_type: 'parent' })
+    }
+    if (link_type === 'child') {
+      // Set source as parent of target
+      await query('UPDATE runtime.work_items SET parent_id = $1, updated_at = NOW() WHERE id = $2', [sourceId, target_work_item_id])
+      return res.json({ linked: true, link_type: 'child' })
+    }
+
+    // "related" or other link types use the links table
+    const result = await query(`
+      INSERT INTO runtime.work_item_links (source_work_item_id, target_work_item_id, link_type, created_by_user_id)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `, [sourceId, target_work_item_id, link_type, 1 /* stub userId */])
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Link already exists' })
+    next(err)
+  }
+})
+
+router.get('/work-items/:id/links', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id)
+    // Get parent
+    const parentResult = await query(`
+      SELECT wi.id, wi.display_key, wi.title, s.name AS current_stage_name, 'parent' AS link_type
+      FROM runtime.work_items child
+      JOIN runtime.work_items wi ON wi.id = child.parent_id
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      WHERE child.id = $1 AND child.parent_id IS NOT NULL
+    `, [id])
+    // Get children
+    const childResult = await query(`
+      SELECT wi.id, wi.display_key, wi.title, s.name AS current_stage_name, 'child' AS link_type
+      FROM runtime.work_items wi
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      WHERE wi.parent_id = $1
+    `, [id])
+    // Get related links (both directions)
+    const linkResult = await query(`
+      SELECT wi.id, wi.display_key, wi.title, s.name AS current_stage_name, l.link_type
+      FROM runtime.work_item_links l
+      JOIN runtime.work_items wi ON wi.id = CASE WHEN l.source_work_item_id = $1 THEN l.target_work_item_id ELSE l.source_work_item_id END
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      WHERE l.source_work_item_id = $1 OR l.target_work_item_id = $1
+    `, [id])
+
+    const rows = [...parentResult.rows, ...childResult.rows, ...linkResult.rows]
+    res.json({ rows, count: rows.length })
+  } catch (err) { next(err) }
 })
 
 export default router

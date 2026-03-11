@@ -51,7 +51,7 @@ export async function createWorkItem(params, userId) {
 
   // Load and validate work item type
   const typeResult = await query(`
-    SELECT wit.*, witc.name AS class_name
+    SELECT wit.*, witc.name AS class_name, wit.key_prefix
     FROM blueprint.work_item_types wit
     JOIN blueprint.work_item_type_classes witc ON witc.id = wit.class_id
     WHERE wit.id = $1 AND wit.is_active = true
@@ -178,6 +178,12 @@ export async function createWorkItem(params, userId) {
     const uri = generateUri(org.slug, 'work-items')
     const now = new Date()
 
+    // Generate display key: prefix.sequence
+    const keyPrefix = workItemType.key_prefix || 'WI'
+    const seqResult = await client.query("SELECT nextval('runtime.work_item_seq') AS seq")
+    const seqNum = parseInt(seqResult.rows[0].seq)
+    const displayKey = `${keyPrefix}.${seqNum}`
+
     const insertResult = await client.query(`
       INSERT INTO runtime.work_items (
         uri, work_item_type_id, workflow_id, owner_org_id,
@@ -187,8 +193,9 @@ export async function createWorkItem(params, userId) {
         parent_id,
         pending_missing_fields,
         field_values,
+        sequence_number, display_key,
         entered_current_stage_at, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,$13,$13,$13)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,$13,$14,$15,$15,$15)
       RETURNING *
     `, [
       uri,
@@ -203,6 +210,8 @@ export async function createWorkItem(params, userId) {
       parent_id || null,
       pendingMissingFields ? JSON.stringify(pendingMissingFields) : null,
       JSON.stringify(field_values),
+      seqNum,
+      displayKey,
       now,
     ])
 

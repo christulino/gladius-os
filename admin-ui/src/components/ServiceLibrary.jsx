@@ -64,7 +64,7 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
                   >
                     <div className="flex-shrink-0 mt-0.5">
                       {type.icon ? (
-                        <span className="text-base">{type.icon}</span>
+                        <span className="text-xl">{type.icon}</span>
                       ) : (
                         <span
                           className="inline-block w-3 h-3 rounded-full mt-0.5"

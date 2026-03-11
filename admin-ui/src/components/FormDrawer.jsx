@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/com
 import { Button }  from '@/components/ui/button'
 import { Switch }  from '@/components/ui/switch'
 import { api }     from '@/lib/api'
+import { ColorPicker } from '@/components/ColorPicker'
 
 function ImageField({ value, onChange, onError }) {
   const [uploading, setUploading] = useState(false)
@@ -85,7 +86,7 @@ function toSlug(str) {
   return str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
-export function FormDrawer({ open, onOpenChange, title, fields = [], initialValues, onSubmit, onSaved }) {
+export function FormDrawer({ open, onOpenChange, title, fields = [], initialValues, onSubmit, onSaved, extraContent }) {
   const isEdit = !!initialValues
   const [values,       setValues]       = useState({})
   const [options,      setOptions]      = useState({}) // fieldKey → [{label, value}]
@@ -210,7 +211,12 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
                 <p className="font-mono text-[10px] text-muted-foreground/60 leading-relaxed">{f.hint}</p>
               )}
 
-              {f.type === 'image' ? (
+              {f.type === 'color' ? (
+                <ColorPicker
+                  value={values[f.key] ?? ''}
+                  onChange={v => set(f.key, v)}
+                />
+              ) : f.type === 'image' ? (
                 <ImageField
                   value={values[f.key] ?? ''}
                   onChange={url => { set(f.key, url); setError(null) }}
@@ -261,6 +267,12 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
               )}
             </div>
           ))}
+
+          {extraContent && (
+            <div className="pt-3 mt-1 border-t border-border">
+              {extraContent}
+            </div>
+          )}
 
           {error && (
             <div className="font-mono text-[11px] px-3 py-2 rounded bg-destructive/10 text-destructive border border-destructive/20">

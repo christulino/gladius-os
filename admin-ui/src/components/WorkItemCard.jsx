@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { formatElapsed } from '@/lib/utils'
+import { formatElapsed, formatRelative } from '@/lib/utils'
 
 export function WorkItemCard({ item, onClick }) {
   const [elapsed, setElapsed] = useState(() => formatElapsed(item.entered_current_stage_at))
@@ -19,26 +19,30 @@ export function WorkItemCard({ item, onClick }) {
       className="w-full text-left bg-card border border-border rounded-md p-3 flex flex-col gap-2 hover:border-primary/50 transition-colors"
       style={{ borderLeftColor: accentColor, borderLeftWidth: '3px' }}
     >
-      {/* Type label */}
-      <div className="flex items-center gap-1.5 min-w-0">
+      {/* Icon + Title */}
+      <div className="flex items-start gap-1.5 min-w-0">
         {item.work_item_type_icon && (
-          <span className="text-[11px] flex-shrink-0">{item.work_item_type_icon}</span>
+          <span className="text-xl flex-shrink-0 leading-none block mt-0.5" title={item.work_item_type_name}>{item.work_item_type_icon}</span>
         )}
-        <span
-          className="font-mono text-[10px] uppercase tracking-wider truncate"
-          style={{ color: item.work_item_type_color || 'var(--muted-foreground)' }}
-        >
-          {item.work_item_type_name}
-        </span>
+        <p className="text-xs text-foreground leading-snug line-clamp-2 font-medium">
+          {item.title}
+        </p>
       </div>
 
-      {/* Title */}
-      <p className="text-xs text-foreground leading-snug line-clamp-2 font-medium">
-        {item.title}
-      </p>
+      {/* Display key + last touched */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+          {item.display_key || '—'}
+        </span>
+        {item.updated_at && (
+          <span className="font-mono text-[10px] text-muted-foreground/60">
+            touched {formatRelative(item.updated_at)}
+          </span>
+        )}
+      </div>
 
-      {/* Footer: timer + service class */}
-      <div className="flex items-center justify-between gap-2 mt-0.5">
+      {/* Timer + service class */}
+      <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{elapsed}</span>
         {item.service_class_name && (
           <span

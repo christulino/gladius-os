@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -56,13 +56,14 @@
   * { @apply border-border; }
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-size: 13px;
+    font-size: 15px;
+    font-family: 'Inter', 'Helvetica Neue', Helvetica, -apple-system, sans-serif;
   }
   ::-webkit-scrollbar       { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: hsl(var(--muted)); }
-  ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground)); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(28 13% 36%); }
 }
 
-.font-mono { font-family: 'IBM Plex Mono', monospace; }
-.font-sans  { font-family: 'IBM Plex Sans', sans-serif; }
+.font-mono { font-family: 'Inter', 'Helvetica Neue', Helvetica, -apple-system, sans-serif; }
+.font-sans  { font-family: 'Inter', 'Helvetica Neue', Helvetica, -apple-system, sans-serif; }

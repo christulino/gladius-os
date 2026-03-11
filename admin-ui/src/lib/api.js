@@ -45,6 +45,12 @@ export const api = {
   createWitClass:    (data) => apiFetch('/work-item-type-classes', { method: 'POST', body: JSON.stringify(data) }),
   updateWitClass:    (id, data) => apiFetch(`/work-item-type-classes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  // Class Fields
+  classFields:       (class_id) => apiFetch(`/class-fields?class_id=${class_id}`),
+  createClassField:  (data) => apiFetch('/class-fields', { method: 'POST', body: JSON.stringify(data) }),
+  updateClassField:  (id, data) => apiFetch(`/class-fields/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteClassField:  (id) => apiFetch(`/class-fields/${id}`, { method: 'DELETE' }),
+
   // Work Item Types
   witTypes:          () => apiFetch('/work-item-types'),
   createWitType:     (data) => apiFetch('/work-item-types', { method: 'POST', body: JSON.stringify(data) }),
@@ -52,6 +58,30 @@ export const api = {
 
   // Work Items
   workItems:         (limit = 50, offset = 0) => apiFetch(`/work-items?limit=${limit}&offset=${offset}`),
+  workItem:          (id) => apiFetch(`/work-items/${id}`),
+  updateWorkItem:    (id, data) => apiFetch(`/work-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  setSubstate:       (id, substate) => apiFetch(`/work-items/${id}/substate`, { method: 'POST', body: JSON.stringify({ substate }) }),
+  workItemTransitions: (id) => apiFetch(`/work-items/${id}/transitions`),
+  transitionWorkItem:  (id, to_stage_id, reason) => apiFetch(`/work-items/${id}/transition`, { method: 'POST', body: JSON.stringify({ to_stage_id, reason }) }),
+
+  // Comments
+  workItemComments:  (id) => apiFetch(`/work-items/${id}/comments`),
+  addComment:        (id, body, parent_comment_id) => apiFetch(`/work-items/${id}/comments`, { method: 'POST', body: JSON.stringify({ body, parent_comment_id }) }),
+
+  // User Relationships
+  workItemRelationships: (id) => apiFetch(`/work-items/${id}/relationships`),
+  addRelationship:   (id, user_id, relationship_type) => apiFetch(`/work-items/${id}/relationships`, { method: 'POST', body: JSON.stringify({ user_id, relationship_type }) }),
+  removeRelationship: (id) => apiFetch(`/work-item-relationships/${id}`, { method: 'DELETE' }),
+
+  // Work Item Search + Linking
+  searchWorkItems:   (q) => apiFetch(`/work-items/search?q=${encodeURIComponent(q)}`),
+  addWorkItemLink:   (id, target_work_item_id, link_type) => apiFetch(`/work-items/${id}/links`, { method: 'POST', body: JSON.stringify({ target_work_item_id, link_type }) }),
+  workItemLinks:     (id) => apiFetch(`/work-items/${id}/links`),
+
+  // Org WIP Limits
+  orgWipLimits:      (org_id) => apiFetch(`/org-wip-limits?org_id=${org_id}`),
+  setOrgWipLimit:    (data) => apiFetch('/org-wip-limits', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteOrgWipLimit: (id) => apiFetch(`/org-wip-limits/${id}`, { method: 'DELETE' }),
 
   // Uploads
   uploadAvatar:   (data, filename) => apiFetch('/upload/avatar', {
@@ -64,6 +94,14 @@ export const api = {
   serviceLibrary: (org_id) => apiFetch(`/service-library?org_id=${org_id}`),
   serviceClasses: (org_id) => apiFetch(`/service-classes${org_id ? `?org_id=${org_id}` : ''}`),
   createWorkItem: (data)   => apiFetch('/work-items', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Workflow Manager
+  workflow:       (id) => apiFetch(`/workflows/${id}`),
+  createWorkflow: (data) => apiFetch('/workflows', { method: 'POST', body: JSON.stringify(data) }),
+  updateWorkflow: (id, data) => apiFetch(`/workflows/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  createStage:    (data) => apiFetch('/stages', { method: 'POST', body: JSON.stringify(data) }),
+  updateStage:    (id, data) => apiFetch(`/stages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteStage:    (id) => apiFetch(`/stages/${id}`, { method: 'DELETE' }),
 
   // Other
   workflows:         () => apiFetch('/workflows'),

@@ -2,7 +2,7 @@
 
 > This file is read automatically by Claude Code on session start.
 > It is the source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-03-10
+> Last updated: 2026-03-10 (Session 6)
 
 ---
 
@@ -47,7 +47,7 @@ intellectual foundation and the eight design constraints that serve as absolute 
 - **API:** Express REST
 - **Database:** Polyglot persistence — PostgreSQL + Neo4j
 - **Object Storage:** S3-compatible (MinIO locally) — for evidence binaries
-- **Frontend:** React + Vite + shadcn/ui (dark theme), served at /admin/
+- **Frontend:** React + Vite + shadcn/ui (cartography light theme), served at /admin/
 - **Platform:** MacBook Air, local development first
 
 ---
@@ -66,12 +66,15 @@ flowos/
 │       └── board.js
 ├── admin-ui/               # React + Vite + shadcn/ui admin interface
 │   ├── src/
-│   │   ├── App.jsx         # Sidebar nav, 9 pages
-│   │   ├── lib/api.js      # All API calls
+│   │   ├── App.jsx         # Sidebar nav, 14 pages
+│   │   ├── lib/api.js      # All API calls (~40 endpoints)
+│   │   ├── lib/utils.js    # cn(), formatElapsed(), formatRelative()
 │   │   ├── hooks/useApi.js
-│   │   ├── components/     # EditDrawer, Panel, shadcn ui components
-│   │   └── pages/          # Summary, Organizations, WorkItems, Workflows,
-│   │                       # Users, History, RawTables, LogViewer, DbConsole
+│   │   ├── components/     # FormDrawer, Panel, WorkItemCard, WorkItemDetail,
+│   │   │                   # ServiceLibrary, ColorPicker, shadcn ui components
+│   │   └── pages/          # Board, Summary, Organizations, WorkItems, Workflows,
+│   │                       # WitClasses, WitTypes, WorkflowManager, Users,
+│   │                       # History, RawTables, LogViewer, DbConsole
 │   ├── vite.config.js      # base: '/admin/' — required for Express serving
 │   └── tailwind.config.js  # uses require() not import() — jiti compatibility
 ├── core/                   # Shared business logic
@@ -85,6 +88,10 @@ flowos/
 │   ├── init/
 │   │   ├── blueprint_schema.sql   # v1.2
 │   │   └── runtime_schema.sql     # v0.4
+│   ├── migrations/
+│   │   ├── 002_org_types_permissions.sql
+│   │   ├── 003_workflow_enhancements.sql
+│   │   └── 004_org_wip_and_class_fields.sql
 │   └── seeds/
 │       ├── seed.js
 │       └── seed_test_data.js
@@ -249,6 +256,21 @@ Exit criteria OWN all blocking logic. Transition actions never block.
 
 Both use the same parent-child relationship in the graph.
 
+### Display Key
+Every work item gets a human-readable key at creation: `PREFIX.SEQ` (e.g. `BUG.42`).
+Prefix comes from `work_item_types.key_prefix`. Sequence uses a single PostgreSQL
+sequence (`runtime.work_item_seq`). Searchable, shown on cards and in detail view.
+
+### Org-Level WIP Limits
+WIP limits are keyed on `stage_name` string in `blueprint.org_wip_limits`.
+"Stages with the same name = same stage on the board." Renaming a stage breaks the
+association (acceptable: admin-level action). Default enforcement is "soft" per design
+constraint: WIP limits expose problems, not prevent work.
+
+### Class Field Inheritance
+Class fields (`blueprint.work_item_class_fields`) are copied to type fields on type
+creation. Changes to class fields do not auto-propagate to existing types.
+
 ---
 
 ## Board Model
@@ -364,34 +386,44 @@ Always run `npm run seed:test` after a database reset — prints exact IDs and c
 2. **Broken ALTER TABLE** — `fk_org_default_template` missing `ALTER TABLE` prefix. Fixed v1.2.
 3. **Missing tables** — `exit_criteria`, `transition_actions`, `connections` not loading.
    Applied via `fix_blueprint_tables.sql` (already applied, keep for fresh setup).
+4. **Migration 004** — `org_wip_limits`, `work_item_class_fields`, `work_item_links` tables.
+   `key_prefix` on work item types, `sequence_number`/`display_key` on work items.
+   Display key format: `PREFIX.SEQ` (e.g. BUG.42). Uses `runtime.work_item_seq` sequence.
 
 ---
 
 ## What Is and Isn't Built
 
 ### Working
-- PostgreSQL schema (blueprint + runtime, ~47 tables)
+- PostgreSQL schema (blueprint + runtime, ~50 tables)
 - Docker Compose environment (PostgreSQL + Neo4j)
 - Seed data (orgs, workflows, work item types, service classes, roles)
-- Express API — organizations CRUD, work item creation with pending state, catalog, board stubs
-- React + Vite + shadcn admin UI (dark theme, 9 pages):
-  Raw Tables browser (sortable, paginated, edit drawer), DB Console, Log Viewer, Summary
+- Express API — 40+ endpoints including organizations, work items, catalog, board, transitions,
+  comments, relationships, search, linking, WIP limits, class fields
+- Transition engine — two-phase prepare/execute, spawn actions, api_call fire-and-forget
+- Work item creation with pending state, display key generation (prefix.seq)
+- React + Vite + shadcn admin UI (cartography light theme, 14 pages):
+  Team Board (columns, cards, WIP indicators, org multiselect), Work Item Detail modal
+  (inline edit, transitions, comments, linking), Workflow Editor (stages, transitions),
+  Service Catalog (WIT Classes with fields, WIT Types with workflow inheritance),
+  Raw Tables browser, DB Console, Log Viewer, Summary
+- Org-level WIP limits (keyed by stage name, soft/hard enforcement)
+- Class-level field definitions with copy-on-create to types
+- Work item search by title/display_key, linking (parent/child/related)
 
 ### Not Yet Built
-- Sub-state transition engine
-- Exit criteria evaluation engine
-- Trigger/action processing (spawn, notify, field-update, webhook)
+- Sub-state transition engine (sub-state toggle works but no history tracking)
+- Exit criteria evaluation engine (scaffolded but evaluates as always-pass)
+- Trigger/action processing (spawn works, notify/field-update/webhook not yet)
 - Neo4j seeding (sync queue fills but not drained)
-- Board query (boardQuery.js scaffolded, not complete)
-- **Board UI** (the actual Kanban board view — biggest missing piece)
 - Service class swimlanes on board
 - Draft submission tray
-- User-initiated child work item creation
 - Default workflow template seed data
 - Metrics and flow data views
 - Scheduled work item creation
 - Auth middleware (all endpoints use userId = 1 stub)
 - Work item type fields seeded (required field validation never blocks)
+- Network Board / Highway View
 
 ---
 
@@ -433,6 +465,8 @@ These are not aspirational. When a product decision conflicts with one of these,
 - Git: `christulino/flowos` (private)
 
 ### What's been built (across all sessions):
-3 databases · 47 PostgreSQL tables · 26+ JS source files · 11 API endpoints ·
-9 seed scripts · 5 SQL schema files · 4 workflows · 26 stages · 37 transitions ·
-React admin UI (9 pages) · Design document (flowos-design-doc.docx, ~950 paragraphs)
+3 databases · ~50 PostgreSQL tables · 30+ JS source files · 40+ API endpoints ·
+9 seed scripts · 5 SQL schema files + 3 migrations · 5 workflows · 26 stages · 37 transitions ·
+React admin UI (14 pages, cartography light theme) · Work item detail modal ·
+Transition engine · Display keys · Org WIP limits · Class fields ·
+Design document (flowos-design-doc.docx, ~950 paragraphs)
