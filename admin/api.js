@@ -289,7 +289,7 @@ router.get('/organizations', async (req, res, next) => {
     const result = await query(`
       SELECT
         o.id, o.uri, o.slug, o.name, o.org_type,
-        o.is_active, o.created_at,
+        o.description, o.parent_id, o.is_active, o.created_at,
         p.name AS parent_name,
         (SELECT COUNT(*) FROM blueprint.org_memberships om WHERE om.org_id = o.id AND om.is_active = true) AS member_count,
         (SELECT COUNT(*) FROM runtime.work_items wi WHERE wi.owner_org_id = o.id) AS work_item_count
@@ -1165,13 +1165,12 @@ router.post('/workflows', async (req, res, next) => {
         { from: 'In Progress', to: 'Cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
       ]
 
-      const tUri = generateUri(orgResult.rows[0].slug, 'transitions')
       for (const t of defaultTransitions) {
         await client.query(`
           INSERT INTO blueprint.stage_transitions
-            (uri, from_stage_id, to_stage_id, transition_label, transition_kind, requires_reason)
-          VALUES ($1,$2,$3,$4,$5,$6)
-        `, [tUri, stageIds[t.from], stageIds[t.to], t.label, t.kind, t.requires_reason ?? false])
+            (from_stage_id, to_stage_id, transition_label, transition_kind, requires_reason)
+          VALUES ($1,$2,$3,$4,$5)
+        `, [stageIds[t.from], stageIds[t.to], t.label, t.kind, t.requires_reason ?? false])
       }
 
       await client.query('COMMIT')
@@ -1294,14 +1293,12 @@ router.patch('/stages/:id', async (req, res, next) => {
       // Sync transitions (from_stage_ids)
       if (Array.isArray(from_stage_ids)) {
         await client.query('DELETE FROM blueprint.stage_transitions WHERE to_stage_id = $1', [stageId])
-        const slug = stageResult.rows[0].slug
         for (const fromId of from_stage_ids) {
-          const uri = generateUri(slug, 'transitions')
           await client.query(`
-            INSERT INTO blueprint.stage_transitions (uri, from_stage_id, to_stage_id, transition_kind)
-            VALUES ($1, $2, $3, 'forward')
+            INSERT INTO blueprint.stage_transitions (from_stage_id, to_stage_id, transition_kind)
+            VALUES ($1, $2, 'forward')
             ON CONFLICT DO NOTHING
-          `, [uri, fromId, stageId])
+          `, [fromId, stageId])
         }
       }
 
@@ -1365,8 +1362,7 @@ router.get('/service-library', async (req, res, next) => {
       JOIN blueprint.work_item_type_classes c ON c.id = wit.class_id
       JOIN blueprint.organizations o          ON o.id = wit.owner_org_id
       WHERE wit.is_published = true AND wit.is_active = true
-        AND (wit.is_system_default = true OR wit.owner_org_id = $1)
-      ORDER BY wit.is_system_default DESC, c.name ASC, wit.name ASC
+      ORDER BY o.name ASC, c.name ASC, wit.name ASC
     `, [orgId])
     res.json({ rows: result.rows, count: result.rowCount })
   } catch (err) { next(err) }
@@ -1385,32 +1381,11 @@ router.get('/board', async (req, res, next) => {
     if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
     const org = orgResult.rows[0]
 
-    // Resolve workflow — prefer org-owned, fall back to system default
-    const workflowResult = await query(`
-      SELECT w.id AS workflow_id, w.name AS workflow_name
-      FROM blueprint.workflows w
-      WHERE w.is_active = true
-        AND (w.owner_org_id = $1 OR w.is_system_default = true)
-      ORDER BY CASE WHEN w.owner_org_id = $1 THEN 0 ELSE 1 END ASC, w.id ASC
-      LIMIT 1
-    `, [orgId])
-
-    if (!workflowResult.rows.length) {
-      return res.json({ org, workflow_id: null, workflow_name: null, stages: [], items: [], service_classes: [] })
-    }
-    const { workflow_id, workflow_name } = workflowResult.rows[0]
-
-    // Run stages, items, service classes, and org WIP limits in parallel
-    const [stagesResult, itemsResult, scResult, wipResult] = await Promise.all([
-      query(`
-        SELECT id, name, stage_class, display_order, wip_limit, is_entry_stage, is_terminal, sla_hours
-        FROM blueprint.stages
-        WHERE workflow_id = $1 AND is_active = true
-        ORDER BY display_order ASC
-      `, [workflow_id]),
+    // Run items, stages, service classes, and org WIP limits in parallel
+    const [itemsResult, stagesResult, scResult, wipResult] = await Promise.all([
       query(`
         SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id,
-               wi.entered_current_stage_at, wi.updated_at, wi.display_key,
+               wi.entered_current_stage_at, wi.created_at, wi.updated_at, wi.display_key,
                wi.service_class_id, wi.description, wi.current_substate,
                wi.due_date, wi.is_expedited, wi.work_nature,
                wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
@@ -1420,13 +1395,41 @@ router.get('/board', async (req, res, next) => {
                  WHEN wi.due_date IS NOT NULL THEN 'fixed_date'
                  WHEN wi.work_nature = 'improvement' THEN 'deferred'
                  ELSE 'standard'
-               END AS derived_service_class
+               END AS derived_service_class,
+               owner_rel.user_id AS owner_user_id,
+               owner_user.display_name AS owner_display_name
         FROM runtime.work_items wi
         JOIN blueprint.work_item_types wit     ON wit.id = wi.work_item_type_id
         JOIN blueprint.stages s                ON s.id   = wi.current_stage_id
-        WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active' AND s.workflow_id = $2
+        LEFT JOIN LATERAL (
+          SELECT r.user_id FROM runtime.work_item_user_relationships r
+          WHERE r.work_item_id = wi.id AND r.relationship_type = 'owns' AND r.is_active = true
+          ORDER BY r.assigned_at ASC LIMIT 1
+        ) owner_rel ON true
+        LEFT JOIN blueprint.users owner_user ON owner_user.id = owner_rel.user_id
+        WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active'
+          AND s.stage_class != 'cancelled'
         ORDER BY wi.entered_current_stage_at ASC
-      `, [orgId, workflow_id]),
+      `, [orgId]),
+      // Fetch real stages from workflows that have active items in this org
+      // PLUS stages from all workflows assigned to org's work item types (always-show)
+      query(`
+        SELECT DISTINCT s.id, s.name, s.stage_class, s.display_order,
+               s.has_waiting_queue, s.is_entry_stage, s.is_terminal,
+               s.workflow_id, w.name AS workflow_name
+        FROM blueprint.stages s
+        JOIN blueprint.workflows w ON w.id = s.workflow_id
+        WHERE s.workflow_id IN (
+          SELECT DISTINCT wi.workflow_id FROM runtime.work_items wi
+          WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active'
+          UNION
+          SELECT DISTINCT wtw.workflow_id FROM blueprint.work_item_type_workflows wtw
+          JOIN blueprint.work_item_types wit ON wit.id = wtw.work_item_type_id
+          WHERE wit.owner_org_id = $1 AND wit.is_active = true
+        )
+        AND s.is_active = true AND s.stage_class != 'cancelled'
+        ORDER BY s.display_order ASC
+      `, [orgId]),
       query(`
         SELECT id, name, color, icon, priority_order
         FROM blueprint.service_classes
@@ -1440,6 +1443,82 @@ router.get('/board', async (req, res, next) => {
       `, [orgId]),
     ])
 
+    // Build 3-level column hierarchy:
+    // L1: stage_class groups, L2: merged stages (same name+class), L3: waiting queue split
+    const STAGE_CLASS_ORDER = ['intake', 'triage', 'queued', 'in-progress', 'blocked', 'review', 'approved', 'delivery', 'done']
+    const STAGE_CLASS_LABELS = {
+      'intake': 'Intake', 'triage': 'Triage', 'queued': 'Ready',
+      'in-progress': 'In Progress', 'blocked': 'Blocked', 'review': 'Review',
+      'approved': 'Approved', 'delivery': 'Delivery', 'done': 'Done',
+    }
+
+    // Merge stages by (stage_class, name) — collect IDs
+    const mergeMap = new Map() // key: "stage_class:name" → merged stage obj
+    for (const s of stagesResult.rows) {
+      const key = `${s.stage_class}:${s.name}`
+      if (mergeMap.has(key)) {
+        mergeMap.get(key).stage_ids.push(s.id)
+      } else {
+        mergeMap.set(key, {
+          key,
+          name: s.name,
+          stage_class: s.stage_class,
+          stage_ids: [s.id],
+          has_waiting_queue: s.has_waiting_queue,
+          display_order: s.display_order,
+          is_entry_stage: s.is_entry_stage,
+          is_terminal: s.is_terminal,
+        })
+      }
+    }
+
+    // Group merged stages by stage_class, ordered by STAGE_CLASS_ORDER
+    const classGroups = new Map()
+    for (const merged of mergeMap.values()) {
+      if (!classGroups.has(merged.stage_class)) classGroups.set(merged.stage_class, [])
+      classGroups.get(merged.stage_class).push(merged)
+    }
+
+    // Sort stages within each class group by display_order
+    for (const stages of classGroups.values()) {
+      stages.sort((a, b) => a.display_order - b.display_order)
+    }
+
+    // Ensure at least intake, in-progress, done classes exist
+    for (const cls of ['intake', 'in-progress', 'done']) {
+      if (!classGroups.has(cls)) {
+        classGroups.set(cls, [{
+          key: `${cls}:${STAGE_CLASS_LABELS[cls]}`,
+          name: STAGE_CLASS_LABELS[cls],
+          stage_class: cls,
+          stage_ids: [],
+          has_waiting_queue: false,
+          display_order: STAGE_CLASS_ORDER.indexOf(cls),
+          is_entry_stage: cls === 'intake',
+          is_terminal: cls === 'done',
+        }])
+      }
+    }
+
+    // Build ordered columns array
+    const columns = STAGE_CLASS_ORDER
+      .filter(cls => classGroups.has(cls))
+      .map(cls => ({
+        stage_class: cls,
+        class_label: STAGE_CLASS_LABELS[cls] || cls,
+        stages: classGroups.get(cls),
+      }))
+
+    // Compute owner initials (items keep their real current_stage_id)
+    for (const item of itemsResult.rows) {
+      if (item.owner_display_name) {
+        const parts = item.owner_display_name.trim().split(/\s+/)
+        item.owner_initial = parts.map(p => p[0]).join('').toUpperCase().slice(0, 2)
+      } else {
+        item.owner_initial = null
+      }
+    }
+
     // Build WIP limits map keyed by stage_name
     const wipLimits = {}
     for (const row of wipResult.rows) {
@@ -1448,9 +1527,7 @@ router.get('/board', async (req, res, next) => {
 
     res.json({
       org,
-      workflow_id,
-      workflow_name,
-      stages:          stagesResult.rows,
+      columns,
       items:           itemsResult.rows,
       service_classes: scResult.rows,
       wip_limits:      wipLimits,
@@ -1594,7 +1671,16 @@ router.put('/org-wip-limits', async (req, res, next) => {
     const { org_id, stage_name, wip_limit, enforcement_type } = req.body
     if (!org_id)           return res.status(400).json({ error: 'org_id is required' })
     if (!stage_name?.trim()) return res.status(400).json({ error: 'stage_name is required' })
-    if (!wip_limit || wip_limit < 1) return res.status(400).json({ error: 'wip_limit must be > 0' })
+
+    // wip_limit of 0 or null = clear the limit
+    if (!wip_limit || wip_limit < 1) {
+      await query(
+        'DELETE FROM blueprint.org_wip_limits WHERE org_id = $1 AND stage_name = $2',
+        [org_id, stage_name.trim()]
+      )
+      return res.json({ cleared: true, stage_name: stage_name.trim() })
+    }
+
     const result = await query(`
       INSERT INTO blueprint.org_wip_limits (org_id, stage_name, wip_limit, enforcement_type)
       VALUES ($1, $2, $3, $4)
@@ -1703,8 +1789,8 @@ router.patch('/work-items/:id', async (req, res, next) => {
 router.post('/work-items/:id/substate', async (req, res, next) => {
   try {
     const { substate } = req.body
-    if (!['active', 'blocked'].includes(substate)) {
-      return res.status(400).json({ error: 'substate must be "active" or "blocked"' })
+    if (!['active', 'blocked', 'waiting'].includes(substate)) {
+      return res.status(400).json({ error: 'substate must be "active", "blocked", or "waiting"' })
     }
     const result = await query(`
       UPDATE runtime.work_items
@@ -1894,6 +1980,107 @@ router.get('/work-items/:id/links', async (req, res, next) => {
 
     const rows = [...parentResult.rows, ...childResult.rows, ...linkResult.rows]
     res.json({ rows, count: rows.length })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// REPORTS
+// =============================================================================
+
+// Delivery time histogram — completed items with lead time buckets
+router.get('/reports/delivery-time', async (req, res, next) => {
+  try {
+    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
+    const witType = req.query.wit_type || null
+    const days = parseInt(req.query.days) || 42 // default 6 weeks
+
+    const result = await query(`
+      SELECT wi.id, wi.title, wi.display_key,
+             wit.name AS work_item_type_name,
+             s.stage_class,
+             wi.created_at AS started_at,
+             wi.entered_current_stage_at AS completed_at,
+             EXTRACT(EPOCH FROM (wi.entered_current_stage_at - wi.created_at)) / 3600 AS lead_time_hours
+      FROM runtime.work_items wi
+      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      WHERE s.stage_class = 'done'
+        AND wi.spawn_state = 'active'
+        AND wi.entered_current_stage_at >= NOW() - ($1 || ' days')::interval
+        ${orgId ? 'AND wi.owner_org_id = $2' : ''}
+        ${witType ? `AND wit.name = ${orgId ? '$3' : '$2'}` : ''}
+      ORDER BY wi.entered_current_stage_at ASC
+    `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// Throughput — items completed per time bucket
+router.get('/reports/throughput', async (req, res, next) => {
+  try {
+    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
+    const witType = req.query.wit_type || null
+    const days = parseInt(req.query.days) || 42
+    const bucket = req.query.bucket || 'week' // day, week, month
+
+    const truncExpr = bucket === 'day' ? `date_trunc('day', wi.entered_current_stage_at)`
+                    : bucket === 'month' ? `date_trunc('month', wi.entered_current_stage_at)`
+                    : `date_trunc('week', wi.entered_current_stage_at)`
+
+    const result = await query(`
+      SELECT ${truncExpr} AS period,
+             wit.name AS work_item_type_name,
+             COUNT(*)::int AS count
+      FROM runtime.work_items wi
+      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      WHERE s.stage_class = 'done'
+        AND wi.spawn_state = 'active'
+        AND wi.entered_current_stage_at >= NOW() - ($1 || ' days')::interval
+        ${orgId ? 'AND wi.owner_org_id = $2' : ''}
+        ${witType ? `AND wit.name = ${orgId ? '$3' : '$2'}` : ''}
+      GROUP BY period, wit.name
+      ORDER BY period ASC, wit.name ASC
+    `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// Cycle time by stage — average time in each stage for completed items
+router.get('/reports/cycle-time-by-stage', async (req, res, next) => {
+  try {
+    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
+    const witType = req.query.wit_type || null
+    const days = parseInt(req.query.days) || 42
+
+    // Get stage transition history — each row represents time in the from_stage
+    const result = await query(`
+      SELECT s.name AS stage_name,
+             s.stage_class,
+             COUNT(DISTINCT h.work_item_id)::int AS item_count,
+             AVG(h.time_in_stage_seconds) / 3600.0 AS avg_hours,
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY h.time_in_stage_seconds
+             ) / 3600.0 AS median_hours,
+             PERCENTILE_CONT(0.85) WITHIN GROUP (
+               ORDER BY h.time_in_stage_seconds
+             ) / 3600.0 AS p85_hours
+      FROM runtime.stage_transition_history h
+      JOIN runtime.work_items wi ON wi.id = h.work_item_id
+      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+      JOIN blueprint.stages s ON s.id = h.from_stage_id
+      WHERE wi.spawn_state = 'active'
+        AND h.exited_from_stage_at >= NOW() - ($1 || ' days')::interval
+        AND s.stage_class != 'done'
+        ${orgId ? 'AND wi.owner_org_id = $2' : ''}
+        ${witType ? `AND wit.name = ${orgId ? '$3' : '$2'}` : ''}
+      GROUP BY s.name, s.stage_class
+      ORDER BY MIN(s.display_order) ASC
+    `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
+
+    res.json({ rows: result.rows, count: result.rowCount })
   } catch (err) { next(err) }
 })
 

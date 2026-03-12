@@ -136,6 +136,21 @@ function StageNode({ stage, position, selected, onClick }) {
   )
 }
 
+// ─── Shared Field wrapper ────────────────────────────────────────────────────
+
+function Field({ label, children, hint }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</label>
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      {children}
+    </div>
+  )
+}
+
+const inputCls = "w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
+const selectCls = "w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
+
 // ─── Stage Editor ─────────────────────────────────────────────────────────────
 
 const PROTECTED = new Set(['intake', 'done', 'cancelled'])
@@ -224,17 +239,6 @@ function StageEditor({ stage, allStages, onSave, onDelete, onClose }) {
       setError(err.message)
     }
   }
-
-  const Field = ({ label, children, hint }) => (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</label>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {children}
-    </div>
-  )
-
-  const inputCls = "w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
-  const selectCls = "w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary"
 
   return (
     <div className="w-[420px] flex-shrink-0 border-l border-border flex flex-col bg-card">

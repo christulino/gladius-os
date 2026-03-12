@@ -14,7 +14,7 @@
  *   { isSlug: true, slugFrom: 'name' }   — auto-populate from another field (user can override)
  */
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { Button }  from '@/components/ui/button'
 import { Switch }  from '@/components/ui/switch'
@@ -86,18 +86,24 @@ function toSlug(str) {
   return str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
-export function FormDrawer({ open, onOpenChange, title, fields = [], initialValues, onSubmit, onSaved, extraContent }) {
+export function FormDrawer({ open, onOpenChange, title, fields = [], initialValues, onSubmit, onSaved, extraContent, autoSave = false }) {
   const isEdit = !!initialValues
   const [values,       setValues]       = useState({})
   const [options,      setOptions]      = useState({}) // fieldKey → [{label, value}]
   const [slugTouched,  setSlugTouched]  = useState({}) // fieldKey → bool
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState(null)
+  const [saveStatus,   setSaveStatus]   = useState(null) // 'saved' | 'saving' | null
   const prevDeps = useRef({})
+  const autoSaveTimer = useRef(null)
+  const valuesRef = useRef(values)
+  const formReady = useRef(false)
+  valuesRef.current = values
 
   // Reset form and load initial options on open
   useEffect(() => {
-    if (!open) return
+    if (!open) { formReady.current = false; return }
+    formReady.current = false
     const initial = {}
     const touched = {}
     for (const f of fields) {
@@ -129,6 +135,8 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
         ).catch(() => {})
       }
     }
+    // Mark form ready after a tick so initial state changes don't trigger auto-save
+    setTimeout(() => { formReady.current = true }, 50)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -152,6 +160,29 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields, values])
 
+  // Auto-save: debounce changes and submit
+  const triggerAutoSave = useCallback(() => {
+    if (!autoSave || !formReady.current) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    setSaveStatus('saving')
+    autoSaveTimer.current = setTimeout(async () => {
+      try {
+        await onSubmit(valuesRef.current)
+        setSaveStatus('saved')
+        onSaved?.()
+        setTimeout(() => setSaveStatus(s => s === 'saved' ? null : s), 1500)
+      } catch (err) {
+        setError(err.message)
+        setSaveStatus(null)
+      }
+    }, 600)
+  }, [autoSave, onSubmit, onSaved])
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
+  }, [])
+
   function set(key, val) {
     setValues(v => {
       const next = { ...v, [key]: val }
@@ -164,12 +195,14 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
       return next
     })
     setError(null)
+    triggerAutoSave()
   }
 
   function setSlug(key, val) {
     setSlugTouched(t => ({ ...t, [key]: !!val }))
     setValues(v => ({ ...v, [key]: val }))
     setError(null)
+    triggerAutoSave()
   }
 
   async function handleSubmit() {
@@ -196,7 +229,14 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent onInteractOutside={e => e.preventDefault()}>
         <SheetHeader>
-          <SheetTitle className="text-sm font-semibold">{title}</SheetTitle>
+          <div className="flex items-center gap-2">
+            <SheetTitle className="text-sm font-semibold flex-1">{title}</SheetTitle>
+            {autoSave && saveStatus && (
+              <span className={`text-xs ${saveStatus === 'saved' ? 'text-primary' : 'text-muted-foreground'}`}>
+                {saveStatus === 'saving' ? 'Saving...' : 'Saved'}
+              </span>
+            )}
+          </div>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
@@ -288,14 +328,16 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
           )}
         </div>
 
-        <SheetFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} disabled={saving} className="flex-1">
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </SheetFooter>
+        {!autoSave && (
+          <SheetFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmit} disabled={saving} className="flex-1">
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+          </SheetFooter>
+        )}
       </SheetContent>
     </Sheet>
   )

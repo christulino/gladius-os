@@ -52,7 +52,7 @@ export const workflows = [
         is_entry_stage:false,
         is_terminal:   false,
         sla_hours:     null,
-        wip_limit:     3,
+        wip_limit:     null,
         has_waiting_queue: true,
       },
       {
@@ -117,7 +117,7 @@ export const workflows = [
         is_entry_stage:false,
         is_terminal:   false,
         sla_hours:     24,
-        wip_limit:     5,
+        wip_limit:     null,
       },
       {
         key:           'queued',
@@ -140,7 +140,7 @@ export const workflows = [
         is_entry_stage:false,
         is_terminal:   false,
         sla_hours:     null,
-        wip_limit:     3,
+        wip_limit:     null,
         has_waiting_queue: true,
       },
       {
@@ -162,7 +162,7 @@ export const workflows = [
         is_entry_stage:false,
         is_terminal:   false,
         sla_hours:     24,
-        wip_limit:     3,
+        wip_limit:     null,
         requires_review: true,
       },
       {
@@ -231,7 +231,7 @@ export const workflows = [
         is_entry_stage:false,
         is_terminal:   false,
         sla_hours:     8,
-        wip_limit:     5,
+        wip_limit:     null,
       },
       {
         key:           'queued',
@@ -250,7 +250,7 @@ export const workflows = [
         display_order: 4,
         is_entry_stage:false,
         is_terminal:   false,
-        wip_limit:     3,
+        wip_limit:     null,
         has_waiting_queue: true,
       },
       {
@@ -339,7 +339,7 @@ export const workflows = [
         is_entry_stage:false,
         is_terminal:   false,
         sla_hours:     48,
-        wip_limit:     10,
+        wip_limit:     null,
       },
       {
         key:           'approved',
@@ -358,7 +358,7 @@ export const workflows = [
         display_order: 4,
         is_entry_stage:false,
         is_terminal:   false,
-        wip_limit:     5,
+        wip_limit:     null,
         has_waiting_queue: true,
       },
       {

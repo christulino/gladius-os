@@ -16,9 +16,9 @@ const SheetOverlay = forwardRef(({ className, ...props }, ref) => (
 ))
 SheetOverlay.displayName = 'SheetOverlay'
 
-const SheetContent = forwardRef(({ className, children, side = 'right', ...props }, ref) => (
+const SheetContent = forwardRef(({ className, children, side = 'right', overlay = true, ...props }, ref) => (
   <SheetPortal>
-    <SheetOverlay />
+    {overlay && <SheetOverlay />}
     <DialogPrimitive.Content
       ref={ref}
       className={cn(

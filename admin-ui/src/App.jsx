@@ -14,6 +14,8 @@ import History       from '@/pages/History'
 import RawTables     from '@/pages/RawTables'
 import LogViewer     from '@/pages/LogViewer'
 import DbConsole     from '@/pages/DbConsole'
+import Reports       from '@/pages/Reports'
+import Simulation   from '@/pages/Simulation'
 
 const NAV = [
   { id: 'board',         label: 'Board',            section: null },
@@ -29,7 +31,8 @@ const NAV = [
 
   { id: 'reports',       label: 'Reports',          section: 'Reports' },
 
-  { id: 'workitems',     label: 'Work Items',       section: 'Dev Tools' },
+  { id: 'simulation',    label: 'Simulation',       section: 'Dev Tools' },
+  { id: 'workitems',     label: 'Work Items',       section: null },
   { id: 'history',       label: 'Transitions',      section: null },
   { id: 'raw',           label: 'Raw Tables',       section: null },
   { id: 'logs',          label: 'Log Viewer',       section: null },
@@ -51,7 +54,8 @@ const PAGES = {
   raw:           RawTables,
   logs:          LogViewer,
   db:            DbConsole,
-  reports:       () => <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground">Reports — coming soon</div>,
+  reports:       Reports,
+  simulation:    Simulation,
 }
 
 export default function App() {

@@ -15,12 +15,13 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
     )
   }, [types, search])
 
-  // Group by class_name
+  // Group by owning org
   const grouped = useMemo(() => {
     const groups = {}
     for (const t of filtered) {
-      if (!groups[t.class_name]) groups[t.class_name] = []
-      groups[t.class_name].push(t)
+      const key = t.owner_org_name || 'System'
+      if (!groups[key]) groups[key] = []
+      groups[key].push(t)
     }
     return groups
   }, [filtered])
@@ -34,12 +35,12 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="flex flex-col gap-0 p-0">
         <SheetHeader className="px-4 pt-4 pb-3 border-b border-border">
-          <SheetTitle className="text-sm font-semibold">New Work Item</SheetTitle>
+          <SheetTitle className="text-sm font-semibold">Service Catalog</SheetTitle>
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search types..."
+            placeholder="Search by name or description..."
             className="mt-2 w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
             autoFocus
           />
@@ -51,41 +52,30 @@ export function ServiceLibrary({ open, onOpenChange, types = [], onSelect, onMan
               <span className="text-xs text-muted-foreground">No types found</span>
             </div>
           ) : (
-            Object.entries(grouped).map(([className, items]) => (
-              <div key={className}>
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-2 border-b border-border/50 bg-card/50 sticky top-0">
-                  {className}
+            Object.entries(grouped).map(([orgName, items]) => (
+              <div key={orgName}>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-4 py-1.5 border-b border-border/50 bg-card/50 sticky top-0">
+                  {orgName}
                 </div>
                 {items.map(type => (
                   <button
                     key={type.id}
                     onClick={() => handleSelect(type)}
-                    className="w-full flex items-start gap-3 px-4 py-3 text-left hover:bg-black/[0.03] border-b border-border/30 transition-colors"
+                    className="w-full flex items-center gap-2.5 px-4 py-2 text-left hover:bg-black/[0.03] border-b border-border/30 transition-colors"
+                    title={type.description || type.class_name}
                   >
-                    <div className="flex-shrink-0 mt-0.5">
+                    <span className="flex-shrink-0">
                       {type.icon ? (
-                        <span className="text-xl">{type.icon}</span>
+                        <span className="text-base">{type.icon}</span>
                       ) : (
                         <span
-                          className="inline-block w-3 h-3 rounded-full mt-0.5"
+                          className="inline-block w-2.5 h-2.5 rounded-full"
                           style={{ background: type.color || '#6b7280' }}
                         />
                       )}
-                    </div>
-                    <div className="min-w-0 flex flex-col gap-0.5">
-                      <span className="text-xs font-medium text-foreground">{type.name}</span>
-                      {type.description && (
-                        <span className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                          {type.description}
-                        </span>
-                      )}
-                    </div>
-                    {type.color && !type.icon && (
-                      <span
-                        className="flex-shrink-0 w-2 h-2 rounded-full mt-1.5"
-                        style={{ background: type.color }}
-                      />
-                    )}
+                    </span>
+                    <span className="text-xs font-medium text-foreground truncate">{type.name}</span>
+                    <span className="text-xs text-muted-foreground/50 ml-auto flex-shrink-0">{type.class_name}</span>
                   </button>
                 ))}
               </div>
