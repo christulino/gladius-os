@@ -111,6 +111,11 @@ export const api = {
                        apiFetch(`/tables/${schema}/${table}?limit=${limit}&offset=${offset}`),
   logs:              (limit = 200) => apiFetch(`/logs?limit=${limit}`),
 
+  // Reports
+  reportDeliveryTime:    (params) => apiFetch(`/reports/delivery-time?${new URLSearchParams(params)}`),
+  reportThroughput:      (params) => apiFetch(`/reports/throughput?${new URLSearchParams(params)}`),
+  reportCycleTimeByStage:(params) => apiFetch(`/reports/cycle-time-by-stage?${new URLSearchParams(params)}`),
+
   query: (sql) => apiFetch('/query', {
     method: 'POST',
     body:   JSON.stringify({ sql }),
@@ -120,4 +125,12 @@ export const api = {
     method: 'PATCH',
     body:   JSON.stringify(updates),
   }),
+
+  // Simulation
+  simulationStart:    (data) => apiFetch('/simulation/start', { method: 'POST', body: JSON.stringify(data || {}) }),
+  simulationStop:     () => apiFetch('/simulation/stop', { method: 'POST' }),
+  simulationPause:    () => apiFetch('/simulation/pause', { method: 'POST' }),
+  simulationResume:   () => apiFetch('/simulation/resume', { method: 'POST' }),
+  simulationSpeed:    (speed) => apiFetch('/simulation/speed', { method: 'PUT', body: JSON.stringify({ speed }) }),
+  simulationStatus:   () => apiFetch('/simulation/status'),
 }

@@ -23,6 +23,7 @@ import orgRoutes        from './routes/organizations.js'
 import catalogRoutes    from './routes/catalog.js'
 import boardRoutes      from './routes/board.js'
 import adminApiRoutes   from '../admin/api.js'
+import simulationRoutes from './routes/simulation.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -58,6 +59,7 @@ app.use('/v1/work-items',    workItemRoutes)
 app.use('/v1/organizations', orgRoutes)
 app.use('/v1/catalog',       catalogRoutes)
 app.use('/v1/board',         boardRoutes)
+app.use('/admin/api/simulation', simulationRoutes)
 app.use('/admin/api',        adminApiRoutes)
 
 // Serve uploaded files (avatars, etc.)

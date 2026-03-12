@@ -4,6 +4,8 @@ import { formatElapsed, formatRelative } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ServiceLibrary } from '@/components/ServiceLibrary'
+import { FormDrawer } from '@/components/FormDrawer'
 
 const SERVICE_CLASS_CONFIG = {
   expedite:   { label: 'Expedite',   color: '#A33A25' },
@@ -12,7 +14,8 @@ const SERVICE_CLASS_CONFIG = {
   deferred:   { label: 'Deferred',   color: '#6A6460' },
 }
 
-export function WorkItemDetail({ workItemId, open, onOpenChange, onChanged }) {
+export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChange, onChanged }) {
+  const [activeId, setActiveId] = useState(initialWorkItemId)
   const [item, setItem] = useState(null)
   const [transitions, setTransitions] = useState([])
   const [comments, setComments] = useState([])
@@ -36,11 +39,30 @@ export function WorkItemDetail({ workItemId, open, onOpenChange, onChanged }) {
   const [reasonPrompt, setReasonPrompt] = useState(null)
   const [reasonText, setReasonText] = useState('')
 
+  // People / assignments
+  const [showAddPerson, setShowAddPerson] = useState(false)
+  const [personType, setPersonType] = useState('owns')
+  const [personSearch, setPersonSearch] = useState('')
+  const [users, setUsers] = useState([])
+
   // Search + link
   const [linkSearch, setLinkSearch] = useState('')
   const [linkResults, setLinkResults] = useState([])
   const [linkType, setLinkType] = useState('related')
   const [showLinkPanel, setShowLinkPanel] = useState(false)
+
+  // Child creation
+  const [childLibraryOpen, setChildLibraryOpen] = useState(false)
+  const [childSelectedType, setChildSelectedType] = useState(null)
+  const [childCreateOpen, setChildCreateOpen] = useState(false)
+  const [libraryTypes, setLibraryTypes] = useState([])
+
+  // Sync when parent changes the ID
+  useEffect(() => {
+    setActiveId(initialWorkItemId)
+  }, [initialWorkItemId])
+
+  const workItemId = activeId
 
   const loadData = useCallback(async () => {
     if (!workItemId) return
@@ -194,13 +216,81 @@ export function WorkItemDetail({ workItemId, open, onOpenChange, onChanged }) {
     } finally { setSaving(false) }
   }
 
+  // People management
+  async function openAddPerson() {
+    try {
+      const res = await api.users()
+      setUsers(res.rows || [])
+    } catch { /* ignore */ }
+    setShowAddPerson(true)
+  }
+
+  async function addPerson(userId) {
+    setSaving(true)
+    try {
+      await api.addRelationship(workItemId, userId, personType)
+      setShowAddPerson(false)
+      const rels = await api.workItemRelationships(workItemId)
+      setRelationships(rels.rows || [])
+      onChanged?.()
+    } catch (err) {
+      console.error('Failed to add person:', err)
+    } finally { setSaving(false) }
+  }
+
+  async function removePerson(relId) {
+    setSaving(true)
+    try {
+      await api.removeRelationship(relId)
+      const rels = await api.workItemRelationships(workItemId)
+      setRelationships(rels.rows || [])
+      onChanged?.()
+    } finally { setSaving(false) }
+  }
+
+  // Load service library for child creation
+  async function openChildLibrary() {
+    try {
+      const res = await api.serviceLibrary(item.owner_org_id || 0)
+      setLibraryTypes(res.rows || [])
+      setChildLibraryOpen(true)
+    } catch { setChildLibraryOpen(true) }
+  }
+
+  const childCreateFields = [
+    { key: 'title', label: 'Title', type: 'text', required: true, placeholder: 'What needs to happen?' },
+    { key: 'description', label: 'Description', type: 'textarea', placeholder: 'Optional context...' },
+  ]
+
+  async function handleCreateChild(values) {
+    const result = await api.createWorkItem({
+      title: values.title,
+      description: values.description || undefined,
+      work_item_type_id: childSelectedType?.id,
+      owner_org_id: childSelectedType?.owner_org_id || item.owner_org_id,
+    })
+    // Link as child
+    if (result?.id) {
+      await api.addWorkItemLink(workItemId, result.id, 'child')
+    }
+    return result
+  }
+
+  async function onChildCreated() {
+    setChildCreateOpen(false)
+    // Reload links
+    const lnks = await api.workItemLinks(workItemId)
+    setLinks(lnks.rows || [])
+    onChanged?.()
+  }
+
   if (!item && !loading) return null
 
   const cos = SERVICE_CLASS_CONFIG[item?.derived_service_class] || SERVICE_CLASS_CONFIG.standard
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent onInteractOutside={e => e.preventDefault()}>
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
+      <SheetContent overlay={false}>
         {loading && !item ? (
           <div className="p-6 flex items-center justify-center">
             <span className="text-xs text-muted-foreground">Loading...</span>
@@ -461,33 +551,142 @@ export function WorkItemDetail({ workItemId, open, onOpenChange, onChanged }) {
                     )}
                   </div>
 
-                  {/* Linked items */}
-                  {links.length > 0 && (
+                  {/* Children */}
+                  <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Children</span>
+                      <button
+                        onClick={openChildLibrary}
+                        className="text-xs text-primary hover:text-primary/80 transition-colors"
+                        title="Add child work item"
+                      >
+                        + Add
+                      </button>
+                    </div>
+                    {links.filter(l => l.link_type === 'child').length === 0 ? (
+                      <span className="text-xs text-muted-foreground/60">No children yet</span>
+                    ) : (
+                      links.filter(l => l.link_type === 'child').map((l, i) => (
+                        <button
+                          key={i}
+                          className="flex items-center gap-2 text-xs w-full text-left hover:bg-black/[0.03] rounded px-1 py-1 -mx-1 transition-colors"
+                          onClick={() => { setActiveId(l.id); setTab('details') }}
+                        >
+                          <span className="text-xs text-muted-foreground">{l.display_key}</span>
+                          <span className="truncate">{l.title}</span>
+                          <span className="ml-auto text-xs text-muted-foreground">{l.current_stage_name}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Linked items (non-child) */}
+                  {links.filter(l => l.link_type !== 'child').length > 0 && (
                     <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Linked Items</span>
-                      {links.map((l, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
+                      {links.filter(l => l.link_type !== 'child').map((l, i) => (
+                        <button
+                          key={i}
+                          className="flex items-center gap-2 text-xs w-full text-left hover:bg-black/[0.03] rounded px-1 py-1 -mx-1 transition-colors"
+                          onClick={() => { setActiveId(l.id); setTab('details') }}
+                        >
                           <Badge variant="muted">{l.link_type}</Badge>
                           <span className="text-xs text-muted-foreground">{l.display_key}</span>
                           <span className="truncate">{l.title}</span>
                           <span className="ml-auto text-xs text-muted-foreground">{l.current_stage_name}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   )}
 
-                  {/* Relationships */}
-                  {relationships.length > 0 && (
-                    <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
+                  {/* People / Assignments */}
+                  <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
+                    <div className="flex items-center justify-between">
                       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">People</span>
-                      {relationships.map(r => (
-                        <div key={r.id} className="flex items-center gap-2 text-xs">
-                          <Badge variant="muted">{r.relationship_type.replace(/_/g, ' ')}</Badge>
-                          <span>{r.display_name}</span>
-                        </div>
-                      ))}
+                      <button
+                        onClick={openAddPerson}
+                        className="text-xs text-primary hover:text-primary/80 transition-colors"
+                        title="Add person"
+                      >
+                        + Add
+                      </button>
                     </div>
-                  )}
+
+                    {relationships.length === 0 && !showAddPerson && (
+                      <span className="text-xs text-muted-foreground/60">No people assigned</span>
+                    )}
+
+                    {relationships.map(r => (
+                      <div key={r.id} className="flex items-center gap-2 text-xs group">
+                        <span
+                          className="w-6 h-6 rounded-full bg-muted text-xs flex items-center justify-center flex-shrink-0 text-muted-foreground"
+                          title={r.display_name}
+                        >
+                          {r.display_name?.split(/\s+/).map(p => p[0]).join('').toUpperCase().slice(0, 2)}
+                        </span>
+                        <span className="flex-1">{r.display_name}</span>
+                        <Badge variant="muted">{r.relationship_type.replace(/_/g, ' ')}</Badge>
+                        <button
+                          onClick={() => removePerson(r.id)}
+                          className="text-muted-foreground/40 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                          title="Remove"
+                          disabled={saving}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Add person panel */}
+                    {showAddPerson && (
+                      <div className="flex flex-col gap-2 p-3 border border-border rounded bg-background">
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={personType}
+                            onChange={e => setPersonType(e.target.value)}
+                            className="text-xs bg-card border border-border rounded px-2 py-1.5"
+                          >
+                            <option value="owns">Owner</option>
+                            <option value="working_on">Working on</option>
+                            <option value="reviewing">Reviewer</option>
+                            <option value="watching">Watching</option>
+                          </select>
+                          <button
+                            onClick={() => { setShowAddPerson(false); setPersonSearch('') }}
+                            className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            cancel
+                          </button>
+                        </div>
+                        <input
+                          value={personSearch}
+                          onChange={e => setPersonSearch(e.target.value)}
+                          placeholder="Search by name..."
+                          className="w-full text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary placeholder:text-muted-foreground/40"
+                          autoFocus
+                        />
+                        <div className="max-h-40 overflow-y-auto border border-border rounded">
+                          {users
+                            .filter(u => !relationships.some(r => r.user_id === u.id && r.relationship_type === personType))
+                            .filter(u => !personSearch || u.display_name?.toLowerCase().includes(personSearch.toLowerCase()))
+                            .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''))
+                            .map(u => (
+                              <button
+                                key={u.id}
+                                onClick={() => { addPerson(u.id); setPersonSearch('') }}
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-black/[0.03] transition-colors flex items-center gap-2 border-b border-border/30 last:border-0"
+                                disabled={saving}
+                              >
+                                <span className="w-5 h-5 rounded-full bg-muted text-xs flex items-center justify-center flex-shrink-0 text-muted-foreground">
+                                  {u.display_name?.split(/\s+/).map(p => p[0]).join('').toUpperCase().slice(0, 2)}
+                                </span>
+                                <span>{u.display_name}</span>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* URI */}
                   <div className="flex flex-col gap-1 pt-3 mt-1 border-t border-border">
@@ -559,6 +758,24 @@ export function WorkItemDetail({ workItemId, open, onOpenChange, onChanged }) {
           </>
         ) : null}
       </SheetContent>
+
+      {/* Child creation: Service Library */}
+      <ServiceLibrary
+        open={childLibraryOpen}
+        onOpenChange={setChildLibraryOpen}
+        types={libraryTypes}
+        onSelect={type => { setChildSelectedType(type); setChildCreateOpen(true); setChildLibraryOpen(false) }}
+      />
+
+      {/* Child creation: Form */}
+      <FormDrawer
+        open={childCreateOpen}
+        onOpenChange={setChildCreateOpen}
+        title={childSelectedType ? `New ${childSelectedType.name}` : 'New Child Item'}
+        fields={childCreateFields}
+        onSubmit={handleCreateChild}
+        onSaved={onChildCreated}
+      />
     </Sheet>
   )
 }

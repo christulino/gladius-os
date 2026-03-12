@@ -169,16 +169,18 @@ export async function executeTransition(workItemId, toStageId, userId, options =
     await client.query('BEGIN')
 
     // 1. Update work item's current stage
+    const newSubstate = toStage.has_waiting_queue ? 'waiting' : 'active'
     await client.query(`
       UPDATE runtime.work_items SET
         current_stage_id        = $1,
-        current_substate        = 'active',
-        entered_current_stage_at = $2,
-        spawn_state             = $3,
-        updated_at              = $2
-      WHERE id = $4
+        current_substate        = $2,
+        entered_current_stage_at = $3,
+        spawn_state             = $4,
+        updated_at              = $3
+      WHERE id = $5
     `, [
       toStageId,
+      newSubstate,
       now,
       toStage.is_terminal ? (toStage.stage_class === 'cancelled' ? 'cancelled' : 'done') : 'active',
       workItemId,

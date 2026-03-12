@@ -15,7 +15,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'check-square',
+    icon:              '✅',
     color:             '#3B82F6',
   },
   {
@@ -27,7 +27,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'star',
+    icon:              '⭐',
     color:             '#8B5CF6',
   },
   {
@@ -39,7 +39,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'bug',
+    icon:              '🐛',
     color:             '#EF4444',
   },
   {
@@ -51,7 +51,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'layers',
+    icon:              '🎯',
     color:             '#EC4899',
   },
   {
@@ -63,7 +63,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'folder',
+    icon:              '📋',
     color:             '#10B981',
   },
   {
@@ -75,7 +75,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'inbox',
+    icon:              '📩',
     color:             '#F59E0B',
   },
   {
@@ -87,7 +87,7 @@ export const workItemTypes = [
     request_mode:      'user_requestable',
     is_published:      true,
     is_system_default: true,
-    icon:              'alert-triangle',
+    icon:              '🚨',
     color:             '#DC2626',
   },
 ]

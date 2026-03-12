@@ -1,82 +1,26 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { api } from '@/lib/api'
 import { useApi } from '@/hooks/useApi'
 import { WorkItemCard } from '@/components/WorkItemCard'
 import { WorkItemDetail } from '@/components/WorkItemDetail'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
+import { OrgSelector } from '@/components/OrgSelector'
 import { Button } from '@/components/ui/button'
 
-// ─── Multiselect Org Picker ───────────────────────────────────────────────────
+// ─── Service Class Swimlane Config ──────────────────────────────────────────
 
-function OrgMultiSelect({ orgs, selected, onChange }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (!ref.current?.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [])
-
-  function toggle(id) {
-    if (selected.includes(id)) {
-      onChange(selected.filter(x => x !== id))
-    } else {
-      onChange([...selected, id])
-    }
-  }
-
-  const label = selected.length === 0
-    ? 'Select orgs...'
-    : selected.length === orgs.length
-      ? 'All orgs'
-      : orgs.filter(o => selected.includes(o.id)).map(o => o.name).join(', ')
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 bg-card border border-border rounded px-2.5 py-1.5 text-xs text-foreground hover:border-primary/50 transition-colors min-w-[160px] max-w-[280px]"
-      >
-        <span className="truncate flex-1 text-left">{label}</span>
-        <span className="text-muted-foreground flex-shrink-0">▾</span>
-      </button>
-
-      {open && (
-        <div className="absolute top-full mt-1 left-0 z-50 bg-card border border-border rounded shadow-lg min-w-[200px] py-1">
-          {orgs.map(org => (
-            <label
-              key={org.id}
-              className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(org.id)}
-                onChange={() => toggle(org.id)}
-                className="accent-primary"
-              />
-              <span className="text-xs text-foreground">{org.name}</span>
-              <span className="text-xs text-muted-foreground ml-auto">{org.slug}</span>
-            </label>
-          ))}
-          <div className="border-t border-border mt-1 pt-1 px-3 pb-1 flex gap-2">
-            <button
-              onClick={() => onChange(orgs.map(o => o.id))}
-              className="text-xs text-primary hover:underline"
-            >all</button>
-            <button
-              onClick={() => onChange([])}
-              className="text-xs text-muted-foreground hover:underline"
-            >none</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
+const SWIMLANE_ORDER = ['expedite', 'fixed_date', 'standard', 'deferred', 'personal']
+const SWIMLANE_CONFIG = {
+  expedite:   { label: 'Expedite',   color: '#A33A25', bg: '#A33A250A' },
+  fixed_date: { label: 'Fixed Date', color: '#9A7318', bg: '#9A73180A' },
+  standard:   { label: 'Standard',   color: '#1E5C3A', bg: '#1E5C3A0A' },
+  deferred:   { label: 'Deferred',   color: '#6A6460', bg: '#6A64600A' },
+  personal:   { label: 'Personal',   color: '#8B7355', bg: '#8B73550A' },
 }
+
+const COL_WIDTH = 220
+const LABEL_WIDTH = 80
 
 // ─── WIP Indicator ────────────────────────────────────────────────────────────
 
@@ -92,7 +36,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
         onBlur={() => {
           setEditing(false)
           const val = parseInt(draft)
-          if (val > 0) onEdit?.(val)
+          onEdit?.(val > 0 ? val : 0)
         }}
         onKeyDown={e => {
           if (e.key === 'Enter') { e.target.blur() }
@@ -100,6 +44,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
         }}
         className="w-12 text-xs text-center bg-background border border-primary rounded px-1 py-0.5 focus:outline-none"
         autoFocus
+        placeholder="none"
       />
     )
   }
@@ -111,7 +56,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
         onClick={() => { if (editable) { setDraft(''); setEditing(true) } }}
         title={editable ? 'Click to set WIP limit' : undefined}
       >
-        {count}
+        {count} · <span className="italic">unlimited</span>
       </span>
     )
   }
@@ -123,7 +68,7 @@ function WipIndicator({ count, limit, onEdit, editable }) {
         over ? 'border-destructive/40 bg-destructive/10 text-destructive' : 'border-border bg-muted/60 text-muted-foreground'
       } ${editable ? 'cursor-pointer' : ''}`}
       onClick={() => { if (editable) { setDraft(String(limit)); setEditing(true) } }}
-      title={editable ? 'Click to edit WIP limit' : undefined}
+      title={editable ? 'Click to edit WIP limit (0 or blank to clear)' : undefined}
     >
       {count}/{limit}
     </span>
@@ -133,73 +78,141 @@ function WipIndicator({ count, limit, onEdit, editable }) {
 // ─── Board ───────────────────────────────────────────────────────────────────
 
 export default function Board({ setTab }) {
-  const [selectedOrgIds, setSelectedOrgIds] = useState(() => {
+  const [selectedOrgId, setSelectedOrgId] = useState(() => {
     try {
-      const stored = localStorage.getItem('board_org_ids')
-      return stored ? JSON.parse(stored) : []
-    } catch { return [] }
+      const oldStored = localStorage.getItem('board_org_ids')
+      if (oldStored) {
+        localStorage.removeItem('board_org_ids')
+        const arr = JSON.parse(oldStored)
+        if (Array.isArray(arr) && arr.length > 0) {
+          localStorage.setItem('board_org_id', String(arr[0]))
+          return arr[0]
+        }
+      }
+      const stored = localStorage.getItem('board_org_id')
+      return stored ? parseInt(stored) : null
+    } catch { return null }
   })
   const [detailItemId, setDetailItemId]   = useState(null)
   const [detailOpen,   setDetailOpen]     = useState(false)
   const [libraryOpen,  setLibraryOpen]    = useState(false)
   const [selectedType, setSelectedType]   = useState(null)
   const [createOpen,   setCreateOpen]     = useState(false)
+  const [classFilter,  setClassFilter]    = useState('')
+  const [myItemsOnly,  setMyItemsOnly]   = useState(false)
 
   const { data: orgsData } = useApi(() => api.organizations(), [])
 
-  // Auto-select first org if none stored
   useEffect(() => {
-    if (selectedOrgIds.length || !orgsData?.rows?.length) return
-    const ids = [orgsData.rows[0].id]
-    setSelectedOrgIds(ids)
-    localStorage.setItem('board_org_ids', JSON.stringify(ids))
-  }, [orgsData, selectedOrgIds.length])
+    if (selectedOrgId || !orgsData?.rows?.length) return
+    const nonSystem = orgsData.rows.find(o => o.slug !== 'system')
+    if (nonSystem) {
+      setSelectedOrgId(nonSystem.id)
+      localStorage.setItem('board_org_id', String(nonSystem.id))
+    }
+  }, [orgsData, selectedOrgId])
 
-  function handleOrgChange(ids) {
-    setSelectedOrgIds(ids)
-    localStorage.setItem('board_org_ids', JSON.stringify(ids))
+  function handleOrgChange(id) {
+    setSelectedOrgId(id)
+    localStorage.setItem('board_org_id', String(id))
   }
 
-  // Use first selected org as primary (for workflow resolution)
-  const primaryOrgId = selectedOrgIds[0] ?? null
-  const isMultiOrg = selectedOrgIds.length > 1
-
-  // Board data keyed by org
   const { data: boardData, loading: boardLoading, error: boardError, reload: reloadBoard } = useApi(
-    () => primaryOrgId ? api.board(primaryOrgId) : Promise.resolve(null),
-    [primaryOrgId]
+    () => selectedOrgId ? api.board(selectedOrgId) : Promise.resolve(null),
+    [selectedOrgId]
   )
 
-  // Fetch items for additional orgs (all except primary)
-  const [extraItems, setExtraItems] = useState([])
-  useEffect(() => {
-    if (!boardData?.workflow_id || selectedOrgIds.length <= 1) {
-      setExtraItems([])
-      return
-    }
-    const additionalOrgs = selectedOrgIds.slice(1)
-    Promise.all(additionalOrgs.map(id => api.board(id))).then(results => {
-      const all = results.flatMap(r => r?.items ?? [])
-      setExtraItems(all)
-    }).catch(() => {})
-  }, [boardData?.workflow_id, selectedOrgIds])
-
-  // Service library uses primary org
   const { data: libraryData } = useApi(
-    () => primaryOrgId ? api.serviceLibrary(primaryOrgId) : Promise.resolve({ rows: [] }),
-    [primaryOrgId]
+    () => selectedOrgId ? api.serviceLibrary(selectedOrgId) : Promise.resolve({ rows: [] }),
+    [selectedOrgId]
   )
 
-  const stages = boardData?.stages ?? []
-  const allItems = [...(boardData?.items ?? []), ...extraItems]
+  const columns = boardData?.columns ?? []
+  const allItems = boardData?.items ?? []
   const wipLimits = boardData?.wip_limits ?? {}
 
-  // Group items by stage
-  const itemsByStage = {}
-  for (const item of allItems) {
-    if (!itemsByStage[item.current_stage_id]) itemsByStage[item.current_stage_id] = []
-    itemsByStage[item.current_stage_id].push(item)
+  // Flatten columns for rendering: array of stage objects, each with parent class info
+  const flatColumns = useMemo(() => {
+    const flat = []
+    for (const col of columns) {
+      const multi = col.stages.length > 1
+      for (const stage of col.stages) {
+        flat.push({
+          ...stage,
+          stage_class: col.stage_class,
+          class_label: col.class_label,
+          showClassHeader: multi,
+          classStageCount: col.stages.length,
+        })
+      }
+    }
+    return flat
+  }, [columns])
+
+  // Build a lookup: stage_id → column key
+  const stageIdToKey = useMemo(() => {
+    const map = {}
+    for (const col of flatColumns) {
+      for (const id of col.stage_ids) {
+        map[id] = col.key
+      }
+    }
+    return map
+  }, [flatColumns])
+
+  // Filter by WIT type name and "My Items"
+  const filteredItems = useMemo(() => {
+    let items = allItems
+    if (classFilter) items = items.filter(item => item.work_item_type_name === classFilter)
+    if (myItemsOnly) items = items.filter(item => item.owner_user_id != null)
+    return items
+  }, [allItems, classFilter, myItemsOnly])
+
+  // Item grid: grid[columnKey][swimlane] = { waiting: [], active: [] }
+  const itemGrid = useMemo(() => {
+    const grid = {}
+    for (const col of flatColumns) {
+      grid[col.key] = {}
+      for (const cls of SWIMLANE_ORDER) {
+        grid[col.key][cls] = { waiting: [], active: [] }
+      }
+    }
+    for (const item of filteredItems) {
+      const colKey = stageIdToKey[item.current_stage_id]
+      if (!colKey || !grid[colKey]) continue
+      const cls = item.derived_service_class || 'standard'
+      if (!grid[colKey][cls]) continue
+      if (item.current_substate === 'waiting') {
+        grid[colKey][cls].waiting.push(item)
+      } else {
+        grid[colKey][cls].active.push(item)
+      }
+    }
+    return grid
+  }, [flatColumns, filteredItems, stageIdToKey])
+
+  // Count items per column (all substates combined)
+  function columnItemCount(colKey) {
+    const colData = itemGrid[colKey]
+    if (!colData) return 0
+    let count = 0
+    for (const cls of SWIMLANE_ORDER) {
+      count += (colData[cls]?.waiting?.length ?? 0) + (colData[cls]?.active?.length ?? 0)
+    }
+    return count
   }
+
+  // Determine which swimlanes have items (hide empty)
+  const activeSwimlanes = useMemo(() => {
+    return SWIMLANE_ORDER.filter(cls =>
+      flatColumns.some(col => {
+        const cell = itemGrid[col.key]?.[cls]
+        return cell && (cell.waiting.length > 0 || cell.active.length > 0)
+      })
+    )
+  }, [flatColumns, itemGrid])
+
+  const displaySwimlanes = activeSwimlanes.length > 0 ? activeSwimlanes : ['standard']
 
   const createFields = [
     { key: 'title', label: 'Title', type: 'text', required: true, placeholder: 'What needs to happen?' },
@@ -214,13 +227,12 @@ export default function Board({ setTab }) {
     },
   ]
 
-  // Create work item in the org where the type lives (or primary org)
   function handleCreateWorkItem(values) {
     return api.createWorkItem({
       title:             values.title,
       description:       values.description || undefined,
       work_item_type_id: selectedType?.id,
-      owner_org_id:      primaryOrgId,
+      owner_org_id:      selectedType?.owner_org_id || selectedOrgId,
       due_date:          values.due_date || undefined,
       is_expedited:      values.is_expedited || false,
       work_nature:       values.work_nature || 'delivery',
@@ -228,36 +240,96 @@ export default function Board({ setTab }) {
   }
 
   async function handleWipEdit(stageName, newLimit) {
-    if (!primaryOrgId) return
+    if (!selectedOrgId) return
     try {
-      await api.setOrgWipLimit({ org_id: primaryOrgId, stage_name: stageName, wip_limit: newLimit })
+      await api.setOrgWipLimit({ org_id: selectedOrgId, stage_name: stageName, wip_limit: newLimit })
       reloadBoard()
     } catch (err) {
       console.error('Failed to set WIP limit:', err)
     }
   }
 
+  async function handlePull(itemId) {
+    try {
+      await api.setSubstate(itemId, 'active')
+      reloadBoard()
+    } catch (err) {
+      console.error('Failed to pull item:', err)
+    }
+  }
+
+  const witTypeNames = useMemo(() => {
+    const names = new Set(allItems.map(i => i.work_item_type_name).filter(Boolean))
+    return [...names].sort()
+  }, [allItems])
+
+  // Compute L1 header spans: which columns start a new class group, and how wide
+  const classHeaderSpans = useMemo(() => {
+    const spans = []
+    let i = 0
+    while (i < flatColumns.length) {
+      const col = flatColumns[i]
+      if (col.showClassHeader) {
+        // Count how many consecutive columns share this stage_class
+        let count = 0
+        let totalWidth = 0
+        while (i + count < flatColumns.length && flatColumns[i + count].stage_class === col.stage_class) {
+          const c = flatColumns[i + count]
+          totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 : COL_WIDTH
+          count++
+        }
+        spans.push({ stage_class: col.stage_class, label: col.class_label, colCount: count, width: totalWidth, startIdx: i })
+        i += count
+      } else {
+        spans.push({ stage_class: col.stage_class, label: null, colCount: 1, width: col.has_waiting_queue ? COL_WIDTH * 2 : COL_WIDTH, startIdx: i })
+        i++
+      }
+    }
+    return spans
+  }, [flatColumns])
+
+  const hasAnyClassHeaders = classHeaderSpans.some(s => s.label)
+  const hasColumns = flatColumns.length > 0
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-border flex-shrink-0 bg-card">
         {orgsData?.rows?.length > 0 && (
-          <OrgMultiSelect
+          <OrgSelector
             orgs={orgsData.rows}
-            selected={selectedOrgIds}
+            selectedId={selectedOrgId}
             onChange={handleOrgChange}
           />
         )}
 
-        {boardData?.workflow_name && (
-          <span className="text-xs text-muted-foreground uppercase tracking-wide">
-            {boardData.workflow_name}
-          </span>
+        {witTypeNames.length > 1 && (
+          <select
+            value={classFilter}
+            onChange={e => setClassFilter(e.target.value)}
+            className="bg-card border border-border rounded px-2 py-1.5 text-xs text-foreground hover:border-primary/50 transition-colors"
+          >
+            <option value="">All types</option>
+            {witTypeNames.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
         )}
+
+        <button
+          onClick={() => setMyItemsOnly(v => !v)}
+          className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+            myItemsOnly
+              ? 'bg-primary/10 border-primary/30 text-primary'
+              : 'bg-card border-border text-muted-foreground hover:border-primary/50'
+          }`}
+        >
+          My Items
+        </button>
 
         {!boardLoading && boardData && (
           <span className="text-xs text-muted-foreground">
-            {allItems.length} active
+            {filteredItems.length} active
           </span>
         )}
 
@@ -265,15 +337,15 @@ export default function Board({ setTab }) {
           <Button
             size="sm"
             onClick={() => setLibraryOpen(true)}
-            disabled={!primaryOrgId}
+            disabled={!selectedOrgId}
           >
             + New Work Item
           </Button>
         </div>
       </div>
 
-      {/* Board columns */}
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden">
+      {/* Board area */}
+      <div className="flex-1 min-h-0 overflow-auto">
         {boardLoading && (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs text-muted-foreground">Loading...</span>
@@ -284,54 +356,168 @@ export default function Board({ setTab }) {
             <span className="text-xs text-destructive">{boardError}</span>
           </div>
         )}
-        {!boardLoading && !boardError && selectedOrgIds.length === 0 && (
+        {!boardLoading && !boardError && !selectedOrgId && (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs text-muted-foreground">Select an org to view the board.</span>
           </div>
         )}
-        {!boardLoading && !boardError && stages.length === 0 && selectedOrgIds.length > 0 && (
+        {!boardLoading && !boardError && !hasColumns && selectedOrgId && (
           <div className="flex items-center justify-center h-full">
-            <span className="text-xs text-muted-foreground">No workflow configured for this org.</span>
+            <span className="text-xs text-muted-foreground">No work items in this org yet.</span>
           </div>
         )}
 
-        {!boardLoading && !boardError && stages.length > 0 && (
-          <div className="flex flex-row gap-3 h-full px-4 py-3 w-max">
-            {stages.map(stage => {
-              const stageItems = itemsByStage[stage.id] ?? []
-              const orgWip = wipLimits[stage.name]
-              const wipLimit = isMultiOrg ? null : (orgWip?.wip_limit ?? stage.wip_limit)
-              const wipOver = wipLimit && stageItems.length > wipLimit
+        {!boardLoading && !boardError && hasColumns && (
+          <div className="min-w-max">
+            {/* ─── Column Headers (sticky) ─── */}
+            <div className="sticky top-0 z-10 bg-background px-4 pt-3">
+              {/* Row 1: L1 stage_class headers (only when multi-stage classes exist) */}
+              {hasAnyClassHeaders && (
+                <div className="flex flex-row gap-0">
+                  <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
+                  {classHeaderSpans.map(span => (
+                    <div
+                      key={span.stage_class}
+                      className="flex-shrink-0 mx-1"
+                      style={{ width: span.width + (span.colCount - 1) * 8 }}
+                    >
+                      {span.label && (
+                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground text-center pb-1 border-b border-border/40 mb-1">
+                          {span.label}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              return (
-                <div key={stage.id} className="flex flex-col w-[240px] flex-shrink-0 h-full">
-                  {/* Column header */}
-                  <div className={`flex items-center gap-2 px-3 py-2 mb-2 rounded-t flex-shrink-0 ${
-                    wipOver ? 'bg-destructive/10 border border-destructive/40' : 'bg-muted/30 border border-transparent'
-                  }`}>
-                    <span className="text-sm font-semibold text-foreground truncate flex-1">
-                      {stage.name}
-                    </span>
-                    <WipIndicator
-                      count={stageItems.length}
-                      limit={wipLimit}
-                      editable={!isMultiOrg}
-                      onEdit={(val) => handleWipEdit(stage.name, val)}
-                    />
-                  </div>
+              {/* Row 2: L2 stage headers + L3 waiting sub-headers */}
+              <div className="flex flex-row gap-0">
+                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
+                {flatColumns.map(col => {
+                  const count = columnItemCount(col.key)
+                  const orgWip = wipLimits[col.name]
+                  const wipLimit = orgWip?.wip_limit ?? null
+                  const wipOver = wipLimit && count > wipLimit
+                  const colWidth = col.has_waiting_queue ? COL_WIDTH * 2 : COL_WIDTH
 
-                  {/* Cards */}
-                  <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5">
-                    {stageItems.length === 0 ? (
-                      <div className="flex items-center justify-center h-14 border border-dashed border-border/50 rounded">
-                        <span className="text-xs text-muted-foreground/40">—</span>
+                  return (
+                    <div key={col.key} className="flex-shrink-0 mx-1" style={{ width: colWidth }}>
+                      <div className={`flex items-center gap-2 px-3 py-2 rounded-t ${
+                        wipOver ? 'bg-destructive/10 border border-destructive/40' : 'bg-muted/30 border border-transparent'
+                      }`}>
+                        <span className="text-sm font-semibold text-foreground truncate flex-1">
+                          {col.name}
+                        </span>
+                        <WipIndicator
+                          count={count}
+                          limit={wipLimit}
+                          editable={true}
+                          onEdit={(val) => handleWipEdit(col.name, val)}
+                        />
                       </div>
-                    ) : (
-                      stageItems.map(item => (
-                        <WorkItemCard key={item.id} item={item} onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }} />
-                      ))
-                    )}
+                      {/* L3: waiting queue sub-header */}
+                      {col.has_waiting_queue && (
+                        <div className="flex flex-row">
+                          <div className="text-xs text-muted-foreground/60 px-2 py-0.5 border-r border-dashed border-border/40" style={{ width: COL_WIDTH }}>
+                            Ready for...
+                          </div>
+                          <div style={{ width: COL_WIDTH }} />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* ─── Swimlane Rows ─── */}
+            {displaySwimlanes.map(cls => {
+              const config = SWIMLANE_CONFIG[cls]
+              return (
+                <div key={cls} className="flex flex-row gap-0 px-4" style={{ background: config.bg }}>
+                  {/* Swimlane label */}
+                  <div className="flex-shrink-0 py-2 flex items-start justify-end pr-3" style={{ width: LABEL_WIDTH }}>
+                    <span
+                      className="text-xs font-medium uppercase tracking-wide"
+                      style={{ color: config.color, writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)' }}
+                    >
+                      {config.label}
+                    </span>
                   </div>
+                  {/* Cells */}
+                  {flatColumns.map(col => {
+                    const cell = itemGrid[col.key]?.[cls]
+                    const waitingItems = cell?.waiting ?? []
+                    const activeItems = cell?.active ?? []
+
+                    if (col.has_waiting_queue) {
+                      // Split cell: waiting | active
+                      return (
+                        <div key={col.key} className="flex-shrink-0 mx-1 py-2 flex flex-row" style={{ width: COL_WIDTH * 2 }}>
+                          {/* Waiting (left) */}
+                          <div className="min-h-[52px] border-r border-dashed border-border/30 pr-1" style={{ width: COL_WIDTH }}>
+                            {waitingItems.length === 0 ? (
+                              <div className="h-10 border border-dashed border-border/20 rounded flex items-center justify-center bg-muted/5">
+                                <span className="text-xs text-muted-foreground/20">—</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {waitingItems.map(item => (
+                                  <WorkItemCard
+                                    key={item.id}
+                                    item={item}
+                                    onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                                    onPull={() => handlePull(item.id)}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {/* Active (right) */}
+                          <div className="min-h-[52px] pl-1" style={{ width: COL_WIDTH }}>
+                            {activeItems.length === 0 ? (
+                              <div className="h-10 border border-dashed border-border/20 rounded flex items-center justify-center">
+                                <span className="text-xs text-muted-foreground/20">—</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {activeItems.map(item => (
+                                  <WorkItemCard
+                                    key={item.id}
+                                    item={item}
+                                    onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    // Single cell (no waiting queue)
+                    const allCellItems = [...waitingItems, ...activeItems]
+                    return (
+                      <div key={col.key} className="flex-shrink-0 mx-1 py-2 min-h-[52px]" style={{ width: COL_WIDTH }}>
+                        {allCellItems.length === 0 ? (
+                          <div className="h-10 border border-dashed border-border/30 rounded flex items-center justify-center">
+                            <span className="text-xs text-muted-foreground/20">—</span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1.5">
+                            {allCellItems.map(item => (
+                              <WorkItemCard
+                                key={item.id}
+                                item={item}
+                                onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )
             })}
@@ -358,7 +544,7 @@ export default function Board({ setTab }) {
         onSaved={() => reloadBoard()}
       />
 
-      {/* Work Item Detail Modal */}
+      {/* Work Item Detail */}
       <WorkItemDetail
         workItemId={detailItemId}
         open={detailOpen}
