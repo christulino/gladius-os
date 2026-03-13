@@ -170,21 +170,47 @@ export async function executeTransition(workItemId, toStageId, userId, options =
 
     // 1. Update work item's current stage
     const newSubstate = toStage.has_waiting_queue ? 'waiting' : 'active'
-    await client.query(`
+    const fromStageClass = workItem.current_stage_class
+
+    // Determine lifecycle timestamps
+    // started_at: set on first transition out of intake/triage/queued into a working stage
+    const isLeavingQueue = ['intake', 'triage', 'queued'].includes(fromStageClass)
+    const isEnteringWork = !['intake', 'triage', 'queued', 'done', 'cancelled'].includes(toStage.stage_class)
+    const setStartedAt = isLeavingQueue && isEnteringWork && !workItem.started_at
+
+    // resolved_at: set when entering a terminal stage, cleared if moving back out
+    const setResolvedAt = toStage.is_terminal ? now : null
+    const clearResolvedAt = !toStage.is_terminal && workItem.resolved_at
+
+    let updateSql = `
       UPDATE runtime.work_items SET
         current_stage_id        = $1,
         current_substate        = $2,
         entered_current_stage_at = $3,
         spawn_state             = $4,
-        updated_at              = $3
-      WHERE id = $5
-    `, [
+        updated_at              = $3`
+    const updateVals = [
       toStageId,
       newSubstate,
       now,
       toStage.is_terminal ? (toStage.stage_class === 'cancelled' ? 'cancelled' : 'done') : 'active',
-      workItemId,
-    ])
+    ]
+
+    if (setStartedAt) {
+      updateVals.push(now)
+      updateSql += `,\n        started_at = $${updateVals.length}`
+    }
+    if (setResolvedAt) {
+      updateVals.push(setResolvedAt)
+      updateSql += `,\n        resolved_at = $${updateVals.length}`
+    } else if (clearResolvedAt) {
+      updateSql += `,\n        resolved_at = NULL`
+    }
+
+    updateVals.push(workItemId)
+    updateSql += `\n      WHERE id = $${updateVals.length}`
+
+    await client.query(updateSql, updateVals)
 
     // 2. Record transition history
     const workingTime = calculateWorkingTime(

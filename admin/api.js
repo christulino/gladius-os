@@ -1388,6 +1388,7 @@ router.get('/board', async (req, res, next) => {
                wi.entered_current_stage_at, wi.created_at, wi.updated_at, wi.display_key,
                wi.service_class_id, wi.description, wi.current_substate,
                wi.due_date, wi.is_expedited, wi.work_nature,
+               wi.priority, wi.tags, wi.estimate, wi.estimate_unit, wi.started_at, wi.resolved_at, wi.origin,
                wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
                s.name AS current_stage_name, s.stage_class AS current_stage_class,
                CASE
@@ -1537,7 +1538,8 @@ router.get('/board', async (req, res, next) => {
 
 router.post('/work-items', async (req, res, next) => {
   try {
-    const { title, work_item_type_id, owner_org_id, service_class_id, description, due_date, is_expedited, work_nature } = req.body
+    const { title, work_item_type_id, owner_org_id, service_class_id, description,
+            due_date, is_expedited, work_nature, priority, tags, estimate, estimate_unit, origin, requester_id } = req.body
     if (!title?.trim())       return res.status(400).json({ error: 'title is required' })
     if (!work_item_type_id)   return res.status(400).json({ error: 'work_item_type_id is required' })
     if (!owner_org_id)        return res.status(400).json({ error: 'owner_org_id is required' })
@@ -1551,6 +1553,12 @@ router.post('/work-items', async (req, res, next) => {
       due_date:           due_date || undefined,
       is_expedited:       !!is_expedited,
       work_nature:        work_nature || 'delivery',
+      priority:           priority != null ? parseInt(priority) : undefined,
+      tags:               tags || undefined,
+      estimate:           estimate != null ? parseFloat(estimate) : undefined,
+      estimate_unit:      estimate_unit || undefined,
+      origin:             origin || 'manual',
+      requester_id:       requester_id ? parseInt(requester_id) : undefined,
     }, 1 /* stub userId */)
 
     res.status(201).json(workItem)
@@ -1740,6 +1748,7 @@ router.get('/work-items/:id', async (req, res, next) => {
         wi.parent_id, wi.created_at, wi.updated_at, wi.entered_current_stage_at,
         wi.current_stage_id, wi.workflow_id, wi.service_class_id,
         wi.due_date, wi.is_expedited, wi.work_nature,
+        wi.priority, wi.tags, wi.estimate, wi.estimate_unit, wi.started_at, wi.resolved_at, wi.origin, wi.requester_id,
         wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
         wit.key_prefix,
         s.name AS current_stage_name, s.stage_class AS current_stage_class, s.is_terminal,
@@ -1764,7 +1773,8 @@ router.get('/work-items/:id', async (req, res, next) => {
 // PATCH /admin/api/work-items/:id — update title, description, field_values
 router.patch('/work-items/:id', async (req, res, next) => {
   try {
-    const { title, description, field_values, due_date, is_expedited, work_nature } = req.body
+    const { title, description, field_values, due_date, is_expedited, work_nature,
+            priority, tags, estimate, estimate_unit, origin, requester_id } = req.body
     const fields = []
     const vals   = []
     if (title !== undefined)        { fields.push(`title = $${fields.length + 1}`);        vals.push(title.trim()) }
@@ -1773,6 +1783,12 @@ router.patch('/work-items/:id', async (req, res, next) => {
     if (due_date !== undefined)     { fields.push(`due_date = $${fields.length + 1}`);      vals.push(due_date || null) }
     if (is_expedited !== undefined) { fields.push(`is_expedited = $${fields.length + 1}`);  vals.push(!!is_expedited) }
     if (work_nature !== undefined)  { fields.push(`work_nature = $${fields.length + 1}`);   vals.push(work_nature) }
+    if (priority !== undefined)     { fields.push(`priority = $${fields.length + 1}`);      vals.push(priority != null ? parseInt(priority) : null) }
+    if (tags !== undefined)         { fields.push(`tags = $${fields.length + 1}`);           vals.push(tags || '{}') }
+    if (estimate !== undefined)     { fields.push(`estimate = $${fields.length + 1}`);       vals.push(estimate != null ? parseFloat(estimate) : null) }
+    if (estimate_unit !== undefined){ fields.push(`estimate_unit = $${fields.length + 1}`);  vals.push(estimate_unit) }
+    if (origin !== undefined)       { fields.push(`origin = $${fields.length + 1}`);         vals.push(origin) }
+    if (requester_id !== undefined) { fields.push(`requester_id = $${fields.length + 1}`);   vals.push(requester_id ? parseInt(requester_id) : null) }
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
     fields.push(`updated_at = NOW()`)
     vals.push(parseInt(req.params.id))

@@ -42,6 +42,12 @@ export async function createWorkItem(params, userId) {
     due_date,
     is_expedited = false,
     work_nature = 'delivery',
+    priority,
+    tags,
+    estimate,
+    estimate_unit = 'points',
+    origin = 'manual',
+    requester_id,
   } = params
 
   // =========================================================================
@@ -198,8 +204,9 @@ export async function createWorkItem(params, userId) {
         field_values,
         sequence_number, display_key,
         due_date, is_expedited, work_nature,
+        priority, tags, estimate, estimate_unit, origin, requester_id,
         entered_current_stage_at, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$18)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$24,$24)
       RETURNING *
     `, [
       uri,
@@ -219,6 +226,12 @@ export async function createWorkItem(params, userId) {
       due_date || null,
       !!is_expedited,
       work_nature || 'delivery',
+      priority != null ? parseInt(priority) : null,
+      tags?.length ? tags : '{}',
+      estimate != null ? parseFloat(estimate) : null,
+      estimate_unit || 'points',
+      origin || 'manual',
+      requester_id || null,
       now,
     ])
 
