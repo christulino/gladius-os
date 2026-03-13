@@ -183,7 +183,8 @@ Key tables:
 Work item instances and all activity data. The "what is actually happening" schema.
 
 Key tables:
-- `work_items` — instances with sub_state, is_draft, resolution, service_class_id, spawn_state
+- `work_items` — instances with sub_state, is_draft, resolution, service_class_id, spawn_state,
+  priority, tags, estimate, estimate_unit, started_at, resolved_at, origin, requester_id
 - `work_item_history` — full audit trail, immutable, sacred timestamps
 - `assignments` — work item ↔ user with role
 - `sub_state_history` — sub-state transition log
@@ -464,6 +465,10 @@ types, and optionally test work items via `db/seeds/enterprise/` data files.
    Display key format: `PREFIX.SEQ` (e.g. BUG.42). Uses `runtime.work_item_seq` sequence.
 5. **Migration 005** — `due_date`, `is_expedited`, `work_nature` on work items.
    Derived class of service computed in queries (expedite/fixed_date/standard/deferred).
+6. **Migration 006** — `priority`, `tags`, `estimate`, `estimate_unit`, `started_at`,
+   `resolved_at`, `origin`, `requester_id` on work items. Native fields for query
+   performance. GIN index on tags. `started_at` set automatically on first transition
+   out of intake/queued. `resolved_at` set on terminal stage entry, cleared on backward transition.
 
 ---
 
