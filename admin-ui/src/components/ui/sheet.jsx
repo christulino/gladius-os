@@ -16,15 +16,16 @@ const SheetOverlay = forwardRef(({ className, ...props }, ref) => (
 ))
 SheetOverlay.displayName = 'SheetOverlay'
 
-const SheetContent = forwardRef(({ className, children, side = 'right', overlay = true, ...props }, ref) => (
+const SheetContent = forwardRef(({ className, children, side = 'left', overlay = true, ...props }, ref) => (
   <SheetPortal>
     {overlay && <SheetOverlay />}
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed z-50 flex flex-col bg-card border-l border-border shadow-xl transition ease-in-out',
+        'fixed z-50 flex flex-col bg-card shadow-xl transition ease-in-out',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-200',
-        side === 'right' && 'inset-y-0 right-0 w-[420px] data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
+        side === 'left' && 'inset-y-0 left-0 w-[420px] border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left',
+        side === 'right' && 'inset-y-0 right-0 w-[420px] border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
         className
       )}
       {...props}

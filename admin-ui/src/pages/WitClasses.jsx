@@ -11,26 +11,15 @@
  * Work Item Types are how each org implements that vocabulary for their context.
  */
 
-import { useState, useEffect, useCallback } from 'react'
-import { useApi }   from '@/hooks/useApi'
-import { api }      from '@/lib/api'
+import { useState } from 'react'
+import { useApi }     from '@/hooks/useApi'
+import { api }        from '@/lib/api'
 import { DataTable }  from '@/components/ui/data-table'
 import { Badge }      from '@/components/ui/badge'
 import { Button }     from '@/components/ui/button'
-import { FormDrawer } from '@/components/FormDrawer'
+import { FormDrawer }    from '@/components/FormDrawer'
+import { FieldsEditor } from '@/components/FieldsEditor'
 import { Panel, PanelHeader, PanelTitle, PanelMeta, LoadingState, ErrorState } from '@/components/Panel'
-
-const FIELD_TYPE_OPTIONS = [
-  { label: 'Text',        value: 'text' },
-  { label: 'Number',      value: 'number' },
-  { label: 'Date',        value: 'date' },
-  { label: 'Boolean',     value: 'boolean' },
-  { label: 'Select',      value: 'select' },
-  { label: 'Multiselect', value: 'multiselect' },
-  { label: 'URL',         value: 'url' },
-  { label: 'User',        value: 'user' },
-  { label: 'Currency',    value: 'currency' },
-]
 
 const EDIT_FIELDS = [
   { key: 'name',        label: 'Name',        type: 'text',     required: true },
@@ -72,113 +61,18 @@ const CREATE_FIELDS = [
   },
 ]
 
-// ─── Class Fields Editor ──────────────────────────────────────────────────────
+// ─── Class Fields Editor (delegates to shared FieldsEditor) ──────────────────
 
 function ClassFieldsEditor({ classId }) {
-  const [fields, setFields] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [adding, setAdding] = useState(false)
-  const [newField, setNewField] = useState({ field_key: '', field_label: '', field_type: 'text', is_required: false })
-
-  const loadFields = useCallback(async () => {
-    if (!classId) return
-    setLoading(true)
-    try {
-      const res = await api.classFields(classId)
-      setFields(res.rows || [])
-    } finally { setLoading(false) }
-  }, [classId])
-
-  useEffect(() => { loadFields() }, [loadFields])
-
-  async function addField() {
-    if (!newField.field_key.trim() || !newField.field_label.trim()) return
-    try {
-      await api.createClassField({ ...newField, class_id: classId, display_order: fields.length })
-      setAdding(false)
-      setNewField({ field_key: '', field_label: '', field_type: 'text', is_required: false })
-      loadFields()
-    } catch (err) { console.error(err) }
-  }
-
-  async function toggleRequired(field) {
-    try {
-      await api.updateClassField(field.id, { is_required: !field.is_required })
-      loadFields()
-    } catch (err) { console.error(err) }
-  }
-
-  async function removeField(field) {
-    try {
-      await api.deleteClassField(field.id)
-      loadFields()
-    } catch (err) { console.error(err) }
-  }
-
-  if (loading) return <span className="text-xs text-muted-foreground">Loading fields...</span>
-
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Class Fields</span>
-        <button
-          onClick={() => setAdding(!adding)}
-          className="text-xs text-primary hover:underline"
-        >
-          {adding ? 'cancel' : '+ add field'}
-        </button>
-      </div>
-
-      {fields.length === 0 && !adding && (
-        <span className="text-xs text-muted-foreground/60">No fields defined yet.</span>
-      )}
-
-      {fields.map(f => (
-        <div key={f.id} className="flex items-center gap-2 text-xs border border-border/50 rounded px-2.5 py-1.5">
-          <span className="text-xs text-muted-foreground w-20 truncate">{f.field_key}</span>
-          <span className="flex-1 truncate">{f.field_label}</span>
-          <Badge variant="muted">{f.field_type}</Badge>
-          <label className="flex items-center gap-1 cursor-pointer">
-            <input type="checkbox" checked={f.is_required} onChange={() => toggleRequired(f)} className="accent-primary" />
-            <span className="text-xs text-muted-foreground">req</span>
-          </label>
-          <button onClick={() => removeField(f)} className="text-destructive/60 hover:text-destructive text-xs">×</button>
-        </div>
-      ))}
-
-      {adding && (
-        <div className="flex flex-col gap-2 p-2.5 border border-border rounded bg-background">
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={newField.field_key}
-              onChange={e => setNewField({ ...newField, field_key: e.target.value.toLowerCase().replace(/\s+/g, '_') })}
-              placeholder="field_key"
-              className="text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
-            />
-            <input
-              value={newField.field_label}
-              onChange={e => setNewField({ ...newField, field_label: e.target.value })}
-              placeholder="Field Label"
-              className="text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={newField.field_type}
-              onChange={e => setNewField({ ...newField, field_type: e.target.value })}
-              className="text-xs bg-card border border-border rounded px-2 py-1.5 flex-1"
-            >
-              {FIELD_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="checkbox" checked={newField.is_required} onChange={e => setNewField({ ...newField, is_required: e.target.checked })} className="accent-primary" />
-              <span className="text-xs text-muted-foreground">required</span>
-            </label>
-            <Button size="sm" onClick={addField}>Add</Button>
-          </div>
-        </div>
-      )}
-    </div>
+    <FieldsEditor
+      title="Class Fields"
+      loadFields={() => api.classFields(classId)}
+      createField={data => api.createClassField(data)}
+      updateField={(id, patch) => api.updateClassField(id, patch)}
+      deactivateField={id => api.updateClassField(id, { is_active: false })}
+      parentIdField={{ key: 'class_id', value: classId }}
+    />
   )
 }
 

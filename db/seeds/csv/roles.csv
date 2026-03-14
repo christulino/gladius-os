@@ -1,0 +1,9 @@
+id,name,description,is_system_default
+27,Admin,System administrator. Full access to everything including org and user creation.,true
+28,Org Admin,"Owns an org. Manages members, roles, workflows, and work item types within their org.",true
+29,View Only,"Read-only access. Can view work items and reports but cannot create, edit, or transition.",true
+30,Service Delivery Manager,"Manages org settings, members, and the full delivery workflow.",true
+31,Product Owner,Manages workflows and work item types. Full work item access including acceptance.,true
+32,Service Manager,Manages the service catalog and handles incoming service requests.,true
+33,Team Member,"Standard team contributor. Can create, edit, and transition work items.",true
+34,Stakeholder,Can view work items and add comments. Cannot create or transition.,true

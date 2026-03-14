@@ -44,6 +44,8 @@ const ALLOWED_TABLES = {
   'blueprint.service_catalog_items':         'blueprint',
   'blueprint.org_wip_limits':               'blueprint',
   'blueprint.work_item_class_fields':       'blueprint',
+  'blueprint.lookup_lists':                'blueprint',
+  'blueprint.lookup_values':               'blueprint',
   // runtime
   'runtime.work_items':                      'runtime',
   'runtime.stage_transition_history':        'runtime',
@@ -557,6 +559,84 @@ router.post('/users', async (req, res, next) => {
 })
 
 // =============================================================================
+// ORG MEMBERS
+// =============================================================================
+
+router.get('/org-members', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+    const result = await query(`
+      SELECT om.id, om.user_id, om.org_id, om.role_id, om.joined_at, om.is_active,
+             u.display_name, u.email, u.avatar_url,
+             r.name AS role_name
+      FROM blueprint.org_memberships om
+      JOIN blueprint.users u ON u.id = om.user_id
+      JOIN blueprint.roles r ON r.id = om.role_id
+      WHERE om.org_id = $1 AND om.is_active = true
+      ORDER BY u.display_name ASC
+    `, [orgId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/org-members', async (req, res, next) => {
+  try {
+    const { org_id, user_id, role_id } = req.body
+    if (!org_id || !user_id || !role_id) return res.status(400).json({ error: 'org_id, user_id, and role_id are required' })
+    const result = await query(`
+      INSERT INTO blueprint.org_memberships (user_id, org_id, role_id)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, org_id) DO UPDATE SET role_id = EXCLUDED.role_id, is_active = true
+      RETURNING *
+    `, [user_id, org_id, role_id])
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.patch('/org-members/:id', async (req, res, next) => {
+  try {
+    const { role_id } = req.body
+    if (!role_id) return res.status(400).json({ error: 'role_id is required' })
+    const result = await query(`
+      UPDATE blueprint.org_memberships SET role_id = $1 WHERE id = $2 AND is_active = true RETURNING *
+    `, [role_id, req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Membership not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.delete('/org-members/:id', async (req, res, next) => {
+  try {
+    const result = await query(`
+      UPDATE blueprint.org_memberships SET is_active = false WHERE id = $1 RETURNING *
+    `, [req.params.id])
+    if (!result.rows.length) return res.status(404).json({ error: 'Membership not found' })
+    res.json({ ok: true })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// ORG WORKFLOWS
+// =============================================================================
+
+router.get('/org-workflows', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+    const result = await query(`
+      SELECT DISTINCT w.id, w.name, w.is_active, w.is_system_default
+      FROM blueprint.workflows w
+      JOIN blueprint.work_item_type_workflows witw ON witw.workflow_id = w.id AND witw.is_current = true
+      JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+      WHERE wit.owner_org_id = $1 AND wit.is_active = true
+      ORDER BY w.name ASC
+    `, [orgId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
 // WORK ITEM TYPE CLASSES
 // =============================================================================
 
@@ -648,7 +728,7 @@ router.get('/work-item-types', async (req, res, next) => {
 
 router.patch('/work-item-types/:id', async (req, res, next) => {
   try {
-    const { name, description, request_mode, icon, color, is_published, is_active, key_prefix } = req.body
+    const { name, description, request_mode, icon, color, is_published, is_active, key_prefix, workflow_id } = req.body
     const result = await query(`
       UPDATE blueprint.work_item_types
       SET name         = COALESCE($1, name),
@@ -674,6 +754,24 @@ router.patch('/work-item-types/:id', async (req, res, next) => {
       req.params.id,
     ])
     if (!result.rows.length) return res.status(404).json({ error: 'Work item type not found' })
+
+    // Update workflow assignment if provided
+    if (workflow_id !== undefined) {
+      const wfId = workflow_id ? parseInt(workflow_id) : null
+      if (wfId) {
+        // Deactivate existing, insert new as current
+        await query('UPDATE blueprint.work_item_type_workflows SET is_current = false WHERE work_item_type_id = $1', [req.params.id])
+        await query(`
+          INSERT INTO blueprint.work_item_type_workflows (work_item_type_id, workflow_id, is_current)
+          VALUES ($1, $2, true)
+          ON CONFLICT (work_item_type_id, workflow_id) DO UPDATE SET is_current = true
+        `, [req.params.id, wfId])
+      } else {
+        // Clear workflow
+        await query('UPDATE blueprint.work_item_type_workflows SET is_current = false WHERE work_item_type_id = $1', [req.params.id])
+      }
+    }
+
     res.json(result.rows[0])
   } catch (err) { next(err) }
 })
@@ -723,9 +821,10 @@ router.post('/work-item-types', async (req, res, next) => {
         `, [witRow.id, defaultWorkflowId])
       }
 
-      // Copy class fields to type fields
+      // Copy class fields to type fields (including custom field engine columns)
       const classFields = await client.query(`
-        SELECT field_key, field_label, field_type, field_options, field_group, is_required, display_order
+        SELECT field_key, field_label, field_type, field_options, field_group,
+               is_required, display_order, lookup_list_id, constraints, default_value
         FROM blueprint.work_item_class_fields
         WHERE class_id = $1 AND is_active = true
         ORDER BY display_order ASC
@@ -734,10 +833,15 @@ router.post('/work-item-types', async (req, res, next) => {
       for (const f of classFields.rows) {
         await client.query(`
           INSERT INTO blueprint.work_item_type_fields
-            (work_item_type_id, field_key, field_label, field_type, field_options, field_group, is_required, display_order, is_active)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+            (work_item_type_id, field_key, field_label, field_type, field_options, field_group,
+             is_required, display_order, is_active, inherited_from_class_id,
+             lookup_list_id, constraints, default_value)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $11, $12)
           ON CONFLICT DO NOTHING
-        `, [witRow.id, f.field_key, f.field_label, f.field_type, f.field_options, f.field_group, f.is_required, f.display_order])
+        `, [witRow.id, f.field_key, f.field_label, f.field_type, f.field_options, f.field_group,
+            f.is_required, f.display_order, class_id,
+            f.lookup_list_id, f.constraints ? JSON.stringify(f.constraints) : null,
+            f.default_value !== null ? JSON.stringify(f.default_value) : null])
       }
 
       await client.query('COMMIT')
@@ -1084,7 +1188,7 @@ router.get('/workflows/:id', async (req, res, next) => {
       query(`
         SELECT id, name, stage_class, stage_type, stage_function, display_order,
                is_entry_stage, is_terminal, counts_toward_throughput,
-               sla_hours, wip_limit, is_active
+               sla_hours, wip_limit, has_waiting_queue, is_active
         FROM blueprint.stages
         WHERE workflow_id = $1 AND is_active = true
         ORDER BY display_order ASC
@@ -1098,12 +1202,15 @@ router.get('/workflows/:id', async (req, res, next) => {
       `, [req.params.id]),
     ])
 
-    // Attach from_stage_ids to each stage
+    // Attach from_stage_ids and to_stage_ids to each stage
     const stages = stagesResult.rows.map(stage => ({
       ...stage,
       from_stage_ids: transResult.rows
         .filter(t => t.to_stage_id === stage.id)
         .map(t => t.from_stage_id),
+      to_stage_ids: transResult.rows
+        .filter(t => t.from_stage_id === stage.id)
+        .map(t => t.to_stage_id),
     }))
 
     res.json({ workflow: wf, stages, transitions: transResult.rows })
@@ -1115,9 +1222,15 @@ router.post('/workflows', async (req, res, next) => {
   try {
     const { name, description, owner_org_id } = req.body
     if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
-    if (!owner_org_id)   return res.status(400).json({ error: 'owner_org_id is required' })
 
-    const orgResult = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
+    let resolvedOrgId = owner_org_id
+    if (!resolvedOrgId) {
+      const sysOrg = await query("SELECT id FROM blueprint.organizations WHERE slug = 'system' LIMIT 1")
+      if (!sysOrg.rows.length) return res.status(500).json({ error: 'System org not found' })
+      resolvedOrgId = sysOrg.rows[0].id
+    }
+
+    const orgResult = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [resolvedOrgId])
     if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
 
     const uri = generateUri(orgResult.rows[0].slug, 'workflows')
@@ -1131,7 +1244,7 @@ router.post('/workflows', async (req, res, next) => {
         INSERT INTO blueprint.workflows (uri, name, description, owner_org_id, version, is_system_default, is_active)
         VALUES ($1, $2, $3, $4, '1.0.0', false, true)
         RETURNING *
-      `, [uri, name.trim(), description?.trim() || null, owner_org_id])
+      `, [uri, name.trim(), description?.trim() || null, resolvedOrgId])
       workflow = wfResult.rows[0]
 
       // Create default stages: Intake, In Progress, Done, Cancelled
@@ -1243,8 +1356,9 @@ router.patch('/stages/:id', async (req, res, next) => {
     const {
       name, stage_class, stage_type, stage_function,
       display_order, is_entry_stage, is_terminal, counts_toward_throughput,
-      sla_hours, wip_limit,
+      sla_hours, wip_limit, has_waiting_queue,
       from_stage_ids,   // array of stage IDs that can transition TO this stage
+      to_stage_ids,     // array of stage IDs that this stage can transition TO
     } = req.body
     const stageId = parseInt(req.params.id)
 
@@ -1272,8 +1386,9 @@ router.patch('/stages/:id', async (req, res, next) => {
           counts_toward_throughput = COALESCE($8, counts_toward_throughput),
           sla_hours                = $9,
           wip_limit                = $10,
+          has_waiting_queue        = COALESCE($11, has_waiting_queue),
           updated_at               = NOW()
-        WHERE id = $11
+        WHERE id = $12
         RETURNING *
       `, [
         name?.trim() || null,
@@ -1286,11 +1401,12 @@ router.patch('/stages/:id', async (req, res, next) => {
         counts_toward_throughput ?? null,
         sla_hours !== undefined ? (sla_hours || null) : undefined,
         wip_limit !== undefined ? (wip_limit || null) : undefined,
+        has_waiting_queue ?? null,
         stageId,
       ])
       updatedStage = updateResult.rows[0]
 
-      // Sync transitions (from_stage_ids)
+      // Sync inbound transitions (from_stage_ids)
       if (Array.isArray(from_stage_ids)) {
         await client.query('DELETE FROM blueprint.stage_transitions WHERE to_stage_id = $1', [stageId])
         for (const fromId of from_stage_ids) {
@@ -1299,6 +1415,18 @@ router.patch('/stages/:id', async (req, res, next) => {
             VALUES ($1, $2, 'forward')
             ON CONFLICT DO NOTHING
           `, [fromId, stageId])
+        }
+      }
+
+      // Sync outbound transitions (to_stage_ids)
+      if (Array.isArray(to_stage_ids)) {
+        await client.query('DELETE FROM blueprint.stage_transitions WHERE from_stage_id = $1', [stageId])
+        for (const toId of to_stage_ids) {
+          await client.query(`
+            INSERT INTO blueprint.stage_transitions (from_stage_id, to_stage_id, transition_kind)
+            VALUES ($1, $2, 'forward')
+            ON CONFLICT DO NOTHING
+          `, [stageId, toId])
         }
       }
 
@@ -1333,6 +1461,113 @@ router.delete('/stages/:id', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// POST /admin/api/workflows/:id/clone — duplicate a workflow with all stages and transitions
+router.post('/workflows/:id/clone', async (req, res, next) => {
+  try {
+    const sourceId = parseInt(req.params.id)
+    const { name, owner_org_id } = req.body
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+
+    // Load source workflow
+    const wfResult = await query(
+      'SELECT * FROM blueprint.workflows WHERE id = $1', [sourceId]
+    )
+    if (!wfResult.rows.length) return res.status(404).json({ error: 'Source workflow not found' })
+    const source = wfResult.rows[0]
+
+    const targetOrgId = owner_org_id ? parseInt(owner_org_id) : source.owner_org_id
+    const orgResult = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [targetOrgId])
+    if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
+    const orgSlug = orgResult.rows[0].slug
+
+    // Load source stages and transitions
+    const [stagesResult, transResult] = await Promise.all([
+      query('SELECT * FROM blueprint.stages WHERE workflow_id = $1 AND is_active = true ORDER BY display_order', [sourceId]),
+      query(`SELECT * FROM blueprint.stage_transitions WHERE from_stage_id IN (
+        SELECT id FROM blueprint.stages WHERE workflow_id = $1 AND is_active = true
+      )`, [sourceId]),
+    ])
+
+    const client = await getClient()
+    try {
+      await client.query('BEGIN')
+
+      // Create new workflow
+      const wfUri = generateUri(orgSlug, 'workflows')
+      const newWf = await client.query(`
+        INSERT INTO blueprint.workflows (uri, name, description, owner_org_id, version, is_system_default, is_active)
+        VALUES ($1, $2, $3, $4, '1.0.0', false, true)
+        RETURNING *
+      `, [wfUri, name.trim(), source.description, targetOrgId])
+      const workflow = newWf.rows[0]
+
+      // Clone stages, building old→new ID map
+      const stageMap = {}
+      for (const s of stagesResult.rows) {
+        const sUri = generateUri(orgSlug, 'stages')
+        const ns = await client.query(`
+          INSERT INTO blueprint.stages
+            (uri, workflow_id, name, stage_class, stage_type, stage_function,
+             display_order, is_entry_stage, is_terminal, counts_toward_throughput,
+             sla_hours, wip_limit, has_waiting_queue, is_active)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true)
+          RETURNING *
+        `, [sUri, workflow.id, s.name, s.stage_class, s.stage_type, s.stage_function,
+            s.display_order, s.is_entry_stage, s.is_terminal, s.counts_toward_throughput,
+            s.sla_hours, s.wip_limit, s.has_waiting_queue])
+        stageMap[s.id] = ns.rows[0].id
+      }
+
+      // Clone transitions
+      for (const t of transResult.rows) {
+        const fromId = stageMap[t.from_stage_id]
+        const toId = stageMap[t.to_stage_id]
+        if (!fromId || !toId) continue
+        await client.query(`
+          INSERT INTO blueprint.stage_transitions
+            (from_stage_id, to_stage_id, transition_label, transition_kind, requires_reason)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [fromId, toId, t.transition_label, t.transition_kind, t.requires_reason])
+      }
+
+      await client.query('COMMIT')
+      res.status(201).json(workflow)
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+  } catch (err) { next(err) }
+})
+
+// PUT /admin/api/workflows/:id/stages/reorder — update display_order for all stages
+router.put('/workflows/:id/stages/reorder', async (req, res, next) => {
+  try {
+    const workflowId = parseInt(req.params.id)
+    const { order } = req.body  // [{ id, display_order }]
+    if (!Array.isArray(order)) return res.status(400).json({ error: 'order array is required' })
+
+    const client = await getClient()
+    try {
+      await client.query('BEGIN')
+      for (const { id, display_order } of order) {
+        await client.query(
+          'UPDATE blueprint.stages SET display_order = $1, updated_at = NOW() WHERE id = $2 AND workflow_id = $3',
+          [display_order, id, workflowId]
+        )
+      }
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+    res.json({ ok: true })
+  } catch (err) { next(err) }
+})
+
 // =============================================================================
 // BOARD
 // =============================================================================
@@ -1356,13 +1591,16 @@ router.get('/service-library', async (req, res, next) => {
     if (!orgId) return res.status(400).json({ error: 'org_id is required' })
     const result = await query(`
       SELECT wit.id, wit.name, wit.description, wit.icon, wit.color,
-             wit.request_mode, wit.is_system_default,
-             c.name AS class_name, wit.owner_org_id, o.name AS owner_org_name
+             wit.request_mode, wit.is_system_default, wit.key_prefix, wit.is_active,
+             c.name AS class_name, wit.owner_org_id, o.name AS owner_org_name,
+             cw.workflow_id AS current_workflow_id, w.name AS current_workflow_name
       FROM blueprint.work_item_types wit
       JOIN blueprint.work_item_type_classes c ON c.id = wit.class_id
       JOIN blueprint.organizations o          ON o.id = wit.owner_org_id
-      WHERE wit.is_published = true AND wit.is_active = true
-      ORDER BY o.name ASC, c.name ASC, wit.name ASC
+      LEFT JOIN blueprint.work_item_type_workflows cw ON cw.work_item_type_id = wit.id AND cw.is_current = true
+      LEFT JOIN blueprint.workflows w ON w.id = cw.workflow_id
+      WHERE wit.owner_org_id = $1 AND wit.is_active = true
+      ORDER BY c.name ASC, wit.name ASC
     `, [orgId])
     res.json({ rows: result.rows, count: result.rowCount })
   } catch (err) { next(err) }
@@ -1599,19 +1837,24 @@ router.get('/class-fields', async (req, res, next) => {
 
 router.post('/class-fields', async (req, res, next) => {
   try {
-    const { class_id, field_key, field_label, field_type, field_options, field_group, is_required, display_order } = req.body
+    const { class_id, field_key, field_label, field_type, field_options, field_group,
+            is_required, display_order, lookup_list_id, constraints, default_value } = req.body
     if (!class_id)            return res.status(400).json({ error: 'class_id is required' })
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
     const result = await query(`
       INSERT INTO blueprint.work_item_class_fields
-        (class_id, field_key, field_label, field_type, field_options, field_group, is_required, display_order)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (class_id, field_key, field_label, field_type, field_options, field_group,
+         is_required, display_order, lookup_list_id, constraints, default_value)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `, [class_id, field_key.trim(), field_label.trim(), field_type.trim(),
         field_options ? JSON.stringify(field_options) : null,
-        field_group?.trim() || null, is_required ?? false, display_order ?? 0])
+        field_group?.trim() || null, is_required ?? false, display_order ?? 0,
+        lookup_list_id || null,
+        constraints ? JSON.stringify(constraints) : null,
+        default_value !== undefined ? JSON.stringify(default_value) : null])
     res.status(201).json(result.rows[0])
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Field key already exists for this class' })
@@ -1621,24 +1864,31 @@ router.post('/class-fields', async (req, res, next) => {
 
 router.patch('/class-fields/:id', async (req, res, next) => {
   try {
-    const { field_label, field_type, field_options, field_group, is_required, display_order, is_active } = req.body
+    const { field_label, field_options, field_group, is_required, display_order, is_active,
+            lookup_list_id, constraints, default_value } = req.body
+    // Note: field_type is immutable after creation — not accepted here
     const result = await query(`
       UPDATE blueprint.work_item_class_fields
-      SET field_label   = COALESCE($1, field_label),
-          field_type    = COALESCE($2, field_type),
-          field_options = COALESCE($3, field_options),
-          field_group   = COALESCE($4, field_group),
-          is_required   = COALESCE($5, is_required),
-          display_order = COALESCE($6, display_order),
-          is_active     = COALESCE($7, is_active),
-          updated_at    = NOW()
-      WHERE id = $8
+      SET field_label    = COALESCE($1, field_label),
+          field_options  = COALESCE($2, field_options),
+          field_group    = COALESCE($3, field_group),
+          is_required    = COALESCE($4, is_required),
+          display_order  = COALESCE($5, display_order),
+          is_active      = COALESCE($6, is_active),
+          lookup_list_id = COALESCE($7, lookup_list_id),
+          constraints    = COALESCE($8, constraints),
+          default_value  = COALESCE($9, default_value),
+          updated_at     = NOW()
+      WHERE id = $10
       RETURNING *
     `, [
-      field_label?.trim() || null, field_type?.trim() || null,
+      field_label?.trim() || null,
       field_options ? JSON.stringify(field_options) : null,
       field_group !== undefined ? (field_group?.trim() || null) : null,
       is_required ?? null, display_order ?? null, is_active ?? null,
+      lookup_list_id ?? null,
+      constraints ? JSON.stringify(constraints) : null,
+      default_value !== undefined ? JSON.stringify(default_value) : null,
       req.params.id,
     ])
     if (!result.rows.length) return res.status(404).json({ error: 'Class field not found' })
@@ -1654,6 +1904,96 @@ router.delete('/class-fields/:id', async (req, res, next) => {
     )
     if (!result.rows.length) return res.status(404).json({ error: 'Class field not found' })
     res.json({ deleted: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// TYPE FIELDS CRUD
+// =============================================================================
+
+router.get('/type-fields', async (req, res, next) => {
+  try {
+    const typeId = parseInt(req.query.type_id)
+    if (!typeId) return res.status(400).json({ error: 'type_id is required' })
+    const result = await query(`
+      SELECT * FROM blueprint.work_item_type_fields
+      WHERE work_item_type_id = $1 AND is_active = true
+      ORDER BY display_order ASC, id ASC
+    `, [typeId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/type-fields', async (req, res, next) => {
+  try {
+    const { work_item_type_id, field_key, field_label, field_type, field_options, field_group,
+            is_required, display_order, lookup_list_id, constraints, default_value } = req.body
+    if (!work_item_type_id)   return res.status(400).json({ error: 'work_item_type_id is required' })
+    if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
+    if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
+    if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    const result = await query(`
+      INSERT INTO blueprint.work_item_type_fields
+        (work_item_type_id, field_key, field_label, field_type, field_options, field_group,
+         is_required, display_order, lookup_list_id, constraints, default_value)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING *
+    `, [work_item_type_id, field_key.trim(), field_label.trim(), field_type.trim(),
+        field_options ? JSON.stringify(field_options) : null,
+        field_group?.trim() || null, is_required ?? false, display_order ?? 0,
+        lookup_list_id || null,
+        constraints ? JSON.stringify(constraints) : null,
+        default_value !== undefined ? JSON.stringify(default_value) : null])
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Field key already exists for this type' })
+    next(err)
+  }
+})
+
+router.patch('/type-fields/:id', async (req, res, next) => {
+  try {
+    const { field_label, field_options, field_group, is_required, display_order, is_active,
+            lookup_list_id, constraints, default_value } = req.body
+    // field_type is immutable after creation
+    const result = await query(`
+      UPDATE blueprint.work_item_type_fields
+      SET field_label    = COALESCE($1, field_label),
+          field_options  = COALESCE($2, field_options),
+          field_group    = COALESCE($3, field_group),
+          is_required    = COALESCE($4, is_required),
+          display_order  = COALESCE($5, display_order),
+          is_active      = COALESCE($6, is_active),
+          lookup_list_id = COALESCE($7, lookup_list_id),
+          constraints    = COALESCE($8, constraints),
+          default_value  = COALESCE($9, default_value),
+          updated_at     = NOW()
+      WHERE id = $10
+      RETURNING *
+    `, [
+      field_label?.trim() || null,
+      field_options ? JSON.stringify(field_options) : null,
+      field_group !== undefined ? (field_group?.trim() || null) : null,
+      is_required ?? null, display_order ?? null, is_active ?? null,
+      lookup_list_id ?? null,
+      constraints ? JSON.stringify(constraints) : null,
+      default_value !== undefined ? JSON.stringify(default_value) : null,
+      req.params.id,
+    ])
+    if (!result.rows.length) return res.status(404).json({ error: 'Type field not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.delete('/type-fields/:id', async (req, res, next) => {
+  try {
+    // Soft-delete: deactivate instead of hard delete (field may have values in work items)
+    const result = await query(
+      'UPDATE blueprint.work_item_type_fields SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Type field not found' })
+    res.json({ deactivated: result.rows[0].id })
   } catch (err) { next(err) }
 })
 
@@ -1749,6 +2089,7 @@ router.get('/work-items/:id', async (req, res, next) => {
         wi.current_stage_id, wi.workflow_id, wi.service_class_id,
         wi.due_date, wi.is_expedited, wi.work_nature,
         wi.priority, wi.tags, wi.estimate, wi.estimate_unit, wi.started_at, wi.resolved_at, wi.origin, wi.requester_id,
+        wi.acceptance_criteria, wi.work_item_type_id,
         wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
         wit.key_prefix,
         s.name AS current_stage_name, s.stage_class AS current_stage_class, s.is_terminal,
@@ -2097,6 +2438,218 @@ router.get('/reports/cycle-time-by-stage', async (req, res, next) => {
     `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
 
     res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// LOOKUP LISTS
+// =============================================================================
+
+router.get('/lookup-lists', async (req, res, next) => {
+  try {
+    const { org_id } = req.query
+    // If org_id provided, return lists visible to that org (own + ancestors + system)
+    // Otherwise return all lists
+    let result
+    if (org_id) {
+      result = await query(`
+        WITH RECURSIVE org_chain AS (
+          SELECT id, parent_id FROM blueprint.organizations WHERE id = $1
+          UNION ALL
+          SELECT o.id, o.parent_id FROM blueprint.organizations o
+          JOIN org_chain oc ON o.id = oc.parent_id
+        )
+        SELECT ll.*, o.name AS org_name, o.slug AS org_slug,
+               (SELECT COUNT(*) FROM blueprint.lookup_values lv WHERE lv.list_id = ll.id) AS value_count
+        FROM blueprint.lookup_lists ll
+        JOIN blueprint.organizations o ON o.id = ll.org_id
+        WHERE ll.org_id IN (SELECT id FROM org_chain)
+          AND ll.is_active = true
+        ORDER BY o.slug ASC, ll.name ASC
+      `, [org_id])
+    } else {
+      result = await query(`
+        SELECT ll.*, o.name AS org_name, o.slug AS org_slug,
+               (SELECT COUNT(*) FROM blueprint.lookup_values lv WHERE lv.list_id = ll.id) AS value_count
+        FROM blueprint.lookup_lists ll
+        JOIN blueprint.organizations o ON o.id = ll.org_id
+        WHERE ll.is_active = true
+        ORDER BY o.slug ASC, ll.name ASC
+      `)
+    }
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/lookup-lists', async (req, res, next) => {
+  try {
+    const { org_id, name, description, sort_mode } = req.body
+    if (!org_id) return res.status(400).json({ error: 'org_id is required' })
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+
+    const result = await query(`
+      INSERT INTO blueprint.lookup_lists (org_id, name, description, sort_mode)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `, [org_id, name.trim(), description?.trim() || null, sort_mode || 'alpha'])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'List name already exists for this org' })
+    next(err)
+  }
+})
+
+router.patch('/lookup-lists/:id', async (req, res, next) => {
+  try {
+    const { name, description, sort_mode, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.lookup_lists SET
+        name        = COALESCE($1, name),
+        description = COALESCE($2, description),
+        sort_mode   = COALESCE($3, sort_mode),
+        is_active   = COALESCE($4, is_active),
+        updated_at  = NOW()
+      WHERE id = $5
+      RETURNING *
+    `, [name?.trim() || null, description?.trim() ?? null, sort_mode || null, is_active ?? null, req.params.id])
+
+    if (!result.rows.length) return res.status(404).json({ error: 'List not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// LOOKUP VALUES
+// =============================================================================
+
+router.get('/lookup-lists/:listId/values', async (req, res, next) => {
+  try {
+    // Get the list's sort mode
+    const listResult = await query('SELECT sort_mode FROM blueprint.lookup_lists WHERE id = $1', [req.params.listId])
+    if (!listResult.rows.length) return res.status(404).json({ error: 'List not found' })
+
+    const orderBy = listResult.rows[0].sort_mode === 'alpha' ? 'label ASC' : 'sort_order ASC, label ASC'
+
+    const result = await query(`
+      SELECT * FROM blueprint.lookup_values
+      WHERE list_id = $1
+      ORDER BY ${orderBy}
+    `, [req.params.listId])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/lookup-lists/:listId/values', async (req, res, next) => {
+  try {
+    const { label, sort_order } = req.body
+    if (!label?.trim()) return res.status(400).json({ error: 'label is required' })
+
+    // Auto-assign sort_order if not provided
+    let order = sort_order
+    if (order == null) {
+      const maxResult = await query(
+        'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM blueprint.lookup_values WHERE list_id = $1',
+        [req.params.listId]
+      )
+      order = maxResult.rows[0].next_order
+    }
+
+    const result = await query(`
+      INSERT INTO blueprint.lookup_values (list_id, label, sort_order)
+      VALUES ($1, $2, $3)
+      RETURNING *
+    `, [req.params.listId, label.trim(), order])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.patch('/lookup-values/:id', async (req, res, next) => {
+  try {
+    const { label, sort_order, is_active } = req.body
+    const result = await query(`
+      UPDATE blueprint.lookup_values SET
+        label      = COALESCE($1, label),
+        sort_order = COALESCE($2, sort_order),
+        is_active  = COALESCE($3, is_active),
+        updated_at = NOW()
+      WHERE id = $4
+      RETURNING *
+    `, [label?.trim() || null, sort_order ?? null, is_active ?? null, req.params.id])
+
+    if (!result.rows.length) return res.status(404).json({ error: 'Value not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.put('/lookup-lists/:listId/values/reorder', async (req, res, next) => {
+  try {
+    const { order } = req.body // array of value ids in desired order
+    if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be an array of value ids' })
+
+    const client = await getClient()
+    try {
+      await client.query('BEGIN')
+      for (let i = 0; i < order.length; i++) {
+        await client.query(
+          'UPDATE blueprint.lookup_values SET sort_order = $1, updated_at = NOW() WHERE id = $2 AND list_id = $3',
+          [i, order[i], req.params.listId]
+        )
+      }
+      await client.query('COMMIT')
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally {
+      client.release()
+    }
+
+    res.json({ ok: true })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// ACCEPTANCE CRITERIA
+// =============================================================================
+
+router.get('/work-items/:id/acceptance-criteria', async (req, res, next) => {
+  try {
+    const result = await query(
+      'SELECT acceptance_criteria FROM runtime.work_items WHERE id = $1',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
+    res.json({ items: result.rows[0].acceptance_criteria || [] })
+  } catch (err) { next(err) }
+})
+
+router.put('/work-items/:id/acceptance-criteria', async (req, res, next) => {
+  try {
+    const { items } = req.body // full array replacement
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' })
+
+    // Validate shape
+    for (const item of items) {
+      if (!item.id || !item.text) return res.status(400).json({ error: 'Each item needs id and text' })
+    }
+
+    // TODO: Permission check — adding/removing AC items requires 'manage_acceptance_criteria' permission
+    // Check/uncheck (toggling checked status) is unrestricted
+    // When auth is built: load existing items, compare to detect adds/removes vs check toggles,
+    // and gate adds/removes behind core/access.js permission check scoped to owner_org_id
+
+    const result = await query(`
+      UPDATE runtime.work_items SET
+        acceptance_criteria = $1,
+        updated_at = NOW()
+      WHERE id = $2
+      RETURNING acceptance_criteria
+    `, [JSON.stringify(items), req.params.id])
+
+    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
+    res.json({ items: result.rows[0].acceptance_criteria })
   } catch (err) { next(err) }
 })
 

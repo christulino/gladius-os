@@ -1,0 +1,10 @@
+id,name,description,version,is_system_default
+44,Simple Task,"Lightweight workflow for well-defined, atomic tasks.",1.0.0,true
+45,Standard Feature,"Full feature lifecycle with triage, queue, development, and review.",1.0.0,true
+46,Bug Triage,"Bug lifecycle from report through fix, review, and deployment.",1.0.0,true
+47,Service Request,Fulfillment workflow for service catalog requests.,1.0.0,true
+48,Personal Kanban,Simple personal task board. Inbox → Doing → Done.,1.0.0,true
+49,Review & Approval,"Structured review workflow with decision gate. Used for architecture reviews, design approvals, and feasibility assessments.",1.0.0,true
+50,Provisioning,Infrastructure and access provisioning with approval gate and validation step.,1.0.0,true
+51,Requisition,"Multi-stage approval workflow for hiring, procurement, and budget requests.",1.0.0,true
+52,Design Sprint,Design workflow from research through prototyping to handoff.,1.0.0,true

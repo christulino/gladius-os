@@ -1,0 +1,16 @@
+id,name,description,is_system_default,default_workflow_id
+31,Task,A discrete unit of work with a clear definition of done. The atomic building block.,true,
+32,Feature,A user-facing capability delivered as a collection of tasks.,true,
+33,Bug,A defect or unintended behavior that needs to be fixed.,true,
+34,Epic,A large body of work that can be broken down into features and tasks.,true,
+35,Project,"A time-bounded initiative with a defined scope, outcome, and stakeholders.",true,
+36,Service Request,A request for something from a service catalog. Initiates a defined fulfillment workflow.,true,
+37,Incident,An unplanned disruption or degradation of a service that requires immediate response.,true,
+38,Architecture Review,"Request for architectural assessment, technology decision, or standards review. Includes ADR creation and compliance evaluation.",true,
+39,Design Request,"Request for UX/UI design work — research, wireframes, prototypes, or visual design for a feature or product.",true,
+40,Environment Request,"Request for provisioning, modifying, or decommissioning a development, staging, or production environment.",true,
+41,Database Change,"Request for database schema changes, migrations, data fixes, or access provisioning. Requires DBA review.",true,
+42,Sizing Request,"Request for effort estimation or capacity sizing for a proposed initiative, feature, or project.",true,
+43,Feasibility Study,Request for technical or product feasibility assessment before committing to a feature or initiative.,true,
+44,Acquisition Request,"Request to acquire software, hardware, licenses, or services. Requires budget approval and procurement.",true,51
+45,Team Member Requisition,"Request to hire or backfill a team member. Includes role definition, JD creation, and approval workflow.",true,

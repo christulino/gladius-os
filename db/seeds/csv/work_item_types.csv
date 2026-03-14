@@ -1,0 +1,45 @@
+id,name,description,org_slug,class_name,key_prefix,icon,color,request_mode,is_published,is_system_default
+113,Acquisition Request,"Request to acquire cloud services, licenses, or infrastructure components.",cloud-infra,Acquisition Request,IACQ,🛒,#059669,user_requestable,true,false
+110,Environment Setup,"Provision, modify, or decommission a cloud environment (dev, staging, prod).",cloud-infra,Environment Request,ENV,☁️,#0EA5E9,user_requestable,true,false
+112,Infrastructure Incident,Unplanned outage or degradation of cloud infrastructure services.,cloud-infra,Incident,IINC,🚨,#DC2626,user_requestable,true,false
+111,Infrastructure Task,"General infrastructure work — automation, monitoring, capacity management.",cloud-infra,Task,ITSK,🔧,#3B82F6,user_requestable,true,false
+115,Data Pipeline Task,"Work on ETL pipelines, data quality, or analytics infrastructure.",data-platform,Task,DTSK,📊,#3B82F6,user_requestable,true,false
+116,Data Platform Bug,"Defect in data pipelines, reporting, or data services.",data-platform,Bug,DBUG,🐛,#EF4444,user_requestable,true,false
+114,Database Change Request,"Schema migration, data fix, access provisioning, or performance tuning for databases.",data-platform,Database Change,DBCR,🗄️,#F97316,user_requestable,true,false
+117,Architecture Review,"Request for architectural review — new systems, integrations, or technology decisions.",enterprise-architecture,Architecture Review,ARCH,🏗️,#6366F1,user_requestable,true,false
+119,Standards Exception,Request for an exception to established architecture standards.,enterprise-architecture,Service Request,STDX,⚠️,#F59E0B,user_requestable,true,false
+118,Technology Assessment,"Feasibility study for adopting a new technology, framework, or vendor.",enterprise-architecture,Feasibility Study,TECH,🔬,#14B8A6,user_requestable,true,false
+128,Access Request,"Request for system access, permissions, or VPN/network access.",it-service-desk,Service Request,ACC,🔑,#0D9488,user_requestable,true,false
+129,Equipment Request,"Request for laptop, monitor, peripherals, or other hardware.",it-service-desk,Acquisition Request,EQUIP,💻,#059669,user_requestable,true,false
+127,IT Incident,Service disruption reported by a user or detected by monitoring.,it-service-desk,Incident,INC,🚨,#DC2626,user_requestable,true,false
+126,IT Service Request,"General IT service request — access, software, equipment, accounts.",it-service-desk,Service Request,ITSR,📩,#F59E0B,user_requestable,true,false
+108,Design Request,Request UX/UI design work from the design studio for mobile screens.,mobile-experience,Design Request,MDES,🎨,#EC4899,user_requestable,true,false
+107,Mobile Bug,Defect specific to the mobile application.,mobile-experience,Bug,MBUG,🪲,#EF4444,user_requestable,true,false
+106,Mobile Feature,Feature for the iOS or Android mobile application.,mobile-experience,Feature,MOB,📱,#8B5CF6,user_requestable,true,false
+109,Mobile Task,Discrete development task for the mobile team.,mobile-experience,Task,MTSK,✅,#3B82F6,user_requestable,true,false
+104,Payment Bug,"Defect in payment processing, reconciliation, or transaction flows.",payments,Bug,PBUG,🐛,#EF4444,user_requestable,true,false
+103,Payment Feature,"Feature work specific to the payments domain — checkout, refunds, subscriptions.",payments,Feature,PAY,💳,#8B5CF6,user_requestable,true,false
+105,Payment Task,Discrete unit of work in the payments domain.,payments,Task,PTSK,✅,#3B82F6,user_requestable,true,false
+131,Contractor Request,Request to engage a contractor or consulting resource.,people-ops,Team Member Requisition,CNTR,🤝,#6366F1,user_requestable,true,false
+130,Headcount Requisition,Request to hire or backfill a team member with role definition and approval.,people-ops,Team Member Requisition,HIRE,👤,#7C3AED,user_requestable,true,false
+132,People Service Request,"General HR request — onboarding, offboarding, transfers, policy questions.",people-ops,Service Request,PEOP,📋,#F59E0B,user_requestable,true,false
+135,Platform Bug,Defect in shared platform services.,platform-art,Bug,PLBG,🐛,#EF4444,user_requestable,true,false
+134,Platform Epic,Large platform initiative spanning multiple PIs.,platform-art,Epic,PEPC,🎯,#EC4899,user_requestable,true,false
+133,Platform Feature,"Feature for shared platform services — APIs, SDKs, infrastructure.",platform-art,Feature,PLAT,🔩,#8B5CF6,user_requestable,true,false
+123,Project Intake,New project proposal requiring business case review and prioritization.,pmo,Project,PROJ,📋,#10B981,user_requestable,true,false
+124,Sizing Request,Request for capacity or effort estimation from delivery teams.,pmo,Sizing Request,PSIZE,📐,#8B5CF6,user_requestable,true,false
+125,Status Report,Periodic project health report — auto-generated or manually submitted.,pmo,Task,RPT,📊,#6366F1,user_requestable,true,false
+101,Feature Feasibility,Technical or market feasibility study before committing to a product feature.,product-engineering,Feasibility Study,FEAS,🔬,#14B8A6,user_requestable,true,false
+100,Product Epic,"A large product initiative spanning multiple PIs, broken into features.",product-engineering,Epic,EPIC,🎯,#EC4899,user_requestable,true,false
+99,Product Feature,"A product feature requiring design, development, and release across teams in the ART.",product-engineering,Feature,FEAT,⭐,#8B5CF6,user_requestable,true,false
+102,Sizing Request,Request capacity estimation for a proposed feature or initiative.,product-engineering,Sizing Request,SIZE,📐,#8B5CF6,user_requestable,true,false
+94,Bug,A defect that needs to be triaged and fixed.,system,Bug,,🐛,#EF4444,user_requestable,true,true
+95,Epic,A large body of work decomposed into features.,system,Epic,,🎯,#EC4899,user_requestable,true,true
+93,Feature,A user-facing capability composed of tasks.,system,Feature,,⭐,#8B5CF6,user_requestable,true,true
+98,Incident,An unplanned disruption requiring immediate response.,system,Incident,,🚨,#DC2626,user_requestable,true,true
+96,Project,A time-bounded initiative with defined scope and outcome.,system,Project,,📋,#10B981,user_requestable,true,true
+97,Service Request,A request for fulfillment from a service catalog.,system,Service Request,,📩,#F59E0B,user_requestable,true,true
+92,Task,"A discrete, well-defined unit of work.",system,Task,,✅,#3B82F6,user_requestable,true,true
+122,Accessibility Audit,Audit a feature or product for WCAG compliance and accessibility standards.,ux-design,Design Request,A11Y,♿,#0EA5E9,user_requestable,true,false
+120,Design Request,"Request for UX research, wireframes, prototypes, or visual design.",ux-design,Design Request,DSGN,🎨,#EC4899,user_requestable,true,false
+121,Design System Update,"Changes to shared design system components, tokens, or patterns.",ux-design,Task,DSYS,🎨,#A855F7,user_requestable,true,false

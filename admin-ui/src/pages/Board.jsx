@@ -275,13 +275,13 @@ export default function Board({ setTab }) {
         let totalWidth = 0
         while (i + count < flatColumns.length && flatColumns[i + count].stage_class === col.stage_class) {
           const c = flatColumns[i + count]
-          totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 : COL_WIDTH
+          totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
           count++
         }
         spans.push({ stage_class: col.stage_class, label: col.class_label, colCount: count, width: totalWidth, startIdx: i })
         i += count
       } else {
-        spans.push({ stage_class: col.stage_class, label: null, colCount: 1, width: col.has_waiting_queue ? COL_WIDTH * 2 : COL_WIDTH, startIdx: i })
+        spans.push({ stage_class: col.stage_class, label: null, colCount: 1, width: col.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH, startIdx: i })
         i++
       }
     }
@@ -290,6 +290,20 @@ export default function Board({ setTab }) {
 
   const hasAnyClassHeaders = classHeaderSpans.some(s => s.label)
   const hasColumns = flatColumns.length > 0
+
+  // Assign alternating shade index to each stage_class group for visual distinction
+  const classShadeIndex = useMemo(() => {
+    const map = {}
+    let idx = 0
+    for (const span of classHeaderSpans) {
+      if (!(span.stage_class in map)) {
+        map[span.stage_class] = idx++
+      }
+    }
+    return map
+  }, [classHeaderSpans])
+
+  const COL_GAP = 4 // px gap between columns
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -373,36 +387,42 @@ export default function Board({ setTab }) {
             <div className="sticky top-0 z-10 bg-background px-4 pt-3">
               {/* Row 1: L1 stage_class headers (only when multi-stage classes exist) */}
               {hasAnyClassHeaders && (
-                <div className="flex flex-row gap-0">
+                <div className="flex flex-row" style={{ gap: COL_GAP }}>
                   <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
-                  {classHeaderSpans.map(span => (
-                    <div
-                      key={span.stage_class}
-                      className="flex-shrink-0 mx-1"
-                      style={{ width: span.width + (span.colCount - 1) * 8 }}
-                    >
-                      {span.label && (
-                        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground text-center pb-1 border-b border-border/40 mb-1">
-                          {span.label}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {classHeaderSpans.map(span => {
+                    const shade = classShadeIndex[span.stage_class] ?? 0
+                    const bgClass = shade % 2 === 0 ? 'bg-muted/40' : 'bg-muted/20'
+                    return (
+                      <div
+                        key={span.stage_class}
+                        className="flex-shrink-0"
+                        style={{ width: span.width + (span.colCount - 1) * COL_GAP }}
+                      >
+                        {span.label ? (
+                          <div className={`text-xs font-medium uppercase tracking-wide text-muted-foreground text-center py-1 rounded-t ${bgClass}`}>
+                            {span.label}
+                          </div>
+                        ) : (
+                          <div className="py-1" />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
               {/* Row 2: L2 stage headers + L3 waiting sub-headers */}
-              <div className="flex flex-row gap-0">
+              <div className="flex flex-row" style={{ gap: COL_GAP }}>
                 <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
                 {flatColumns.map(col => {
                   const count = columnItemCount(col.key)
                   const orgWip = wipLimits[col.name]
                   const wipLimit = orgWip?.wip_limit ?? null
                   const wipOver = wipLimit && count > wipLimit
-                  const colWidth = col.has_waiting_queue ? COL_WIDTH * 2 : COL_WIDTH
+                  const colWidth = col.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
 
                   return (
-                    <div key={col.key} className="flex-shrink-0 mx-1" style={{ width: colWidth }}>
+                    <div key={col.key} className="flex-shrink-0" style={{ width: colWidth }}>
                       <div className={`flex items-center gap-2 px-3 py-2 rounded-t ${
                         wipOver ? 'bg-destructive/10 border border-destructive/40' : 'bg-muted/30 border border-transparent'
                       }`}>
@@ -419,7 +439,7 @@ export default function Board({ setTab }) {
                       {/* L3: waiting queue sub-header */}
                       {col.has_waiting_queue && (
                         <div className="flex flex-row">
-                          <div className="text-xs text-muted-foreground/60 px-2 py-0.5 border-r border-dashed border-border/40" style={{ width: COL_WIDTH }}>
+                          <div className="text-xs text-muted-foreground/60 px-2 py-0.5" style={{ width: COL_WIDTH }}>
                             Ready for...
                           </div>
                           <div style={{ width: COL_WIDTH }} />
@@ -435,7 +455,7 @@ export default function Board({ setTab }) {
             {displaySwimlanes.map(cls => {
               const config = SWIMLANE_CONFIG[cls]
               return (
-                <div key={cls} className="flex flex-row gap-0 px-4" style={{ background: config.bg }}>
+                <div key={cls} className="flex flex-row px-4" style={{ background: config.bg, gap: COL_GAP }}>
                   {/* Swimlane label */}
                   <div className="flex-shrink-0 py-2 flex items-start justify-end pr-3" style={{ width: LABEL_WIDTH }}>
                     <span
@@ -452,11 +472,13 @@ export default function Board({ setTab }) {
                     const activeItems = cell?.active ?? []
 
                     if (col.has_waiting_queue) {
-                      // Split cell: waiting | active
+                      // Split cell: waiting | active with dashed divider
                       return (
-                        <div key={col.key} className="flex-shrink-0 mx-1 py-2 flex flex-row" style={{ width: COL_WIDTH * 2 }}>
+                        <div key={col.key} className="flex-shrink-0 py-2 flex flex-row relative" style={{ width: COL_WIDTH * 2 + COL_GAP }}>
+                          {/* Dashed center divider */}
+                          <div className="absolute top-0 bottom-0 border-l border-dashed border-border/50" style={{ left: COL_WIDTH + COL_GAP / 2 }} />
                           {/* Waiting (left) */}
-                          <div className="min-h-[52px] border-r border-dashed border-border/30 pr-1" style={{ width: COL_WIDTH }}>
+                          <div className="min-h-[52px] pr-1.5" style={{ width: COL_WIDTH }}>
                             {waitingItems.length === 0 ? (
                               <div className="h-10 border border-dashed border-border/20 rounded flex items-center justify-center bg-muted/5">
                                 <span className="text-xs text-muted-foreground/20">—</span>
@@ -475,7 +497,7 @@ export default function Board({ setTab }) {
                             )}
                           </div>
                           {/* Active (right) */}
-                          <div className="min-h-[52px] pl-1" style={{ width: COL_WIDTH }}>
+                          <div className="min-h-[52px] pl-1.5" style={{ width: COL_WIDTH, marginLeft: COL_GAP }}>
                             {activeItems.length === 0 ? (
                               <div className="h-10 border border-dashed border-border/20 rounded flex items-center justify-center">
                                 <span className="text-xs text-muted-foreground/20">—</span>
@@ -499,7 +521,7 @@ export default function Board({ setTab }) {
                     // Single cell (no waiting queue)
                     const allCellItems = [...waitingItems, ...activeItems]
                     return (
-                      <div key={col.key} className="flex-shrink-0 mx-1 py-2 min-h-[52px]" style={{ width: COL_WIDTH }}>
+                      <div key={col.key} className="flex-shrink-0 py-2 min-h-[52px]" style={{ width: COL_WIDTH }}>
                         {allCellItems.length === 0 ? (
                           <div className="h-10 border border-dashed border-border/30 rounded flex items-center justify-center">
                             <span className="text-xs text-muted-foreground/20">—</span>

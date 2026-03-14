@@ -1,0 +1,5 @@
+id,name,description,priority_order,color,max_concurrent,can_bypass_wip,is_date_driven,is_system_default
+17,Expedited,Urgent work that bypasses normal WIP limits. Use sparingly.,0,#EF4444,1,true,false,true
+18,Fixed Date,Work with a hard deadline. SLA is date-driven.,1,#F59E0B,,false,true,true
+19,Standard,"Default for all new work items. First in, first out.",2,#3B82F6,,false,false,true
+20,Deferred,Low urgency. Pulled only when capacity is available.,3,#9CA3AF,,false,false,true

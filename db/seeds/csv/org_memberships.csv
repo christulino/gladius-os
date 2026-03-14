@@ -1,0 +1,37 @@
+display_name,email,org_slug,role_name
+Aisha Johnson,aisha.johnson@flowos.dev,it-service-desk,Team Member
+Alex Petrov,alex.petrov@flowos.dev,cloud-infra,Stakeholder
+Alex Petrov,alex.petrov@flowos.dev,data-platform,Stakeholder
+Alex Petrov,alex.petrov@flowos.dev,platform-art,Product Owner
+Carlos Rivera,carlos.rivera@flowos.dev,data-platform,Team Member
+Chris Tulino,chris@flowos.dev,system,Admin
+Daniel Berg,daniel.berg@flowos.dev,enterprise-architecture,Org Admin
+Daniel Berg,daniel.berg@flowos.dev,platform-art,Stakeholder
+Daniel Berg,daniel.berg@flowos.dev,product-engineering,Stakeholder
+David Okafor,david.okafor@flowos.dev,payments,Product Owner
+Elena Vasquez,elena.vasquez@flowos.dev,product-engineering,Service Delivery Manager
+Fatima Al-Rashid,fatima.al-rashid@flowos.dev,enterprise-architecture,Team Member
+James Morrison,james.morrison@flowos.dev,mobile-experience,Team Member
+Jennifer Wright,jennifer.wright@flowos.dev,digital-technology,Stakeholder
+Jennifer Wright,jennifer.wright@flowos.dev,pmo,Service Delivery Manager
+Kevin Brown,kevin.brown@flowos.dev,it-service-desk,Team Member
+Lisa Nakamura,lisa.nakamura@flowos.dev,payments,Team Member
+Marcus Williams,marcus.williams@flowos.dev,mobile-experience,Stakeholder
+Marcus Williams,marcus.williams@flowos.dev,payments,Stakeholder
+Marcus Williams,marcus.williams@flowos.dev,product-engineering,Product Owner
+Maria Santos,maria.santos@flowos.dev,it-service-desk,Service Manager
+Mei Lin,mei.lin@flowos.dev,data-platform,Team Member
+Michael Torres,michael.torres@flowos.dev,people-ops,Team Member
+Nina Kowalski,nina.kowalski@flowos.dev,cloud-infra,Team Member
+Omar Hassan,omar.hassan@flowos.dev,cloud-infra,Team Member
+Priya Sharma,priya.sharma@flowos.dev,mobile-experience,Product Owner
+Rachel Green,rachel.green@flowos.dev,people-ops,Org Admin
+Raj Patel,raj.patel@flowos.dev,payments,Team Member
+Ryan Kim,ryan.kim@flowos.dev,mobile-experience,Stakeholder
+Ryan Kim,ryan.kim@flowos.dev,ux-design,Team Member
+Sarah Chen,sarah.chen@flowos.dev,digital-technology,Org Admin
+Sarah Chen,sarah.chen@flowos.dev,platform-art,Stakeholder
+Sarah Chen,sarah.chen@flowos.dev,product-engineering,Stakeholder
+Sophie Dubois,sophie.dubois@flowos.dev,ux-design,Org Admin
+Thomas Andersen,thomas.andersen@flowos.dev,pmo,Team Member
+Yuki Tanaka,yuki.tanaka@flowos.dev,mobile-experience,Team Member

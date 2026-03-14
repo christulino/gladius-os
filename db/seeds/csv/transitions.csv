@@ -1,0 +1,79 @@
+id,workflow_name,from_stage,to_stage,transition_label,transition_kind,requires_reason
+314,Bug Triage,Reported,Won't Fix,Won't Fix,forward,true
+304,Bug Triage,Reported,Triage,Begin Triage,forward,false
+305,Bug Triage,Triage,Fix Queue,Confirm Bug,forward,false
+307,Bug Triage,Triage,Reported,Need More Info,backward,true
+306,Bug Triage,Triage,Won't Fix,Won't Fix,forward,true
+308,Bug Triage,Fix Queue,In Fix,Start Fix,forward,false
+315,Bug Triage,In Fix,Won't Fix,Won't Fix,forward,true
+309,Bug Triage,In Fix,Code Review,Submit Review,forward,false
+310,Bug Triage,Code Review,Deploying,Approve,forward,false
+311,Bug Triage,Code Review,In Fix,Rework,backward,true
+313,Bug Triage,Deploying,In Fix,Rollback,backward,true
+312,Bug Triage,Deploying,Resolved,Deployed,forward,false
+362,Design Sprint,Requested,Cancelled,Cancel,forward,true
+354,Design Sprint,Requested,Scoping,Scope,forward,false
+356,Design Sprint,Scoping,Designing,Skip to Design,forward,false
+355,Design Sprint,Scoping,Research,Start Research,forward,false
+363,Design Sprint,Scoping,Cancelled,Cancel,forward,true
+357,Design Sprint,Research,Designing,Begin Design,forward,false
+358,Design Sprint,Designing,Design Review,Submit for Review,forward,false
+360,Design Sprint,Design Review,Designing,Revise,backward,true
+359,Design Sprint,Design Review,Handoff,Approve,forward,false
+361,Design Sprint,Handoff,Delivered,Delivered,forward,false
+324,Personal Kanban,Inbox,Doing,Start,forward,false
+326,Personal Kanban,Doing,Inbox,Pause,backward,false
+325,Personal Kanban,Doing,Done,Complete,forward,false
+327,Personal Kanban,Done,Doing,Reopen,backward,false
+337,Provisioning,Submitted,Pending Approval,Submit for Approval,forward,false
+338,Provisioning,Pending Approval,Approved,Approve,forward,false
+339,Provisioning,Pending Approval,Rejected,Reject,forward,true
+340,Provisioning,Pending Approval,Submitted,Need More Info,backward,true
+341,Provisioning,Approved,Provisioning,Start Provisioning,forward,false
+342,Provisioning,Provisioning,Validation,Ready for Validation,forward,false
+345,Provisioning,Provisioning,Rejected,Cancel,forward,true
+343,Provisioning,Validation,Completed,Validated,forward,false
+344,Provisioning,Validation,Provisioning,Failed Validation,backward,true
+346,Requisition,Submitted,Manager Review,Submit,forward,false
+349,Requisition,Manager Review,Submitted,Return,backward,true
+347,Requisition,Manager Review,Finance Approval,Endorse,forward,false
+348,Requisition,Manager Review,Denied,Deny,forward,true
+350,Requisition,Finance Approval,In Procurement,Approve & Proceed,forward,false
+351,Requisition,Finance Approval,Denied,Deny,forward,true
+352,Requisition,In Procurement,Fulfilled,Fulfilled,forward,false
+353,Requisition,In Procurement,Denied,Cancel,forward,true
+336,Review & Approval,Submitted,Declined,Cancel,forward,true
+328,Review & Approval,Submitted,Assigned,Assign,forward,false
+329,Review & Approval,Assigned,Under Review,Begin Review,forward,false
+330,Review & Approval,Assigned,Submitted,Need More Info,backward,true
+331,Review & Approval,Under Review,Decision,Submit Decision,forward,false
+332,Review & Approval,Under Review,Assigned,Reassign,backward,false
+333,Review & Approval,Decision,Completed,Approve,forward,false
+335,Review & Approval,Decision,Under Review,Revise,backward,true
+334,Review & Approval,Decision,Declined,Decline,forward,true
+316,Service Request,Submitted,Under Review,Begin Review,forward,false
+318,Service Request,Under Review,Rejected,Reject,forward,true
+319,Service Request,Under Review,Submitted,Need More Info,backward,true
+317,Service Request,Under Review,Approved,Approve,forward,false
+320,Service Request,Approved,Fulfilling,Start,forward,false
+323,Service Request,Approved,Rejected,Cancel,forward,true
+321,Service Request,Fulfilling,Fulfilled,Fulfill,forward,false
+322,Service Request,Fulfilling,Rejected,Cancel,forward,true
+286,Simple Task,Inbox,In Progress,Start,forward,false
+289,Simple Task,Inbox,Cancelled,Cancel,forward,true
+287,Simple Task,In Progress,Done,Complete,forward,false
+288,Simple Task,In Progress,Inbox,Put Back,backward,false
+290,Simple Task,In Progress,Cancelled,Cancel,forward,true
+291,Standard Feature,Intake,Triage,Begin Triage,forward,false
+300,Standard Feature,Intake,Cancelled,Cancel,forward,true
+293,Standard Feature,Triage,Intake,Return,backward,false
+292,Standard Feature,Triage,Ready,Accept,forward,false
+301,Standard Feature,Triage,Cancelled,Cancel,forward,true
+302,Standard Feature,Ready,Cancelled,Cancel,forward,true
+294,Standard Feature,Ready,In Development,Start,forward,false
+295,Standard Feature,In Development,In Review,Submit Review,forward,false
+303,Standard Feature,In Development,Cancelled,Cancel,forward,true
+296,Standard Feature,In Development,Blocked,Mark Blocked,sideways,true
+297,Standard Feature,Blocked,In Development,Unblock,sideways,false
+298,Standard Feature,In Review,Done,Approve,forward,false
+299,Standard Feature,In Review,In Development,Request Changes,backward,true
