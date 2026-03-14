@@ -21,6 +21,7 @@ const SWIMLANE_CONFIG = {
 
 const COL_WIDTH = 220
 const LABEL_WIDTH = 80
+const COL_GAP = 4 // px gap between columns
 
 // ─── WIP Indicator ────────────────────────────────────────────────────────────
 
@@ -302,8 +303,6 @@ export default function Board({ setTab }) {
     }
     return map
   }, [classHeaderSpans])
-
-  const COL_GAP = 4 // px gap between columns
 
   return (
     <div className="flex flex-col h-full min-h-0">
