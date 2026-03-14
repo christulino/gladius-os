@@ -10,13 +10,27 @@
  */
 
 import { useState, useMemo } from 'react'
-import { useApi }   from '@/hooks/useApi'
-import { api }      from '@/lib/api'
+import { useApi }     from '@/hooks/useApi'
+import { api }        from '@/lib/api'
 import { DataTable }  from '@/components/ui/data-table'
 import { Badge }      from '@/components/ui/badge'
 import { Button }     from '@/components/ui/button'
-import { FormDrawer } from '@/components/FormDrawer'
+import { FormDrawer }    from '@/components/FormDrawer'
+import { FieldsEditor } from '@/components/FieldsEditor'
 import { Panel, PanelHeader, PanelTitle, PanelMeta, LoadingState, ErrorState } from '@/components/Panel'
+
+function TypeFieldsEditor({ typeId }) {
+  return (
+    <FieldsEditor
+      title="Type Fields"
+      loadFields={() => api.typeFields(typeId)}
+      createField={data => api.createTypeField(data)}
+      updateField={(id, patch) => api.updateTypeField(id, patch)}
+      deactivateField={id => api.deleteTypeField(id)}
+      parentIdField={{ key: 'work_item_type_id', value: typeId }}
+    />
+  )
+}
 
 const REQUEST_MODE_OPTIONS = [
   { label: 'User Requestable — visible in service catalog', value: 'user_requestable' },
@@ -79,6 +93,13 @@ const CREATE_FIELDS = [
 const EDIT_FIELDS = [
   { key: 'name',         label: 'Type Name',           type: 'text',     required: true },
   { key: 'description',  label: 'Description',         type: 'textarea' },
+  {
+    key: 'workflow_id', label: 'Workflow', type: 'select',
+    hint: 'The workflow that governs how items of this type move through stages.',
+    loadOptions: () => api.workflows().then(d =>
+      [{ label: '— None —', value: '' }, ...d.rows.map(w => ({ label: w.name, value: w.id }))]
+    ),
+  },
   { key: 'request_mode', label: 'Request Mode',        type: 'select',   options: REQUEST_MODE_OPTIONS },
   { key: 'key_prefix',   label: 'Key Prefix',          type: 'text',     placeholder: 'e.g. TSK' },
   { key: 'icon',         label: 'Icon',                type: 'text',     placeholder: '🎫' },
@@ -250,6 +271,7 @@ export default function WitTypes() {
         initialValues={editRow}
         onSubmit={v => api.updateWitType(editRow.id, v)}
         onSaved={() => { setEditRow(null); reload() }}
+        extraContent={editRow ? <TypeFieldsEditor typeId={editRow.id} /> : null}
       />
     </>
   )

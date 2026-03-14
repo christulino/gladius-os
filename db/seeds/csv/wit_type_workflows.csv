@@ -1,0 +1,45 @@
+type_name,org_slug,workflow_name,is_current
+Acquisition Request,cloud-infra,Requisition,true
+Environment Setup,cloud-infra,Provisioning,true
+Infrastructure Incident,cloud-infra,Bug Triage,true
+Infrastructure Task,cloud-infra,Simple Task,true
+Data Pipeline Task,data-platform,Simple Task,true
+Data Platform Bug,data-platform,Bug Triage,true
+Database Change Request,data-platform,Provisioning,true
+Architecture Review,enterprise-architecture,Review & Approval,true
+Standards Exception,enterprise-architecture,Review & Approval,true
+Technology Assessment,enterprise-architecture,Review & Approval,true
+Access Request,it-service-desk,Service Request,true
+Equipment Request,it-service-desk,Requisition,true
+IT Incident,it-service-desk,Bug Triage,true
+IT Service Request,it-service-desk,Service Request,true
+Design Request,mobile-experience,Design Sprint,true
+Mobile Bug,mobile-experience,Bug Triage,true
+Mobile Feature,mobile-experience,Standard Feature,true
+Mobile Task,mobile-experience,Simple Task,true
+Payment Bug,payments,Bug Triage,true
+Payment Feature,payments,Standard Feature,true
+Payment Task,payments,Simple Task,true
+Contractor Request,people-ops,Requisition,true
+Headcount Requisition,people-ops,Requisition,true
+People Service Request,people-ops,Service Request,true
+Platform Bug,platform-art,Bug Triage,true
+Platform Epic,platform-art,Standard Feature,true
+Platform Feature,platform-art,Standard Feature,true
+Project Intake,pmo,Review & Approval,true
+Sizing Request,pmo,Review & Approval,true
+Status Report,pmo,Simple Task,true
+Feature Feasibility,product-engineering,Review & Approval,true
+Product Epic,product-engineering,Standard Feature,true
+Product Feature,product-engineering,Standard Feature,true
+Sizing Request,product-engineering,Review & Approval,true
+Bug,system,Bug Triage,true
+Epic,system,Standard Feature,true
+Feature,system,Standard Feature,true
+Incident,system,Bug Triage,true
+Project,system,Standard Feature,true
+Service Request,system,Service Request,true
+Task,system,Simple Task,true
+Accessibility Audit,ux-design,Review & Approval,true
+Design Request,ux-design,Design Sprint,true
+Design System Update,ux-design,Standard Feature,true

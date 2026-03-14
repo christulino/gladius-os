@@ -10,6 +10,7 @@ import WitClasses    from '@/pages/WitClasses'
 import WitTypes      from '@/pages/WitTypes'
 import WorkItems     from '@/pages/WorkItems'
 import WorkflowManager from '@/pages/WorkflowManager'
+import LookupLists   from '@/pages/LookupLists'
 import History       from '@/pages/History'
 import RawTables     from '@/pages/RawTables'
 import LogViewer     from '@/pages/LogViewer'
@@ -25,6 +26,7 @@ const NAV = [
 
   { id: 'witclasses',    label: 'Type Classes',     section: 'Configure' },
   { id: 'workflows',     label: 'Workflows',        section: null },
+  { id: 'lookuplists',   label: 'Lists',            section: null },
 
   { id: 'users',         label: 'Users',            section: 'Admin' },
   { id: 'roles',         label: 'Roles',            section: null },
@@ -49,6 +51,7 @@ const PAGES = {
   witclasses:    WitClasses,
   wittypes:      WitTypes,
   workflows:     WorkflowManager,
+  lookuplists:   LookupLists,
   workitems:     WorkItems,
   history:       History,
   raw:           RawTables,
@@ -65,8 +68,16 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-      {/* Sidebar */}
-      <nav className="w-44 flex-shrink-0 border-r border-border bg-card overflow-y-auto">
+      {/* Main */}
+      <main className={[
+        'flex-1 flex flex-col min-h-0',
+        tab === 'board' || tab === 'workflows' || tab === 'organizations' ? 'overflow-hidden' : 'overflow-auto p-4 gap-4',
+      ].join(' ')}>
+        <Page setTab={setTab} />
+      </main>
+
+      {/* Sidebar (right) */}
+      <nav className="w-44 flex-shrink-0 border-l border-border bg-card overflow-y-auto">
         <div className="px-3 py-3 border-b border-border">
           <span className="text-sm font-semibold text-foreground">Flow OS</span>
         </div>
@@ -94,14 +105,6 @@ export default function App() {
           ))}
         </div>
       </nav>
-
-      {/* Main */}
-      <main className={[
-        'flex-1 flex flex-col min-h-0',
-        tab === 'board' || tab === 'workflows' ? 'overflow-hidden' : 'overflow-auto p-4 gap-4',
-      ].join(' ')}>
-        <Page setTab={setTab} />
-      </main>
     </div>
   )
 }

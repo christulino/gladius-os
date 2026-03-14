@@ -1,0 +1,14 @@
+id,name,slug,sort_order
+28,Enterprise,enterprise,1
+29,Division,division,2
+30,Department,department,3
+31,Portfolio,portfolio,4
+32,Program,program,5
+33,Team,team,6
+34,Feature Team,feature-team,7
+35,Platform Team,platform-team,8
+36,Complicated Subsystem Team,complicated-subsystem-team,9
+37,Horizontal,horizontal,10
+38,Service Center,service-center,11
+39,Support,support,12
+40,System,system,99

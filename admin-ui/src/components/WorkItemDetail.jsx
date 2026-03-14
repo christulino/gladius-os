@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '@/lib/api'
 import { formatElapsed, formatRelative } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
@@ -6,6 +6,235 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
+import { Plus, X } from 'lucide-react'
+
+// ─── Custom Fields Renderer ─────────────────────────────────────────────────
+
+function CustomFields({ fields, values, onSave }) {
+  const [localValues, setLocalValues] = useState(values || {})
+  const [lookupCache, setLookupCache] = useState({})
+  const debounceRef = useRef(null)
+
+  useEffect(() => { setLocalValues(values || {}) }, [values])
+
+  // Load lookup list values for fields that reference them
+  useEffect(() => {
+    if (!fields) return
+    const listIds = [...new Set(fields.filter(f => f.lookup_list_id).map(f => f.lookup_list_id))]
+    for (const listId of listIds) {
+      if (lookupCache[listId]) continue
+      api.lookupValues(listId).then(data => {
+        setLookupCache(prev => ({ ...prev, [listId]: (data.rows || []).filter(v => v.is_active) }))
+      }).catch(() => {})
+    }
+  }, [fields])
+
+  function update(key, val) {
+    const next = { ...localValues, [key]: val }
+    setLocalValues(next)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => onSave(next), 600)
+  }
+
+  if (!fields || fields.length === 0) return null
+
+  // Group fields by field_group
+  const grouped = {}
+  for (const f of fields) {
+    const g = f.field_group || ''
+    if (!grouped[g]) grouped[g] = []
+    grouped[g].push(f)
+  }
+
+  return (
+    <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
+      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Custom Fields</span>
+      {Object.entries(grouped).map(([group, gFields]) => (
+        <div key={group} className="flex flex-col gap-2">
+          {group && (
+            <span className="text-xs font-medium text-muted-foreground mt-1">{group}</span>
+          )}
+          {gFields.map(f => {
+            // Resolve options: lookup list takes precedence over inline field_options
+            const options = f.lookup_list_id && lookupCache[f.lookup_list_id]
+              ? lookupCache[f.lookup_list_id].map(v => ({ label: v.label, value: v.label }))
+              : f.field_options || []
+            return (
+              <FieldInput
+                key={f.id}
+                field={{ ...f, field_options: options }}
+                value={localValues[f.field_key]}
+                onChange={val => update(f.field_key, val)}
+              />
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function FieldInput({ field, value, onChange }) {
+  const { field_type, field_label, field_key, field_options, is_required } = field
+
+  const labelEl = (
+    <span className="text-xs text-muted-foreground w-24 flex-shrink-0">
+      {field_label}{is_required && <span className="text-destructive ml-0.5">*</span>}
+    </span>
+  )
+
+  const inputCls = 'flex-1 text-xs bg-background border border-border rounded px-2 py-1 focus:outline-none focus:border-primary'
+
+  switch (field_type) {
+    case 'text':
+    case 'url':
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <input
+            type={field_type === 'url' ? 'url' : 'text'}
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value)}
+            placeholder={field_type === 'url' ? 'https://...' : ''}
+            className={inputCls}
+          />
+        </div>
+      )
+
+    case 'textarea':
+      return (
+        <div className="flex flex-col gap-1">
+          {labelEl}
+          <textarea
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value)}
+            rows={2}
+            className="text-xs bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary resize-y"
+          />
+        </div>
+      )
+
+    case 'number':
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <input
+            type="number"
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
+            className={inputCls}
+          />
+        </div>
+      )
+
+    case 'boolean':
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!value}
+              onChange={e => onChange(e.target.checked)}
+              className="accent-primary"
+            />
+            <span className="text-xs text-foreground">{value ? 'Yes' : 'No'}</span>
+          </label>
+        </div>
+      )
+
+    case 'date':
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <input
+            type="date"
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value || null)}
+            className={inputCls}
+          />
+        </div>
+      )
+
+    case 'select': {
+      const options = field_options || []
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <select
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value || null)}
+            className={inputCls}
+          >
+            <option value="">—</option>
+            {options.map(o => (
+              <option key={typeof o === 'string' ? o : o.value} value={typeof o === 'string' ? o : o.value}>
+                {typeof o === 'string' ? o : o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )
+    }
+
+    case 'multi_select': {
+      const options = field_options || []
+      const selected = Array.isArray(value) ? value : []
+      return (
+        <div className="flex flex-col gap-1">
+          {labelEl}
+          <div className="flex flex-wrap gap-1">
+            {options.map(o => {
+              const v = typeof o === 'string' ? o : o.value
+              const l = typeof o === 'string' ? o : o.label
+              const checked = selected.includes(v)
+              return (
+                <label key={v} className="flex items-center gap-1 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onChange(checked ? selected.filter(s => s !== v) : [...selected, v])}
+                    className="accent-primary"
+                  />
+                  {l}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
+    case 'user':
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <span className="text-xs text-muted-foreground/60">{value || 'Not set'}</span>
+        </div>
+      )
+
+    case 'org':
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <span className="text-xs text-muted-foreground/60">{value || 'Not set'}</span>
+        </div>
+      )
+
+    default:
+      return (
+        <div className="flex items-center gap-2">
+          {labelEl}
+          <input
+            type="text"
+            value={value ?? ''}
+            onChange={e => onChange(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+      )
+  }
+}
 
 const SERVICE_CLASS_CONFIG = {
   expedite:   { label: 'Expedite',   color: '#A33A25' },
@@ -51,6 +280,14 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   const [linkType, setLinkType] = useState('related')
   const [showLinkPanel, setShowLinkPanel] = useState(false)
 
+  // Custom fields
+  const [typeFields, setTypeFields] = useState([])
+  const [fieldValues, setFieldValues] = useState({})
+
+  // Acceptance criteria
+  const [acItems, setAcItems] = useState([])
+  const [newAcText, setNewAcText] = useState('')
+
   // Child creation
   const [childLibraryOpen, setChildLibraryOpen] = useState(false)
   const [childSelectedType, setChildSelectedType] = useState(null)
@@ -83,6 +320,15 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
       setTitleDraft(wi.title)
       setDescDraft(wi.description || '')
       setDescDirty(false)
+      setAcItems(wi.acceptance_criteria || [])
+      setFieldValues(wi.field_values || {})
+      // Load type field definitions
+      if (wi.work_item_type_id) {
+        try {
+          const tf = await api.typeFields(wi.work_item_type_id)
+          setTypeFields(tf.rows || [])
+        } catch { setTypeFields([]) }
+      }
     } catch (err) {
       console.error('Failed to load work item detail:', err)
     } finally {
@@ -214,6 +460,40 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
       await loadData()
       onChanged?.()
     } finally { setSaving(false) }
+  }
+
+  // Acceptance criteria
+  // TODO: addAcItem and removeAcItem require 'manage_acceptance_criteria' permission (org-level)
+  // toggleAcItem (check/uncheck) is unrestricted. Hide add/remove UI when user lacks permission.
+  async function saveAcItems(items) {
+    setAcItems(items)
+    try {
+      await api.updateAcceptanceCriteria(workItemId, items)
+    } catch (err) { console.error('Failed to save acceptance criteria:', err) }
+  }
+
+  function toggleAcItem(id) {
+    saveAcItems(acItems.map(i => i.id === id ? { ...i, checked: !i.checked } : i))
+  }
+
+  function removeAcItem(id) {
+    saveAcItems(acItems.filter(i => i.id !== id))
+  }
+
+  function addAcItem() {
+    if (!newAcText.trim()) return
+    const nextId = acItems.length > 0 ? Math.max(...acItems.map(i => i.id)) + 1 : 1
+    saveAcItems([...acItems, { id: nextId, text: newAcText.trim(), checked: false }])
+    setNewAcText('')
+  }
+
+  // Custom field save
+  async function saveFieldValues(next) {
+    setFieldValues(next)
+    try {
+      await api.updateWorkItem(workItemId, { field_values: next })
+      onChanged?.()
+    } catch (err) { console.error('Failed to save field values:', err) }
   }
 
   // People management
@@ -436,6 +716,64 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                         Save
                       </Button>
                     )}
+                  </div>
+
+                  {/* Custom Fields */}
+                  <CustomFields
+                    fields={typeFields}
+                    values={fieldValues}
+                    onSave={saveFieldValues}
+                  />
+
+                  {/* Acceptance Criteria */}
+                  <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Acceptance Criteria
+                        {acItems.length > 0 && (
+                          <span className="ml-1 normal-case">
+                            ({acItems.filter(i => i.checked).length}/{acItems.length})
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {acItems.map(ac => (
+                        <div key={ac.id} className="flex items-start gap-1.5 group">
+                          <input
+                            type="checkbox"
+                            checked={!!ac.checked}
+                            onChange={() => toggleAcItem(ac.id)}
+                            className="mt-0.5 accent-primary flex-shrink-0"
+                          />
+                          <span className={[
+                            'text-xs flex-1',
+                            ac.checked && 'line-through text-muted-foreground',
+                          ].filter(Boolean).join(' ')}>
+                            {ac.text}
+                          </span>
+                          <button
+                            onClick={() => removeAcItem(ac.id)}
+                            className="text-muted-foreground/30 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
+                            title="Remove"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        value={newAcText}
+                        onChange={e => setNewAcText(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && addAcItem()}
+                        placeholder="Add criterion..."
+                        className="flex-1 text-xs bg-background border border-border rounded px-2 py-1 focus:outline-none focus:border-primary"
+                      />
+                      <Button size="sm" variant="ghost" onClick={addAcItem} disabled={!newAcText.trim()}>
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Actions bar */}

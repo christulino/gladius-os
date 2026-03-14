@@ -1,0 +1,14 @@
+id,slug,name,org_type,parent_id,parent_slug,is_active
+56,system,Flow OS System,system,,,true
+57,digital-technology,Digital Technology,enterprise,,,true
+58,product-engineering,Product Engineering ART,program,57,digital-technology,true
+59,platform-art,Platform ART,program,57,digital-technology,true
+60,payments,Payments Team,feature-team,58,product-engineering,true
+61,mobile-experience,Mobile Experience Team,feature-team,58,product-engineering,true
+62,cloud-infra,Cloud Infrastructure,platform-team,59,platform-art,true
+63,data-platform,Data Platform,platform-team,59,platform-art,true
+64,enterprise-architecture,Enterprise Architecture,horizontal,57,digital-technology,true
+65,ux-design,UX Design Studio,horizontal,58,product-engineering,true
+66,pmo,PMO,department,57,digital-technology,true
+67,it-service-desk,IT Service Desk,service-center,59,platform-art,true
+68,people-ops,People Operations,horizontal,57,digital-technology,true

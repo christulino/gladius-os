@@ -1,0 +1,17 @@
+id,slug,name,description,scope,category
+33,create_org,Create Organization,Create new organizations anywhere in the hierarchy.,system,administration
+34,create_user,Create User,Create new user accounts.,system,administration
+35,manage_system_config,Manage System Config,Edit system-level settings including org types and global role defaults.,system,administration
+37,manage_members,Manage Members,Add or remove members and assign roles within an org.,org,membership
+36,manage_org,Manage Organization,"Edit org name, description, type, and settings.",org,membership
+38,manage_role_permissions,Manage Role Permissions,Customize which permissions each role has within this org.,org,membership
+48,view_reports,View Reports,"View flow metrics, reports, and board health indicators.",read,visibility
+47,view_work_items,View Work Items,See work items on the board and in lists.,read,visibility
+45,comment_work_item,Comment on Work Item,Add comments and discussion to work items.,work,work_items
+42,create_work_item,Create Work Item,Create new work items in this org.,work,work_items
+43,edit_work_item,Edit Work Item,Edit fields and details on existing work items.,work,work_items
+46,manage_board_views,Manage Board Views,Create and save personal and shared board view configurations.,work,work_items
+44,transition_work_item,Transition Work Item,Move work items between stages.,work,work_items
+41,manage_service_catalog,Manage Service Catalog,Create and publish service catalog items for this org.,org,workflow
+40,manage_work_item_types,Manage Work Item Types,Create and configure work item types for this org.,org,workflow
+39,manage_workflows,Manage Workflows,"Create and edit workflows, stages, and transitions for this org.",org,workflow

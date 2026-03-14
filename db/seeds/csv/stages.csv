@@ -1,0 +1,57 @@
+id,workflow_id,workflow_name,name,stage_class,stage_type,display_order,is_entry_stage,is_terminal,sla_hours,wip_limit,has_waiting_queue,requires_review,requires_evidence
+211,44,Simple Task,Inbox,intake,waiting,1,true,false,,,false,false,false
+212,44,Simple Task,In Progress,in-progress,working,2,false,false,,,true,false,false
+213,44,Simple Task,Done,done,waiting,3,false,true,,,false,false,false
+214,44,Simple Task,Cancelled,cancelled,waiting,4,false,true,,,false,false,false
+215,45,Standard Feature,Intake,intake,waiting,1,true,false,48,,false,false,false
+216,45,Standard Feature,Triage,triage,working,2,false,false,24,,false,false,false
+217,45,Standard Feature,Ready,queued,waiting,3,false,false,,,true,false,false
+218,45,Standard Feature,In Development,in-progress,working,4,false,false,,,true,false,false
+219,45,Standard Feature,Blocked,blocked,waiting,5,false,false,24,,false,false,false
+220,45,Standard Feature,In Review,review,working,6,false,false,24,,false,true,false
+221,45,Standard Feature,Done,done,waiting,7,false,true,,,false,false,false
+222,45,Standard Feature,Cancelled,cancelled,waiting,8,false,true,,,false,false,false
+223,46,Bug Triage,Reported,intake,waiting,1,true,false,4,,false,false,false
+224,46,Bug Triage,Triage,triage,working,2,false,false,8,,false,false,false
+225,46,Bug Triage,Fix Queue,queued,waiting,3,false,false,,,false,false,false
+226,46,Bug Triage,In Fix,in-progress,working,4,false,false,,,true,false,false
+227,46,Bug Triage,Code Review,review,working,5,false,false,8,,false,true,false
+228,46,Bug Triage,Deploying,delivery,working,6,false,false,4,,false,false,false
+229,46,Bug Triage,Resolved,done,waiting,7,false,true,,,false,false,false
+230,46,Bug Triage,Won't Fix,cancelled,waiting,8,false,true,,,false,false,false
+231,47,Service Request,Submitted,intake,waiting,1,true,false,24,,false,false,false
+232,47,Service Request,Under Review,triage,working,2,false,false,48,,false,false,false
+233,47,Service Request,Approved,approved,waiting,3,false,false,,,false,false,false
+234,47,Service Request,Fulfilling,in-progress,working,4,false,false,,,true,false,false
+235,47,Service Request,Fulfilled,done,waiting,5,false,true,,,false,false,false
+236,47,Service Request,Rejected,cancelled,waiting,6,false,true,,,false,false,false
+237,48,Personal Kanban,Inbox,intake,waiting,1,true,false,,,false,false,false
+238,48,Personal Kanban,Doing,in-progress,working,2,false,false,,,false,false,false
+239,48,Personal Kanban,Done,done,waiting,3,false,true,,,false,false,false
+240,49,Review & Approval,Submitted,intake,waiting,1,true,false,24,,false,false,false
+241,49,Review & Approval,Assigned,triage,working,2,false,false,,,false,false,false
+242,49,Review & Approval,Under Review,in-progress,working,3,false,false,,,false,false,false
+243,49,Review & Approval,Decision,review,working,4,false,false,,,false,true,false
+244,49,Review & Approval,Completed,done,waiting,5,false,true,,,false,false,false
+245,49,Review & Approval,Declined,cancelled,waiting,6,false,true,,,false,false,false
+246,50,Provisioning,Submitted,intake,waiting,1,true,false,8,,false,false,false
+247,50,Provisioning,Pending Approval,review,working,2,false,false,24,,false,true,false
+248,50,Provisioning,Approved,approved,waiting,3,false,false,,,false,false,false
+249,50,Provisioning,Provisioning,in-progress,working,4,false,false,,,false,false,false
+250,50,Provisioning,Validation,review,working,5,false,false,8,,false,false,false
+251,50,Provisioning,Completed,done,waiting,6,false,true,,,false,false,false
+252,50,Provisioning,Rejected,cancelled,waiting,7,false,true,,,false,false,false
+253,51,Requisition,Submitted,intake,waiting,1,true,false,24,,false,false,false
+254,51,Requisition,Manager Review,review,working,2,false,false,48,,false,true,false
+255,51,Requisition,Finance Approval,approved,working,3,false,false,72,,false,false,false
+256,51,Requisition,In Procurement,in-progress,working,4,false,false,,,false,false,false
+257,51,Requisition,Fulfilled,done,waiting,5,false,true,,,false,false,false
+258,51,Requisition,Denied,cancelled,waiting,6,false,true,,,false,false,false
+259,52,Design Sprint,Requested,intake,waiting,1,true,false,24,,false,false,false
+260,52,Design Sprint,Scoping,triage,working,2,false,false,,,false,false,false
+261,52,Design Sprint,Research,in-progress,working,3,false,false,,,false,false,false
+262,52,Design Sprint,Designing,in-progress,working,4,false,false,,,false,false,false
+263,52,Design Sprint,Design Review,review,working,5,false,false,,,false,true,false
+264,52,Design Sprint,Handoff,delivery,working,6,false,false,,,false,false,false
+265,52,Design Sprint,Delivered,done,waiting,7,false,true,,,false,false,false
+266,52,Design Sprint,Cancelled,cancelled,waiting,8,false,true,,,false,false,false

@@ -1,0 +1,10 @@
+list_name,label,sort_order,is_active
+Priority Levels,Critical,0,true
+Priority Levels,High,1,true
+Priority Levels,Medium,2,true
+Priority Levels,Low,3,true
+Cost Center,100,0,true
+Cost Center,200,1,true
+Cost Center,300,2,true
+Cost Center,400,3,true
+Cost Center,500,4,true

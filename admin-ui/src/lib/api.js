@@ -51,6 +51,12 @@ export const api = {
   updateClassField:  (id, data) => apiFetch(`/class-fields/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteClassField:  (id) => apiFetch(`/class-fields/${id}`, { method: 'DELETE' }),
 
+  // Type Fields
+  typeFields:        (type_id) => apiFetch(`/type-fields?type_id=${type_id}`),
+  createTypeField:   (data) => apiFetch('/type-fields', { method: 'POST', body: JSON.stringify(data) }),
+  updateTypeField:   (id, data) => apiFetch(`/type-fields/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTypeField:   (id) => apiFetch(`/type-fields/${id}`, { method: 'DELETE' }),
+
   // Work Item Types
   witTypes:          () => apiFetch('/work-item-types'),
   createWitType:     (data) => apiFetch('/work-item-types', { method: 'POST', body: JSON.stringify(data) }),
@@ -78,6 +84,15 @@ export const api = {
   addWorkItemLink:   (id, target_work_item_id, link_type) => apiFetch(`/work-items/${id}/links`, { method: 'POST', body: JSON.stringify({ target_work_item_id, link_type }) }),
   workItemLinks:     (id) => apiFetch(`/work-items/${id}/links`),
 
+  // Org Members
+  orgMembers:        (org_id) => apiFetch(`/org-members?org_id=${org_id}`),
+  addOrgMember:      (data) => apiFetch('/org-members', { method: 'POST', body: JSON.stringify(data) }),
+  updateOrgMember:   (id, data) => apiFetch(`/org-members/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  removeOrgMember:   (id) => apiFetch(`/org-members/${id}`, { method: 'DELETE' }),
+
+  // Org Workflows
+  orgWorkflows:      (org_id) => apiFetch(`/org-workflows?org_id=${org_id}`),
+
   // Org WIP Limits
   orgWipLimits:      (org_id) => apiFetch(`/org-wip-limits?org_id=${org_id}`),
   setOrgWipLimit:    (data) => apiFetch('/org-wip-limits', { method: 'PUT', body: JSON.stringify(data) }),
@@ -102,6 +117,8 @@ export const api = {
   createStage:    (data) => apiFetch('/stages', { method: 'POST', body: JSON.stringify(data) }),
   updateStage:    (id, data) => apiFetch(`/stages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteStage:    (id) => apiFetch(`/stages/${id}`, { method: 'DELETE' }),
+  cloneWorkflow:  (id, data) => apiFetch(`/workflows/${id}/clone`, { method: 'POST', body: JSON.stringify(data) }),
+  reorderStages:  (workflowId, order) => apiFetch(`/workflows/${workflowId}/stages/reorder`, { method: 'PUT', body: JSON.stringify({ order }) }),
 
   // Other
   workflows:         () => apiFetch('/workflows'),
@@ -110,6 +127,19 @@ export const api = {
   tableData:         (schema, table, limit = 50, offset = 0) =>
                        apiFetch(`/tables/${schema}/${table}?limit=${limit}&offset=${offset}`),
   logs:              (limit = 200) => apiFetch(`/logs?limit=${limit}`),
+
+  // Lookup Lists
+  lookupLists:         (org_id) => apiFetch(`/lookup-lists${org_id ? `?org_id=${org_id}` : ''}`),
+  createLookupList:    (data) => apiFetch('/lookup-lists', { method: 'POST', body: JSON.stringify(data) }),
+  updateLookupList:    (id, data) => apiFetch(`/lookup-lists/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  lookupValues:        (listId) => apiFetch(`/lookup-lists/${listId}/values`),
+  createLookupValue:   (listId, data) => apiFetch(`/lookup-lists/${listId}/values`, { method: 'POST', body: JSON.stringify(data) }),
+  updateLookupValue:   (id, data) => apiFetch(`/lookup-values/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  reorderLookupValues: (listId, order) => apiFetch(`/lookup-lists/${listId}/values/reorder`, { method: 'PUT', body: JSON.stringify({ order }) }),
+
+  // Acceptance Criteria
+  acceptanceCriteria:     (wiId) => apiFetch(`/work-items/${wiId}/acceptance-criteria`),
+  updateAcceptanceCriteria: (wiId, items) => apiFetch(`/work-items/${wiId}/acceptance-criteria`, { method: 'PUT', body: JSON.stringify({ items }) }),
 
   // Reports
   reportDeliveryTime:    (params) => apiFetch(`/reports/delivery-time?${new URLSearchParams(params)}`),
