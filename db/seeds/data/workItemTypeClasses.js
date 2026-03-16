@@ -13,6 +13,7 @@ export const workItemTypeClasses = [
     icon:        'check-square',
     color:       '#3B82F6',
     is_system_default: true,
+    default_workflow_name: 'Simple Task',
     default_fields: [
       { key: 'estimate_hours', label: 'Estimate (hours)', type: 'number',  required: false },
       { key: 'actual_hours',   label: 'Actual (hours)',   type: 'number',  required: false },
@@ -24,6 +25,7 @@ export const workItemTypeClasses = [
     icon:        'star',
     color:       '#8B5CF6',
     is_system_default: true,
+    default_workflow_name: 'Standard Feature',
     default_fields: [
       { key: 'user_story',     label: 'User Story',       type: 'text',    required: false },
       { key: 'estimate_points',label: 'Story Points',     type: 'number',  required: false },
@@ -36,6 +38,7 @@ export const workItemTypeClasses = [
     icon:        'bug',
     color:       '#EF4444',
     is_system_default: true,
+    default_workflow_name: 'Bug Triage',
     default_fields: [
       { key: 'severity',       label: 'Severity',         type: 'select',  required: true,
         options: ['critical', 'high', 'medium', 'low'] },
@@ -50,6 +53,7 @@ export const workItemTypeClasses = [
     icon:        'layers',
     color:       '#EC4899',
     is_system_default: true,
+    default_workflow_name: 'Standard Feature',
     default_fields: [
       { key: 'business_objective', label: 'Business Objective', type: 'text',   required: false },
       { key: 'success_metrics',    label: 'Success Metrics',    type: 'text',   required: false },
@@ -62,6 +66,7 @@ export const workItemTypeClasses = [
     icon:        'folder',
     color:       '#10B981',
     is_system_default: true,
+    default_workflow_name: 'Standard Feature',
     default_fields: [
       { key: 'business_case',  label: 'Business Case',    type: 'text',    required: false },
       { key: 'budget',         label: 'Budget',           type: 'currency',required: false },
@@ -75,6 +80,7 @@ export const workItemTypeClasses = [
     icon:        'inbox',
     color:       '#F59E0B',
     is_system_default: true,
+    default_workflow_name: 'Service Request',
     default_fields: [
       { key: 'requested_for',  label: 'Requested For',    type: 'string',  required: false },
       { key: 'justification',  label: 'Justification',    type: 'text',    required: false },
@@ -88,6 +94,7 @@ export const workItemTypeClasses = [
     icon:        'alert-triangle',
     color:       '#DC2626',
     is_system_default: true,
+    default_workflow_name: 'Bug Triage',
     default_fields: [
       { key: 'impact',         label: 'Impact',           type: 'select',  required: true,
         options: ['critical', 'high', 'medium', 'low'] },

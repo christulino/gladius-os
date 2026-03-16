@@ -378,6 +378,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
   async function handleTransition(t) {
     if (t.requires_reason) {
+      setTransitionOpen(false)
       setReasonPrompt(t)
       setReasonText('')
       return

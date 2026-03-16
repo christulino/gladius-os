@@ -291,7 +291,7 @@ router.get('/organizations', async (req, res, next) => {
     const result = await query(`
       SELECT
         o.id, o.uri, o.slug, o.name, o.org_type,
-        o.description, o.parent_id, o.is_active, o.created_at,
+        o.description, o.parent_id, o.is_active, o.created_at, o.done_retention_days,
         p.name AS parent_name,
         (SELECT COUNT(*) FROM blueprint.org_memberships om WHERE om.org_id = o.id AND om.is_active = true) AS member_count,
         (SELECT COUNT(*) FROM runtime.work_items wi WHERE wi.owner_org_id = o.id) AS work_item_count
@@ -330,14 +330,15 @@ router.post('/organizations', async (req, res, next) => {
 
 router.patch('/organizations/:id', async (req, res, next) => {
   try {
-    const { name, description, org_type, parent_id, is_active } = req.body
+    const { name, description, org_type, parent_id, is_active, done_retention_days } = req.body
     const fields = []
     const vals   = []
-    if (name        !== undefined) { fields.push(`name = $${fields.length + 1}`);        vals.push(name.trim()) }
-    if (description !== undefined) { fields.push(`description = $${fields.length + 1}`); vals.push(description || null) }
-    if (org_type    !== undefined) { fields.push(`org_type = $${fields.length + 1}`);    vals.push(org_type) }
-    if (parent_id   !== undefined) { fields.push(`parent_id = $${fields.length + 1}`);   vals.push(parent_id || null) }
-    if (is_active   !== undefined) { fields.push(`is_active = $${fields.length + 1}`);   vals.push(is_active === true || is_active === 'true') }
+    if (name                !== undefined) { fields.push(`name = $${fields.length + 1}`);                vals.push(name.trim()) }
+    if (description         !== undefined) { fields.push(`description = $${fields.length + 1}`);         vals.push(description || null) }
+    if (org_type            !== undefined) { fields.push(`org_type = $${fields.length + 1}`);            vals.push(org_type) }
+    if (parent_id           !== undefined) { fields.push(`parent_id = $${fields.length + 1}`);           vals.push(parent_id || null) }
+    if (is_active           !== undefined) { fields.push(`is_active = $${fields.length + 1}`);           vals.push(is_active === true || is_active === 'true') }
+    if (done_retention_days !== undefined) { fields.push(`done_retention_days = $${fields.length + 1}`); vals.push(Math.max(0, parseInt(done_retention_days) || 0)) }
     if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
     vals.push(parseInt(req.params.id))
     const result = await query(
@@ -624,15 +625,35 @@ router.get('/org-workflows', async (req, res, next) => {
   try {
     const orgId = parseInt(req.query.org_id)
     if (!orgId) return res.status(400).json({ error: 'org_id is required' })
-    const result = await query(`
-      SELECT DISTINCT w.id, w.name, w.is_active, w.is_system_default
-      FROM blueprint.workflows w
-      JOIN blueprint.work_item_type_workflows witw ON witw.workflow_id = w.id AND witw.is_current = true
-      JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
-      WHERE wit.owner_org_id = $1 AND wit.is_active = true
-      ORDER BY w.name ASC
-    `, [orgId])
-    res.json({ rows: result.rows, count: result.rowCount })
+    const [wfResult, stagesResult] = await Promise.all([
+      query(`
+        SELECT DISTINCT w.id, w.name, w.is_active, w.is_system_default
+        FROM blueprint.workflows w
+        JOIN blueprint.work_item_type_workflows witw ON witw.workflow_id = w.id AND witw.is_current = true
+        JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+        WHERE wit.owner_org_id = $1 AND wit.is_active = true
+        ORDER BY w.name ASC
+      `, [orgId]),
+      query(`
+        SELECT s.id, s.name, s.stage_class, s.display_order, s.has_waiting_queue,
+               s.is_entry_stage, s.is_terminal, s.workflow_id
+        FROM blueprint.stages s
+        WHERE s.workflow_id IN (
+          SELECT DISTINCT witw.workflow_id
+          FROM blueprint.work_item_type_workflows witw
+          JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+          WHERE wit.owner_org_id = $1 AND wit.is_active = true AND witw.is_current = true
+        )
+        AND s.is_active = true AND s.stage_class != 'cancelled'
+        ORDER BY s.display_order ASC
+      `, [orgId]),
+    ])
+    // Attach stages to each workflow
+    const workflows = wfResult.rows.map(w => ({
+      ...w,
+      stages: stagesResult.rows.filter(s => s.workflow_id === w.id),
+    }))
+    res.json({ rows: workflows, count: workflows.length })
   } catch (err) { next(err) }
 })
 
@@ -1611,18 +1632,19 @@ router.get('/board', async (req, res, next) => {
     const orgId = parseInt(req.query.org_id)
     if (!orgId) return res.status(400).json({ error: 'org_id is required' })
 
-    // Resolve org
+    // Resolve org (include done_retention_days for completed item visibility)
     const orgResult = await query(
-      'SELECT id, name, slug FROM blueprint.organizations WHERE id = $1 AND is_active = true',
+      'SELECT id, name, slug, done_retention_days FROM blueprint.organizations WHERE id = $1 AND is_active = true',
       [orgId]
     )
     if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
     const org = orgResult.rows[0]
+    const retentionDays = org.done_retention_days ?? 14
 
     // Run items, stages, service classes, and org WIP limits in parallel
     const [itemsResult, stagesResult, scResult, wipResult] = await Promise.all([
       query(`
-        SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id,
+        SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id, wi.workflow_id,
                wi.entered_current_stage_at, wi.created_at, wi.updated_at, wi.display_key,
                wi.service_class_id, wi.description, wi.current_substate,
                wi.due_date, wi.is_expedited, wi.work_nature,
@@ -1646,12 +1668,17 @@ router.get('/board', async (req, res, next) => {
           ORDER BY r.assigned_at ASC LIMIT 1
         ) owner_rel ON true
         LEFT JOIN blueprint.users owner_user ON owner_user.id = owner_rel.user_id
-        WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active'
+        WHERE wi.owner_org_id = $1
           AND s.stage_class != 'cancelled'
+          AND (
+            wi.spawn_state = 'active'
+            OR (wi.spawn_state = 'done' AND wi.resolved_at > NOW() - make_interval(days => $2))
+          )
         ORDER BY wi.entered_current_stage_at ASC
-      `, [orgId]),
+      `, [orgId, retentionDays]),
       // Fetch real stages from workflows that have active items in this org
       // PLUS stages from all workflows assigned to org's work item types (always-show)
+      // Include workflows from recently-completed items too
       query(`
         SELECT DISTINCT s.id, s.name, s.stage_class, s.display_order,
                s.has_waiting_queue, s.is_entry_stage, s.is_terminal,
@@ -1660,7 +1687,9 @@ router.get('/board', async (req, res, next) => {
         JOIN blueprint.workflows w ON w.id = s.workflow_id
         WHERE s.workflow_id IN (
           SELECT DISTINCT wi.workflow_id FROM runtime.work_items wi
-          WHERE wi.owner_org_id = $1 AND wi.spawn_state = 'active'
+          WHERE wi.owner_org_id = $1
+            AND (wi.spawn_state = 'active'
+              OR (wi.spawn_state = 'done' AND wi.resolved_at > NOW() - make_interval(days => $2)))
           UNION
           SELECT DISTINCT wtw.workflow_id FROM blueprint.work_item_type_workflows wtw
           JOIN blueprint.work_item_types wit ON wit.id = wtw.work_item_type_id
@@ -1668,7 +1697,7 @@ router.get('/board', async (req, res, next) => {
         )
         AND s.is_active = true AND s.stage_class != 'cancelled'
         ORDER BY s.display_order ASC
-      `, [orgId]),
+      `, [orgId, retentionDays]),
       query(`
         SELECT id, name, color, icon, priority_order
         FROM blueprint.service_classes
@@ -1691,18 +1720,21 @@ router.get('/board', async (req, res, next) => {
       'approved': 'Approved', 'delivery': 'Delivery', 'done': 'Done',
     }
 
-    // Merge stages by (stage_class, name) — collect IDs
+    // Merge stages by (stage_class, name) — collect IDs and workflow_ids
     const mergeMap = new Map() // key: "stage_class:name" → merged stage obj
     for (const s of stagesResult.rows) {
       const key = `${s.stage_class}:${s.name}`
       if (mergeMap.has(key)) {
-        mergeMap.get(key).stage_ids.push(s.id)
+        const existing = mergeMap.get(key)
+        existing.stage_ids.push(s.id)
+        if (!existing.workflow_ids.includes(s.workflow_id)) existing.workflow_ids.push(s.workflow_id)
       } else {
         mergeMap.set(key, {
           key,
           name: s.name,
           stage_class: s.stage_class,
           stage_ids: [s.id],
+          workflow_ids: [s.workflow_id],
           has_waiting_queue: s.has_waiting_queue,
           display_order: s.display_order,
           is_entry_stage: s.is_entry_stage,
@@ -2650,6 +2682,573 @@ router.put('/work-items/:id/acceptance-criteria', async (req, res, next) => {
 
     if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
     res.json({ items: result.rows[0].acceptance_criteria })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// POLICY DATA + EXIT CRITERIA + ROLE RESTRICTIONS
+// =============================================================================
+
+// Aggregated policy data for an org (workflows, stages, transitions, exit criteria, role restrictions, WIP limits)
+router.get('/org-policy-data', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+
+    const [orgResult, wfResult, stagesResult, transitionsResult, criteriaResult, roleRestrictionsResult, wipResult, wipClassResult, actionsResult] = await Promise.all([
+      // Org info
+      query(
+        'SELECT id, done_retention_days FROM blueprint.organizations WHERE id = $1 AND is_active = true',
+        [orgId]
+      ),
+      // Workflows used by this org
+      query(`
+        SELECT DISTINCT w.id, w.name, w.is_system_default
+        FROM blueprint.workflows w
+        JOIN blueprint.work_item_type_workflows witw ON witw.workflow_id = w.id AND witw.is_current = true
+        JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+        WHERE wit.owner_org_id = $1 AND wit.is_active = true
+        ORDER BY w.name ASC
+      `, [orgId]),
+      // Stages for those workflows
+      query(`
+        SELECT s.id, s.name, s.stage_class, s.display_order, s.has_waiting_queue,
+               s.is_entry_stage, s.is_terminal, s.workflow_id
+        FROM blueprint.stages s
+        WHERE s.workflow_id IN (
+          SELECT DISTINCT witw.workflow_id
+          FROM blueprint.work_item_type_workflows witw
+          JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+          WHERE wit.owner_org_id = $1 AND wit.is_active = true AND witw.is_current = true
+        )
+        AND s.is_active = true
+        ORDER BY s.display_order ASC
+      `, [orgId]),
+      // Transitions for org's stages
+      query(`
+        SELECT st.id, st.from_stage_id, st.to_stage_id, st.transition_label,
+               st.transition_kind, st.requires_reason, ts.name AS to_stage_name
+        FROM blueprint.stage_transitions st
+        JOIN blueprint.stages ts ON ts.id = st.to_stage_id
+        WHERE st.from_stage_id IN (
+          SELECT s.id FROM blueprint.stages s
+          WHERE s.workflow_id IN (
+            SELECT DISTINCT witw.workflow_id
+            FROM blueprint.work_item_type_workflows witw
+            JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+            WHERE wit.owner_org_id = $1 AND wit.is_active = true AND witw.is_current = true
+          )
+          AND s.is_active = true
+        )
+        AND st.is_active = true
+        ORDER BY st.id ASC
+      `, [orgId]),
+      // Exit criteria counts per stage
+      query(`
+        SELECT ec.stage_id, COUNT(*)::int AS exit_criteria_count
+        FROM blueprint.exit_criteria ec
+        WHERE ec.is_active = true
+        AND ec.stage_id IN (
+          SELECT s.id FROM blueprint.stages s
+          WHERE s.workflow_id IN (
+            SELECT DISTINCT witw.workflow_id
+            FROM blueprint.work_item_type_workflows witw
+            JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+            WHERE wit.owner_org_id = $1 AND wit.is_active = true AND witw.is_current = true
+          )
+          AND s.is_active = true
+        )
+        GROUP BY ec.stage_id
+      `, [orgId]),
+      // Role restrictions per transition
+      query(`
+        SELECT rr.id, rr.stage_transition_id, rr.role_id, r.name AS role_name
+        FROM blueprint.stage_transition_role_restrictions rr
+        JOIN blueprint.roles r ON r.id = rr.role_id
+        WHERE rr.stage_transition_id IN (
+          SELECT st.id FROM blueprint.stage_transitions st
+          WHERE st.from_stage_id IN (
+            SELECT s.id FROM blueprint.stages s
+            WHERE s.workflow_id IN (
+              SELECT DISTINCT witw.workflow_id
+              FROM blueprint.work_item_type_workflows witw
+              JOIN blueprint.work_item_types wit ON wit.id = witw.work_item_type_id
+              WHERE wit.owner_org_id = $1 AND wit.is_active = true AND witw.is_current = true
+            )
+            AND s.is_active = true
+          )
+          AND st.is_active = true
+        )
+      `, [orgId]),
+      // Org WIP limits (stage-level)
+      query(
+        'SELECT id, stage_name, wip_limit, enforcement_type FROM blueprint.org_wip_limits WHERE org_id = $1',
+        [orgId]
+      ),
+      // Org WIP limits (stage-class-level)
+      query(
+        'SELECT id, stage_class, wip_limit, enforcement_type FROM blueprint.org_wip_limits_by_class WHERE org_id = $1',
+        [orgId]
+      ),
+      // Transition actions
+      query(`
+        SELECT ta.id, ta.stage_transition_id, ta.name, ta.description, ta.action_type,
+               ta.execution_timing, ta.display_order, ta.is_active,
+               ta.spawn_work_item_type_id, ta.spawn_target_org_id, ta.spawn_field_mapping,
+               ta.optional_spawn_prompt, ta.optional_spawn_default,
+               ta.api_endpoint, ta.api_method, ta.api_headers, ta.api_payload_template,
+               ta.api_timeout_seconds, ta.api_on_failure,
+               wit.name AS spawn_type_name, o.name AS spawn_target_org_name
+        FROM blueprint.transition_actions ta
+        LEFT JOIN blueprint.work_item_types wit ON wit.id = ta.spawn_work_item_type_id
+        LEFT JOIN blueprint.organizations o ON o.id = ta.spawn_target_org_id
+        WHERE ta.is_active = true
+        AND ta.stage_transition_id IN (
+          SELECT st.id FROM blueprint.stage_transitions st
+          WHERE st.from_stage_id IN (
+            SELECT s.id FROM blueprint.stages s
+            WHERE s.workflow_id IN (
+              SELECT DISTINCT witw.workflow_id
+              FROM blueprint.work_item_type_workflows witw
+              JOIN blueprint.work_item_types wit2 ON wit2.id = witw.work_item_type_id
+              WHERE wit2.owner_org_id = $1 AND wit2.is_active = true AND witw.is_current = true
+            )
+            AND s.is_active = true
+          )
+          AND st.is_active = true
+        )
+        ORDER BY ta.display_order ASC
+      `, [orgId]),
+    ])
+
+    if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
+
+    // Index criteria counts by stage_id
+    const criteriaCounts = {}
+    for (const row of criteriaResult.rows) criteriaCounts[row.stage_id] = row.exit_criteria_count
+
+    // Index role restrictions by transition_id
+    const roleRestrictions = {}
+    for (const row of roleRestrictionsResult.rows) {
+      if (!roleRestrictions[row.stage_transition_id]) roleRestrictions[row.stage_transition_id] = []
+      roleRestrictions[row.stage_transition_id].push({ role_id: row.role_id, role_name: row.role_name })
+    }
+
+    // Index transition actions by transition_id
+    const actionsByTransition = {}
+    for (const a of actionsResult.rows) {
+      if (!actionsByTransition[a.stage_transition_id]) actionsByTransition[a.stage_transition_id] = []
+      actionsByTransition[a.stage_transition_id].push(a)
+    }
+
+    // Index transitions by from_stage_id
+    const transitionsByStage = {}
+    for (const t of transitionsResult.rows) {
+      if (!transitionsByStage[t.from_stage_id]) transitionsByStage[t.from_stage_id] = []
+      transitionsByStage[t.from_stage_id].push({
+        id: t.id,
+        to_stage_id: t.to_stage_id,
+        to_stage_name: t.to_stage_name,
+        transition_label: t.transition_label,
+        transition_kind: t.transition_kind,
+        requires_reason: t.requires_reason,
+        role_restrictions: roleRestrictions[t.id] || [],
+        actions: actionsByTransition[t.id] || [],
+      })
+    }
+
+    // Assemble workflows with stages and transitions
+    const workflows = wfResult.rows.map(w => ({
+      id: w.id,
+      name: w.name,
+      is_system_default: w.is_system_default,
+      stages: stagesResult.rows
+        .filter(s => s.workflow_id === w.id)
+        .map(s => ({
+          id: s.id,
+          name: s.name,
+          stage_class: s.stage_class,
+          display_order: s.display_order,
+          has_waiting_queue: s.has_waiting_queue,
+          is_entry_stage: s.is_entry_stage,
+          is_terminal: s.is_terminal,
+          exit_criteria_count: criteriaCounts[s.id] || 0,
+          transitions: transitionsByStage[s.id] || [],
+        })),
+    }))
+
+    // WIP limits as map keyed by stage_name
+    const wipLimits = {}
+    for (const row of wipResult.rows) {
+      wipLimits[row.stage_name] = { id: row.id, wip_limit: row.wip_limit, enforcement_type: row.enforcement_type }
+    }
+
+    // Class-level WIP limits as map keyed by stage_class
+    const wipClassLimits = {}
+    for (const row of wipClassResult.rows) {
+      wipClassLimits[row.stage_class] = { id: row.id, wip_limit: row.wip_limit, enforcement_type: row.enforcement_type }
+    }
+
+    res.json({
+      org: { id: orgResult.rows[0].id, done_retention_days: orgResult.rows[0].done_retention_days },
+      workflows,
+      wip_limits: wipLimits,
+      wip_class_limits: wipClassLimits,
+    })
+  } catch (err) { next(err) }
+})
+
+// Update transition properties
+router.patch('/transitions/:id', async (req, res, next) => {
+  try {
+    const { transition_label, transition_kind } = req.body
+    const requiresReason = req.body.requires_reason !== undefined ? req.body.requires_reason : null
+
+    const result = await query(`
+      UPDATE blueprint.stage_transitions
+      SET transition_label = COALESCE($2, transition_label),
+          transition_kind  = COALESCE($3, transition_kind),
+          requires_reason  = CASE WHEN $4::boolean IS NOT NULL THEN $4::boolean ELSE requires_reason END
+      WHERE id = $1
+      RETURNING *
+    `, [
+      req.params.id,
+      transition_label?.trim() || null,
+      transition_kind?.trim() || null,
+      requiresReason,
+    ])
+
+    if (!result.rows.length) return res.status(404).json({ error: 'Transition not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// List exit criteria for a stage
+router.get('/exit-criteria', async (req, res, next) => {
+  try {
+    const stageId = parseInt(req.query.stage_id)
+    if (!stageId) return res.status(400).json({ error: 'stage_id is required' })
+
+    const result = await query(`
+      SELECT id, uri, stage_id, name, description, criteria_tier, display_order,
+             codified_condition, api_endpoint, api_method, api_payload_template,
+             api_success_condition, api_timeout_seconds, is_blocking, is_active,
+             created_at, updated_at
+      FROM blueprint.exit_criteria
+      WHERE stage_id = $1
+      ORDER BY display_order ASC, id ASC
+    `, [stageId])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// Create exit criteria
+router.post('/exit-criteria', async (req, res, next) => {
+  try {
+    const {
+      stage_id, name, description, criteria_tier, codified_condition,
+      api_endpoint, api_method, api_payload_template, api_success_condition,
+      api_timeout_seconds, is_blocking, display_order
+    } = req.body
+
+    if (!stage_id || !name?.trim() || !criteria_tier) {
+      return res.status(400).json({ error: 'stage_id, name, and criteria_tier are required' })
+    }
+
+    const uri = generateUri('system', 'criteria')
+
+    const result = await query(`
+      INSERT INTO blueprint.exit_criteria
+        (uri, stage_id, name, description, criteria_tier, codified_condition,
+         api_endpoint, api_method, api_payload_template, api_success_condition,
+         api_timeout_seconds, is_blocking, display_order)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *
+    `, [
+      uri,
+      stage_id,
+      name.trim(),
+      description?.trim() || null,
+      criteria_tier,
+      codified_condition ? JSON.stringify(codified_condition) : null,
+      api_endpoint?.trim() || null,
+      api_method?.trim() || 'GET',
+      api_payload_template ? JSON.stringify(api_payload_template) : null,
+      api_success_condition ? JSON.stringify(api_success_condition) : null,
+      api_timeout_seconds ?? 10,
+      is_blocking ?? true,
+      display_order ?? 0,
+    ])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// Update exit criteria
+router.patch('/exit-criteria/:id', async (req, res, next) => {
+  try {
+    const { name, description, criteria_tier, codified_condition, is_blocking, is_active, display_order } = req.body
+    const fields = []
+    const vals = []
+
+    if (name !== undefined)               { fields.push(`name = $${fields.length + 1}`);               vals.push(name.trim()) }
+    if (description !== undefined)         { fields.push(`description = $${fields.length + 1}`);         vals.push(description?.trim() || null) }
+    if (criteria_tier !== undefined)        { fields.push(`criteria_tier = $${fields.length + 1}`);        vals.push(criteria_tier) }
+    if (codified_condition !== undefined)   { fields.push(`codified_condition = $${fields.length + 1}`);   vals.push(codified_condition ? JSON.stringify(codified_condition) : null) }
+    if (is_blocking !== undefined)          { fields.push(`is_blocking = $${fields.length + 1}`);          vals.push(is_blocking) }
+    if (is_active !== undefined)            { fields.push(`is_active = $${fields.length + 1}`);            vals.push(is_active) }
+    if (display_order !== undefined)        { fields.push(`display_order = $${fields.length + 1}`);        vals.push(display_order) }
+
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
+    fields.push(`updated_at = NOW()`)
+    vals.push(parseInt(req.params.id))
+
+    const result = await query(
+      `UPDATE blueprint.exit_criteria SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`,
+      vals
+    )
+
+    if (!result.rows.length) return res.status(404).json({ error: 'Exit criteria not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// Soft-delete exit criteria
+router.delete('/exit-criteria/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'UPDATE blueprint.exit_criteria SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Exit criteria not found' })
+    res.json({ deleted: true, id: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// List role restrictions for a transition
+router.get('/transition-roles', async (req, res, next) => {
+  try {
+    const transitionId = parseInt(req.query.transition_id)
+    if (!transitionId) return res.status(400).json({ error: 'transition_id is required' })
+
+    const result = await query(`
+      SELECT rr.id, rr.stage_transition_id, rr.role_id, r.name AS role_name, rr.created_at
+      FROM blueprint.stage_transition_role_restrictions rr
+      JOIN blueprint.roles r ON r.id = rr.role_id
+      WHERE rr.stage_transition_id = $1
+      ORDER BY r.name ASC
+    `, [transitionId])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// Add role restriction to a transition
+router.post('/transition-roles', async (req, res, next) => {
+  try {
+    const { stage_transition_id, role_id } = req.body
+    if (!stage_transition_id || !role_id) {
+      return res.status(400).json({ error: 'stage_transition_id and role_id are required' })
+    }
+
+    const result = await query(`
+      INSERT INTO blueprint.stage_transition_role_restrictions (stage_transition_id, role_id)
+      VALUES ($1, $2)
+      RETURNING *
+    `, [stage_transition_id, role_id])
+
+    // Fetch with role name
+    const joined = await query(`
+      SELECT rr.id, rr.stage_transition_id, rr.role_id, r.name AS role_name, rr.created_at
+      FROM blueprint.stage_transition_role_restrictions rr
+      JOIN blueprint.roles r ON r.id = rr.role_id
+      WHERE rr.id = $1
+    `, [result.rows[0].id])
+
+    res.status(201).json(joined.rows[0])
+  } catch (err) { next(err) }
+})
+
+// Remove role restriction from a transition
+router.delete('/transition-roles/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'DELETE FROM blueprint.stage_transition_role_restrictions WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Role restriction not found' })
+    res.json({ deleted: true, id: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// ORG WIP LIMITS BY STAGE CLASS
+// =============================================================================
+
+router.put('/org-wip-class-limits', async (req, res, next) => {
+  try {
+    const { org_id, stage_class, wip_limit, enforcement_type } = req.body
+    if (!org_id)             return res.status(400).json({ error: 'org_id is required' })
+    if (!stage_class?.trim()) return res.status(400).json({ error: 'stage_class is required' })
+
+    if (!wip_limit || wip_limit < 1) {
+      await query(
+        'DELETE FROM blueprint.org_wip_limits_by_class WHERE org_id = $1 AND stage_class = $2',
+        [org_id, stage_class.trim()]
+      )
+      return res.json({ cleared: true, stage_class: stage_class.trim() })
+    }
+
+    const result = await query(`
+      INSERT INTO blueprint.org_wip_limits_by_class (org_id, stage_class, wip_limit, enforcement_type)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (org_id, stage_class) DO UPDATE SET
+        wip_limit        = EXCLUDED.wip_limit,
+        enforcement_type = EXCLUDED.enforcement_type,
+        updated_at       = NOW()
+      RETURNING *
+    `, [org_id, stage_class.trim(), wip_limit, enforcement_type || 'soft'])
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.delete('/org-wip-class-limits/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'DELETE FROM blueprint.org_wip_limits_by_class WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Class WIP limit not found' })
+    res.json({ deleted: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// TRANSITION ACTIONS CRUD
+// =============================================================================
+
+router.get('/transition-actions', async (req, res, next) => {
+  try {
+    const transitionId = parseInt(req.query.transition_id)
+    if (!transitionId) return res.status(400).json({ error: 'transition_id is required' })
+
+    const result = await query(`
+      SELECT ta.*,
+             wit.name AS spawn_type_name, o.name AS spawn_target_org_name
+      FROM blueprint.transition_actions ta
+      LEFT JOIN blueprint.work_item_types wit ON wit.id = ta.spawn_work_item_type_id
+      LEFT JOIN blueprint.organizations o ON o.id = ta.spawn_target_org_id
+      WHERE ta.stage_transition_id = $1
+      ORDER BY ta.display_order ASC, ta.id ASC
+    `, [transitionId])
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/transition-actions', async (req, res, next) => {
+  try {
+    const {
+      stage_transition_id, name, description, action_type, execution_timing,
+      display_order, api_endpoint, api_method, api_headers, api_payload_template,
+      api_timeout_seconds, api_on_failure,
+      spawn_work_item_type_id, spawn_target_org_id, spawn_field_mapping,
+      optional_spawn_prompt, optional_spawn_default,
+    } = req.body
+
+    if (!stage_transition_id || !name?.trim() || !action_type) {
+      return res.status(400).json({ error: 'stage_transition_id, name, and action_type are required' })
+    }
+
+    const uri = generateUri('system', 'actions')
+
+    const result = await query(`
+      INSERT INTO blueprint.transition_actions
+        (uri, stage_transition_id, name, description, action_type, execution_timing,
+         display_order, api_endpoint, api_method, api_headers, api_payload_template,
+         api_timeout_seconds, api_on_failure,
+         spawn_work_item_type_id, spawn_target_org_id, spawn_field_mapping,
+         optional_spawn_prompt, optional_spawn_default)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      RETURNING *
+    `, [
+      uri,
+      stage_transition_id,
+      name.trim(),
+      description?.trim() || null,
+      action_type,
+      execution_timing || 'post',
+      display_order ?? 0,
+      api_endpoint?.trim() || null,
+      api_method?.trim() || 'POST',
+      api_headers ? JSON.stringify(api_headers) : null,
+      api_payload_template ? JSON.stringify(api_payload_template) : null,
+      api_timeout_seconds ?? 10,
+      api_on_failure || 'log',
+      spawn_work_item_type_id || null,
+      spawn_target_org_id || null,
+      spawn_field_mapping ? JSON.stringify(spawn_field_mapping) : null,
+      optional_spawn_prompt?.trim() || null,
+      optional_spawn_default ?? false,
+    ])
+
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.patch('/transition-actions/:id', async (req, res, next) => {
+  try {
+    const {
+      name, description, action_type, execution_timing, display_order, is_active,
+      api_endpoint, api_method, api_headers, api_payload_template, api_timeout_seconds, api_on_failure,
+      spawn_work_item_type_id, spawn_target_org_id, spawn_field_mapping,
+      optional_spawn_prompt, optional_spawn_default,
+    } = req.body
+
+    const fields = []
+    const vals = []
+
+    if (name !== undefined)                    { fields.push(`name = $${fields.length + 1}`);                    vals.push(name.trim()) }
+    if (description !== undefined)             { fields.push(`description = $${fields.length + 1}`);             vals.push(description?.trim() || null) }
+    if (action_type !== undefined)             { fields.push(`action_type = $${fields.length + 1}`);             vals.push(action_type) }
+    if (execution_timing !== undefined)        { fields.push(`execution_timing = $${fields.length + 1}`);        vals.push(execution_timing) }
+    if (display_order !== undefined)           { fields.push(`display_order = $${fields.length + 1}`);           vals.push(display_order) }
+    if (is_active !== undefined)               { fields.push(`is_active = $${fields.length + 1}`);               vals.push(is_active) }
+    if (api_endpoint !== undefined)            { fields.push(`api_endpoint = $${fields.length + 1}`);            vals.push(api_endpoint?.trim() || null) }
+    if (api_method !== undefined)              { fields.push(`api_method = $${fields.length + 1}`);              vals.push(api_method) }
+    if (api_headers !== undefined)             { fields.push(`api_headers = $${fields.length + 1}`);             vals.push(api_headers ? JSON.stringify(api_headers) : null) }
+    if (api_payload_template !== undefined)    { fields.push(`api_payload_template = $${fields.length + 1}`);    vals.push(api_payload_template ? JSON.stringify(api_payload_template) : null) }
+    if (api_timeout_seconds !== undefined)     { fields.push(`api_timeout_seconds = $${fields.length + 1}`);     vals.push(api_timeout_seconds) }
+    if (api_on_failure !== undefined)          { fields.push(`api_on_failure = $${fields.length + 1}`);          vals.push(api_on_failure) }
+    if (spawn_work_item_type_id !== undefined) { fields.push(`spawn_work_item_type_id = $${fields.length + 1}`); vals.push(spawn_work_item_type_id || null) }
+    if (spawn_target_org_id !== undefined)     { fields.push(`spawn_target_org_id = $${fields.length + 1}`);     vals.push(spawn_target_org_id || null) }
+    if (spawn_field_mapping !== undefined)     { fields.push(`spawn_field_mapping = $${fields.length + 1}`);     vals.push(spawn_field_mapping ? JSON.stringify(spawn_field_mapping) : null) }
+    if (optional_spawn_prompt !== undefined)   { fields.push(`optional_spawn_prompt = $${fields.length + 1}`);   vals.push(optional_spawn_prompt?.trim() || null) }
+    if (optional_spawn_default !== undefined)  { fields.push(`optional_spawn_default = $${fields.length + 1}`);  vals.push(optional_spawn_default) }
+
+    if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
+    fields.push(`updated_at = NOW()`)
+    vals.push(parseInt(req.params.id))
+
+    const result = await query(
+      `UPDATE blueprint.transition_actions SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`,
+      vals
+    )
+
+    if (!result.rows.length) return res.status(404).json({ error: 'Transition action not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+router.delete('/transition-actions/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'UPDATE blueprint.transition_actions SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Transition action not found' })
+    res.json({ deleted: true, id: result.rows[0].id })
   } catch (err) { next(err) }
 })
 

@@ -12,16 +12,30 @@ import { Button } from '@/components/ui/button'
 
 const SWIMLANE_ORDER = ['expedite', 'fixed_date', 'standard', 'deferred', 'personal']
 const SWIMLANE_CONFIG = {
-  expedite:   { label: 'Expedite',   color: '#A33A25', bg: '#A33A250A' },
-  fixed_date: { label: 'Fixed Date', color: '#9A7318', bg: '#9A73180A' },
-  standard:   { label: 'Standard',   color: '#1E5C3A', bg: '#1E5C3A0A' },
-  deferred:   { label: 'Deferred',   color: '#6A6460', bg: '#6A64600A' },
-  personal:   { label: 'Personal',   color: '#8B7355', bg: '#8B73550A' },
+  expedite:   { label: 'Expedite',   color: '#A33A25', bg: '#F5D4CD' },
+  fixed_date: { label: 'Fixed Date', color: '#9A7318', bg: '#F2E2B8' },
+  standard:   { label: 'Standard',   color: '#1E5C3A', bg: '#D4E8DA' },
+  deferred:   { label: 'Deferred',   color: '#6A6460', bg: '#E4E1DE' },
+  personal:   { label: 'Personal',   color: '#8B7355', bg: '#E8E1D7' },
 }
 
 const COL_WIDTH = 220
 const LABEL_WIDTH = 80
-const COL_GAP = 4 // px gap between columns
+const COL_GAP = 1 // px gap — thin visible column dividers
+
+// ─── Semantic Stage Class Colors ────────────────────────────────────────────
+const STAGE_CLASS_COLORS = {
+  'intake':      { bg: '#DBEAFE', text: '#1E40AF' },  // blue
+  'triage':      { bg: '#FEF3C7', text: '#92400E' },  // amber
+  'queued':      { bg: '#EDE9FE', text: '#5B21B6' },  // violet
+  'in-progress': { bg: '#D1FAE5', text: '#065F46' },  // green
+  'blocked':     { bg: '#FEE2E2', text: '#991B1B' },  // red
+  'review':      { bg: '#CCFBF1', text: '#115E59' },  // teal
+  'approved':    { bg: '#E0E7FF', text: '#3730A3' },  // indigo
+  'delivery':    { bg: '#E0E7FF', text: '#3730A3' },  // indigo
+  'done':        { bg: '#ECFCCB', text: '#3F6212' },  // lime
+  'cancelled':   { bg: '#F1F5F9', text: '#475569' },  // slate
+}
 
 // ─── WIP Indicator ────────────────────────────────────────────────────────────
 
@@ -101,6 +115,7 @@ export default function Board({ setTab }) {
   const [createOpen,   setCreateOpen]     = useState(false)
   const [classFilter,  setClassFilter]    = useState('')
   const [myItemsOnly,  setMyItemsOnly]   = useState(false)
+  const [scrollToItemId, setScrollToItemId] = useState(null)
 
   const { data: orgsData } = useApi(() => api.organizations(), [])
 
@@ -132,23 +147,43 @@ export default function Board({ setTab }) {
   const allItems = boardData?.items ?? []
   const wipLimits = boardData?.wip_limits ?? {}
 
+  // Filter by WIT type name and "My Items"
+  const filteredItems = useMemo(() => {
+    let items = allItems
+    if (classFilter) items = items.filter(item => item.work_item_type_name === classFilter)
+    if (myItemsOnly) items = items.filter(item => item.owner_user_id != null)
+    return items
+  }, [allItems, classFilter, myItemsOnly])
+
+  // When a type filter is active, determine which workflow(s) to show
+  const activeWorkflowIds = useMemo(() => {
+    if (!classFilter) return null // null = show all
+    const ids = new Set(filteredItems.map(i => i.workflow_id).filter(Boolean))
+    return ids.size > 0 ? ids : null
+  }, [classFilter, filteredItems])
+
   // Flatten columns for rendering: array of stage objects, each with parent class info
+  // When filtering by type, only show columns belonging to that type's workflow
   const flatColumns = useMemo(() => {
     const flat = []
     for (const col of columns) {
-      const multi = col.stages.length > 1
       for (const stage of col.stages) {
+        // If filtering by workflow, skip columns that don't belong to it
+        if (activeWorkflowIds && stage.workflow_ids) {
+          const match = stage.workflow_ids.some(wid => activeWorkflowIds.has(wid))
+          if (!match) continue
+        }
         flat.push({
           ...stage,
           stage_class: col.stage_class,
           class_label: col.class_label,
-          showClassHeader: multi,
+          showClassHeader: true,
           classStageCount: col.stages.length,
         })
       }
     }
     return flat
-  }, [columns])
+  }, [columns, activeWorkflowIds])
 
   // Build a lookup: stage_id → column key
   const stageIdToKey = useMemo(() => {
@@ -160,14 +195,6 @@ export default function Board({ setTab }) {
     }
     return map
   }, [flatColumns])
-
-  // Filter by WIT type name and "My Items"
-  const filteredItems = useMemo(() => {
-    let items = allItems
-    if (classFilter) items = items.filter(item => item.work_item_type_name === classFilter)
-    if (myItemsOnly) items = items.filter(item => item.owner_user_id != null)
-    return items
-  }, [allItems, classFilter, myItemsOnly])
 
   // Item grid: grid[columnKey][swimlane] = { waiting: [], active: [] }
   const itemGrid = useMemo(() => {
@@ -270,39 +297,69 @@ export default function Board({ setTab }) {
     let i = 0
     while (i < flatColumns.length) {
       const col = flatColumns[i]
-      if (col.showClassHeader) {
-        // Count how many consecutive columns share this stage_class
-        let count = 0
-        let totalWidth = 0
-        while (i + count < flatColumns.length && flatColumns[i + count].stage_class === col.stage_class) {
-          const c = flatColumns[i + count]
-          totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
-          count++
-        }
-        spans.push({ stage_class: col.stage_class, label: col.class_label, colCount: count, width: totalWidth, startIdx: i })
-        i += count
-      } else {
-        spans.push({ stage_class: col.stage_class, label: null, colCount: 1, width: col.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH, startIdx: i })
-        i++
+      // Count how many consecutive columns share this stage_class
+      let count = 0
+      let totalWidth = 0
+      while (i + count < flatColumns.length && flatColumns[i + count].stage_class === col.stage_class) {
+        const c = flatColumns[i + count]
+        totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
+        count++
       }
+      spans.push({ stage_class: col.stage_class, label: col.class_label, colCount: count, width: totalWidth, startIdx: i })
+      i += count
     }
     return spans
   }, [flatColumns])
 
-  const hasAnyClassHeaders = classHeaderSpans.some(s => s.label)
   const hasColumns = flatColumns.length > 0
 
-  // Assign alternating shade index to each stage_class group for visual distinction
-  const classShadeIndex = useMemo(() => {
-    const map = {}
-    let idx = 0
-    for (const span of classHeaderSpans) {
-      if (!(span.stage_class in map)) {
-        map[span.stage_class] = idx++
-      }
+  // ─── Scroll state for indicators + auto-scroll-right ─────────────────────
+  const scrollRef = useRef(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const updateScrollIndicators = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 8)
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 8)
+  }, [])
+
+  // Auto-scroll to the right on board load (walk right-to-left)
+  useEffect(() => {
+    if (!hasColumns) return
+    const el = scrollRef.current
+    if (!el) return
+    // Wait a frame for layout to settle
+    requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth - el.clientWidth
+      updateScrollIndicators()
+    })
+  }, [hasColumns, flatColumns.length, updateScrollIndicators])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', updateScrollIndicators, { passive: true })
+    window.addEventListener('resize', updateScrollIndicators)
+    updateScrollIndicators()
+    return () => {
+      el.removeEventListener('scroll', updateScrollIndicators)
+      window.removeEventListener('resize', updateScrollIndicators)
     }
-    return map
-  }, [classHeaderSpans])
+  }, [updateScrollIndicators, hasColumns])
+
+  // After transition: scroll to the card that just moved
+  useEffect(() => {
+    if (!scrollToItemId || !scrollRef.current) return
+    requestAnimationFrame(() => {
+      const card = scrollRef.current?.querySelector(`[data-item-id="${scrollToItemId}"]`)
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      }
+      setScrollToItemId(null)
+    })
+  }, [scrollToItemId, boardData])
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -358,7 +415,8 @@ export default function Board({ setTab }) {
       </div>
 
       {/* Board area */}
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="flex-1 min-h-0 relative">
+      <div className="absolute inset-0 overflow-auto" ref={scrollRef} style={{ backgroundColor: '#FAFAFA' }}>
         {boardLoading && (
           <div className="flex items-center justify-center h-full">
             <span className="text-xs text-muted-foreground">Loading...</span>
@@ -383,37 +441,33 @@ export default function Board({ setTab }) {
         {!boardLoading && !boardError && hasColumns && (
           <div className="min-w-max">
             {/* ─── Column Headers (sticky) ─── */}
-            <div className="sticky top-0 z-10 bg-background px-4 pt-3">
-              {/* Row 1: L1 stage_class headers (only when multi-stage classes exist) */}
-              {hasAnyClassHeaders && (
-                <div className="flex flex-row" style={{ gap: COL_GAP }}>
-                  <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
-                  {classHeaderSpans.map(span => {
-                    const shade = classShadeIndex[span.stage_class] ?? 0
-                    const bgClass = shade % 2 === 0 ? 'bg-muted/40' : 'bg-muted/20'
-                    return (
+            <div className="sticky top-0 z-10 px-4 pt-3" style={{ backgroundColor: '#FAFAFA' }}>
+              {/* Row 1: L1 stage_class headers — semantic colors */}
+              <div className="flex flex-row">
+                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
+                {classHeaderSpans.map(span => {
+                  const classColor = STAGE_CLASS_COLORS[span.stage_class] || { bg: '#F1F5F9', text: '#475569' }
+                  return (
+                    <div
+                      key={span.stage_class}
+                      className="flex-shrink-0"
+                      style={{ width: span.width + (span.colCount - 1) * COL_GAP }}
+                    >
                       <div
-                        key={span.stage_class}
-                        className="flex-shrink-0"
-                        style={{ width: span.width + (span.colCount - 1) * COL_GAP }}
+                        className="text-xs font-medium uppercase tracking-wide text-center py-1.5 rounded-t"
+                        style={{ backgroundColor: classColor.bg, color: classColor.text }}
                       >
-                        {span.label ? (
-                          <div className={`text-xs font-medium uppercase tracking-wide text-muted-foreground text-center py-1 rounded-t ${bgClass}`}>
-                            {span.label}
-                          </div>
-                        ) : (
-                          <div className="py-1" />
-                        )}
+                        {span.label}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
+                    </div>
+                  )
+                })}
+              </div>
 
               {/* Row 2: L2 stage headers + L3 waiting sub-headers */}
-              <div className="flex flex-row" style={{ gap: COL_GAP }}>
+              <div className="flex flex-row">
                 <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
-                {flatColumns.map(col => {
+                {flatColumns.map((col, colIdx) => {
                   const count = columnItemCount(col.key)
                   const orgWip = wipLimits[col.name]
                   const wipLimit = orgWip?.wip_limit ?? null
@@ -421,10 +475,10 @@ export default function Board({ setTab }) {
                   const colWidth = col.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
 
                   return (
-                    <div key={col.key} className="flex-shrink-0" style={{ width: colWidth }}>
-                      <div className={`flex items-center gap-2 px-3 py-2 rounded-t ${
-                        wipOver ? 'bg-destructive/10 border border-destructive/40' : 'bg-muted/30 border border-transparent'
-                      }`}>
+                    <div key={col.key} className="flex-shrink-0" style={{ width: colWidth, borderLeft: colIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
+                      <div className={`flex items-center gap-2 px-3 py-2 ${
+                        wipOver ? 'bg-destructive/10 border-b-2 border-destructive' : 'border-b-2'
+                      }`} style={wipOver ? undefined : { backgroundColor: '#FFFFFF', borderBottomColor: '#9CA3AF' }}>
                         <span className="text-sm font-semibold text-foreground truncate flex-1">
                           {col.name}
                         </span>
@@ -437,7 +491,7 @@ export default function Board({ setTab }) {
                       </div>
                       {/* L3: waiting queue sub-header */}
                       {col.has_waiting_queue && (
-                        <div className="flex flex-row">
+                        <div className="flex flex-row" style={{ backgroundColor: '#FFFFFF' }}>
                           <div className="text-xs text-muted-foreground/60 px-2 py-0.5" style={{ width: COL_WIDTH }}>
                             Ready for...
                           </div>
@@ -451,67 +505,63 @@ export default function Board({ setTab }) {
             </div>
 
             {/* ─── Swimlane Rows ─── */}
-            {displaySwimlanes.map(cls => {
+            {displaySwimlanes.map((cls, laneIdx) => {
               const config = SWIMLANE_CONFIG[cls]
               return (
-                <div key={cls} className="flex flex-row px-4" style={{ background: config.bg, gap: COL_GAP }}>
-                  {/* Swimlane label */}
+                <div key={cls} className="flex flex-row px-4" style={{ borderTop: laneIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
+                  {/* Swimlane label with left accent bar */}
                   <div className="flex-shrink-0 py-2 flex items-start justify-end pr-3" style={{ width: LABEL_WIDTH }}>
-                    <span
-                      className="text-xs font-medium uppercase tracking-wide"
-                      style={{ color: config.color, writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)' }}
+                    <div
+                      className="flex items-start"
+                      style={{ borderLeft: `4px solid ${config.color}`, paddingLeft: 8 }}
                     >
-                      {config.label}
-                    </span>
+                      <span
+                        className="text-xs font-medium uppercase tracking-wide"
+                        style={{ color: config.color, writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)' }}
+                      >
+                        {config.label}
+                      </span>
+                    </div>
                   </div>
                   {/* Cells */}
-                  {flatColumns.map(col => {
+                  {flatColumns.map((col, colIdx) => {
                     const cell = itemGrid[col.key]?.[cls]
                     const waitingItems = cell?.waiting ?? []
                     const activeItems = cell?.active ?? []
+                    const colBorder = colIdx > 0 ? { borderLeft: '1px solid #D4D4D4' } : {}
 
                     if (col.has_waiting_queue) {
                       // Split cell: waiting | active with dashed divider
                       return (
-                        <div key={col.key} className="flex-shrink-0 py-2 flex flex-row relative" style={{ width: COL_WIDTH * 2 + COL_GAP }}>
+                        <div key={col.key} className="flex-shrink-0 py-2 px-1 flex flex-row relative" style={{ width: COL_WIDTH * 2 + COL_GAP, ...colBorder }}>
                           {/* Dashed center divider */}
-                          <div className="absolute top-0 bottom-0 border-l border-dashed border-border/50" style={{ left: COL_WIDTH + COL_GAP / 2 }} />
+                          <div className="absolute top-0 bottom-0" style={{ left: COL_WIDTH + COL_GAP / 2, borderLeft: '1px dashed #B0B0B0' }} />
                           {/* Waiting (left) */}
-                          <div className="min-h-[52px] pr-1.5" style={{ width: COL_WIDTH }}>
-                            {waitingItems.length === 0 ? (
-                              <div className="h-10 border border-dashed border-border/20 rounded flex items-center justify-center bg-muted/5">
-                                <span className="text-xs text-muted-foreground/20">—</span>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col gap-1.5">
-                                {waitingItems.map(item => (
-                                  <WorkItemCard
-                                    key={item.id}
-                                    item={item}
-                                    onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
-                                    onPull={() => handlePull(item.id)}
-                                  />
-                                ))}
-                              </div>
-                            )}
+                          <div className="min-h-[24px] pr-1.5" style={{ width: COL_WIDTH }}>
+                            <div className="flex flex-col gap-1.5">
+                              {waitingItems.map(item => (
+                                <WorkItemCard
+                                  key={item.id}
+                                  item={item}
+                                  isSelected={detailOpen && detailItemId === item.id}
+                                  onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                                  onPull={() => handlePull(item.id)}
+                                />
+                              ))}
+                            </div>
                           </div>
                           {/* Active (right) */}
-                          <div className="min-h-[52px] pl-1.5" style={{ width: COL_WIDTH, marginLeft: COL_GAP }}>
-                            {activeItems.length === 0 ? (
-                              <div className="h-10 border border-dashed border-border/20 rounded flex items-center justify-center">
-                                <span className="text-xs text-muted-foreground/20">—</span>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col gap-1.5">
-                                {activeItems.map(item => (
-                                  <WorkItemCard
-                                    key={item.id}
-                                    item={item}
-                                    onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
-                                  />
-                                ))}
-                              </div>
-                            )}
+                          <div className="min-h-[24px] pl-1.5" style={{ width: COL_WIDTH, marginLeft: COL_GAP }}>
+                            <div className="flex flex-col gap-1.5">
+                              {activeItems.map(item => (
+                                <WorkItemCard
+                                  key={item.id}
+                                  item={item}
+                                  isSelected={detailOpen && detailItemId === item.id}
+                                  onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                                />
+                              ))}
+                            </div>
                           </div>
                         </div>
                       )
@@ -520,22 +570,17 @@ export default function Board({ setTab }) {
                     // Single cell (no waiting queue)
                     const allCellItems = [...waitingItems, ...activeItems]
                     return (
-                      <div key={col.key} className="flex-shrink-0 py-2 min-h-[52px]" style={{ width: COL_WIDTH }}>
-                        {allCellItems.length === 0 ? (
-                          <div className="h-10 border border-dashed border-border/30 rounded flex items-center justify-center">
-                            <span className="text-xs text-muted-foreground/20">—</span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-1.5">
-                            {allCellItems.map(item => (
-                              <WorkItemCard
-                                key={item.id}
-                                item={item}
-                                onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
-                              />
-                            ))}
-                          </div>
-                        )}
+                      <div key={col.key} className="flex-shrink-0 py-2 px-1 min-h-[24px]" style={{ width: COL_WIDTH, ...colBorder }}>
+                        <div className="flex flex-col gap-1.5">
+                          {allCellItems.map(item => (
+                            <WorkItemCard
+                              key={item.id}
+                              item={item}
+                              isSelected={detailOpen && detailItemId === item.id}
+                              onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     )
                   })}
@@ -544,6 +589,35 @@ export default function Board({ setTab }) {
             })}
           </div>
         )}
+
+      </div>
+      {/* Scroll indicators — positioned over the scroll area */}
+      {canScrollLeft && (
+        <div
+          className="absolute z-20 flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+          style={{
+            left: 0, top: '50%', transform: 'translateY(-50%)',
+            width: 24, height: 48, borderRadius: '0 6px 6px 0',
+            backgroundColor: 'rgba(0,0,0,0.4)', color: '#fff', fontSize: 14,
+          }}
+          onClick={() => { scrollRef.current?.scrollBy({ left: -400, behavior: 'smooth' }) }}
+        >
+          ◂
+        </div>
+      )}
+      {canScrollRight && (
+        <div
+          className="absolute z-20 flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity"
+          style={{
+            right: 0, top: '50%', transform: 'translateY(-50%)',
+            width: 24, height: 48, borderRadius: '6px 0 0 6px',
+            backgroundColor: 'rgba(0,0,0,0.4)', color: '#fff', fontSize: 14,
+          }}
+          onClick={() => { scrollRef.current?.scrollBy({ left: 400, behavior: 'smooth' }) }}
+        >
+          ▸
+        </div>
+      )}
       </div>
 
       {/* Service Library */}
@@ -570,7 +644,7 @@ export default function Board({ setTab }) {
         workItemId={detailItemId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
-        onChanged={reloadBoard}
+        onChanged={() => { setScrollToItemId(detailItemId); reloadBoard() }}
       />
     </div>
   )

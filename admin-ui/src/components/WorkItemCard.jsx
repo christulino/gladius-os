@@ -19,7 +19,7 @@ function formatDueDate(iso) {
   return { label, overdue, urgent }
 }
 
-export function WorkItemCard({ item, onClick, onPull }) {
+export function WorkItemCard({ item, onClick, onPull, isSelected }) {
   const [stageTime, setStageTime] = useState(() => formatElapsed(item.entered_current_stage_at))
   const [totalTime, setTotalTime] = useState(() => formatElapsed(item.created_at))
 
@@ -43,11 +43,15 @@ export function WorkItemCard({ item, onClick, onPull }) {
 
   return (
     <button
+      data-item-id={item.id}
       onClick={() => onClick(item)}
-      className={`group relative w-full text-left bg-card border p-2 flex flex-col gap-0.5 hover:border-primary/40 transition-colors ${cornerRadius} ${
-        isBlocked ? 'border-destructive/40' : 'border-border'
-      }`}
-      style={{ borderLeftColor: cos.color, borderLeftWidth: '3px' }}
+      className={`group relative w-full text-left p-2 flex flex-col gap-0.5 transition-colors ${cornerRadius}`}
+      style={{
+        backgroundColor: isSelected ? 'hsl(var(--primary) / 0.06)' : '#FFFFFF',
+        border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid #D4D4D4',
+        padding: isSelected ? '7px' : undefined,
+        ...(isBlocked ? { borderRightColor: '#8B1A1A', borderRightWidth: '4px' } : {}),
+      }}
     >
       {/* Pull arrow button (waiting items only) */}
       {showPull && (
@@ -60,7 +64,7 @@ export function WorkItemCard({ item, onClick, onPull }) {
         </span>
       )}
 
-      {/* Row 1: icon + title + assignee/blocked */}
+      {/* Row 1: icon + title + assignee */}
       <div className="flex items-start gap-1.5 min-w-0">
         {item.work_item_type_icon && (
           <span className="text-sm flex-shrink-0 leading-none" title={item.work_item_type_name}>{item.work_item_type_icon}</span>
@@ -68,24 +72,21 @@ export function WorkItemCard({ item, onClick, onPull }) {
         <p className="text-xs font-medium leading-snug truncate flex-1">
           {item.title}
         </p>
-        {isBlocked ? (
-          <span className="text-destructive text-xs flex-shrink-0 font-medium" title="Blocked">✕</span>
-        ) : item.owner_initial ? (
+        {item.owner_initial && (
           <span
             className="w-5 h-5 rounded-full bg-muted text-xs flex items-center justify-center flex-shrink-0 text-muted-foreground"
             title={item.owner_display_name}
           >
             {item.owner_initial}
           </span>
-        ) : null}
+        )}
       </div>
 
-      {/* Row 2: timers stacked — stage time above total time */}
+      {/* Row 2: merged timer + display key */}
       <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-[11px] text-foreground/70 tabular-nums leading-tight" title="Time in stage">{stageTime}</span>
-          <span className="text-[11px] text-muted-foreground/50 tabular-nums leading-tight" title="Total age">{totalTime}</span>
-        </div>
+        <span className="text-xs tabular-nums text-muted-foreground" title={`${stageTime} in stage · ${totalTime} total`}>
+          {stageTime} <span className="text-muted-foreground/40">·</span> <span className="text-muted-foreground/50">{totalTime}</span>
+        </span>
         {item.display_key && (
           <span className="text-xs text-muted-foreground/50">{item.display_key}</span>
         )}

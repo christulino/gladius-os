@@ -98,6 +98,33 @@ export const api = {
   setOrgWipLimit:    (data) => apiFetch('/org-wip-limits', { method: 'PUT', body: JSON.stringify(data) }),
   deleteOrgWipLimit: (id) => apiFetch(`/org-wip-limits/${id}`, { method: 'DELETE' }),
 
+  // Policy Data
+  orgPolicyData:        (org_id) => apiFetch(`/org-policy-data?org_id=${org_id}`),
+
+  // Transitions
+  updateTransition:     (id, data) => apiFetch(`/transitions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // Exit Criteria
+  exitCriteria:         (stage_id) => apiFetch(`/exit-criteria?stage_id=${stage_id}`),
+  createExitCriteria:   (data) => apiFetch('/exit-criteria', { method: 'POST', body: JSON.stringify(data) }),
+  updateExitCriteria:   (id, data) => apiFetch(`/exit-criteria/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteExitCriteria:   (id) => apiFetch(`/exit-criteria/${id}`, { method: 'DELETE' }),
+
+  // Transition Role Restrictions
+  transitionRoles:      (transition_id) => apiFetch(`/transition-roles?transition_id=${transition_id}`),
+  addTransitionRole:    (data) => apiFetch('/transition-roles', { method: 'POST', body: JSON.stringify(data) }),
+  removeTransitionRole: (id) => apiFetch(`/transition-roles/${id}`, { method: 'DELETE' }),
+
+  // Transition Actions
+  transitionActions:      (transition_id) => apiFetch(`/transition-actions?transition_id=${transition_id}`),
+  createTransitionAction: (data) => apiFetch('/transition-actions', { method: 'POST', body: JSON.stringify(data) }),
+  updateTransitionAction: (id, data) => apiFetch(`/transition-actions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteTransitionAction: (id) => apiFetch(`/transition-actions/${id}`, { method: 'DELETE' }),
+
+  // Stage-Class WIP Limits
+  setOrgWipClassLimit:    (data) => apiFetch('/org-wip-class-limits', { method: 'PUT', body: JSON.stringify(data) }),
+  deleteOrgWipClassLimit: (id) => apiFetch(`/org-wip-class-limits/${id}`, { method: 'DELETE' }),
+
   // Uploads
   uploadAvatar:   (data, filename) => apiFetch('/upload/avatar', {
     method: 'POST',

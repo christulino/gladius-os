@@ -254,6 +254,21 @@ async function seed() {
     }
 
     // ===================================================================
+    // 8b. SET DEFAULT WORKFLOW ON CLASSES
+    // ===================================================================
+    console.log('\n  Setting default workflows on classes...')
+    for (const cls of allClasses) {
+      if (cls.default_workflow_name && workflowIds[cls.default_workflow_name]) {
+        await client.query(`
+          UPDATE blueprint.work_item_type_classes
+          SET default_workflow_id = $1, updated_at = NOW()
+          WHERE id = $2
+        `, [workflowIds[cls.default_workflow_name], classIds[cls.name]])
+      }
+    }
+    console.log(`     ✓ Default workflows set`)
+
+    // ===================================================================
     // 9. SYSTEM-DEFAULT WORK ITEM TYPES
     // ===================================================================
     console.log('\n  Seeding system work item types...')
