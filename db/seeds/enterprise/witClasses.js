@@ -14,6 +14,7 @@ export const additionalClasses = [
     icon:        '🏗️',
     color:       '#6366F1',
     is_system_default: true,
+    default_workflow_name: 'Review & Approval',
     default_fields: [
       { key: 'review_type',       label: 'Review Type',       type: 'select', required: true,
         options: ['new_system', 'integration', 'technology_choice', 'security', 'performance', 'compliance'] },
@@ -29,6 +30,7 @@ export const additionalClasses = [
     icon:        '🎨',
     color:       '#EC4899',
     is_system_default: true,
+    default_workflow_name: 'Design Sprint',
     default_fields: [
       { key: 'design_type',      label: 'Design Type',       type: 'select', required: true,
         options: ['research', 'wireframe', 'prototype', 'visual_design', 'design_system', 'accessibility_audit'] },
@@ -44,6 +46,7 @@ export const additionalClasses = [
     icon:        '☁️',
     color:       '#0EA5E9',
     is_system_default: true,
+    default_workflow_name: 'Provisioning',
     default_fields: [
       { key: 'env_type',         label: 'Environment Type',  type: 'select', required: true,
         options: ['development', 'staging', 'production', 'sandbox', 'performance_test', 'dr'] },
@@ -60,6 +63,7 @@ export const additionalClasses = [
     icon:        '🗄️',
     color:       '#F97316',
     is_system_default: true,
+    default_workflow_name: 'Provisioning',
     default_fields: [
       { key: 'change_type',      label: 'Change Type',       type: 'select', required: true,
         options: ['schema_change', 'migration', 'data_fix', 'access_grant', 'performance_tuning', 'backup_restore'] },
@@ -75,6 +79,7 @@ export const additionalClasses = [
     icon:        '📐',
     color:       '#8B5CF6',
     is_system_default: true,
+    default_workflow_name: 'Review & Approval',
     default_fields: [
       { key: 'sizing_type',      label: 'Sizing Type',       type: 'select', required: true,
         options: ['t_shirt', 'story_points', 'capacity_hours', 'team_sprints', 'rough_order_magnitude'] },
@@ -90,6 +95,7 @@ export const additionalClasses = [
     icon:        '🔬',
     color:       '#14B8A6',
     is_system_default: true,
+    default_workflow_name: 'Review & Approval',
     default_fields: [
       { key: 'hypothesis',       label: 'Hypothesis',        type: 'text',   required: true },
       { key: 'success_criteria', label: 'Success Criteria',  type: 'text',   required: false },
@@ -104,6 +110,7 @@ export const additionalClasses = [
     icon:        '🛒',
     color:       '#059669',
     is_system_default: true,
+    default_workflow_name: 'Requisition',
     default_fields: [
       { key: 'acquisition_type', label: 'Acquisition Type',  type: 'select', required: true,
         options: ['software_license', 'hardware', 'saas_subscription', 'professional_services', 'training', 'contractor'] },
@@ -119,6 +126,7 @@ export const additionalClasses = [
     icon:        '👤',
     color:       '#7C3AED',
     is_system_default: true,
+    default_workflow_name: 'Requisition',
     default_fields: [
       { key: 'role_title',       label: 'Role Title',        type: 'text',   required: true },
       { key: 'employment_type',  label: 'Employment Type',   type: 'select', required: true,

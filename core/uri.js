@@ -35,6 +35,7 @@ const ENTITY_TYPES = new Set([
   'connections',
   'comments',
   'criteria',
+  'actions',
   'evidence',
   'board-views',
   'visibility-rules',

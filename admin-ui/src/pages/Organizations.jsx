@@ -5,7 +5,9 @@ import { Badge }      from '@/components/ui/badge'
 import { Button }     from '@/components/ui/button'
 import { Switch }     from '@/components/ui/switch'
 import { FormDrawer } from '@/components/FormDrawer'
+import { WorkflowPicker } from '@/components/WorkflowPicker'
 import { LoadingState, ErrorState } from '@/components/Panel'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 
 // Org type → dot color (hex)
 const ORG_TYPE_DOT = {
@@ -367,6 +369,7 @@ function CatalogSection({ orgId, setTab }) {
 
 function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTab }) {
   const [expanded, setExpanded] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   return (
     <div className="border border-border/50 rounded">
@@ -406,16 +409,15 @@ function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTa
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Workflow</span>
-            <select
-              className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs"
-              value={t.current_workflow_id || ''}
-              onChange={e => onChangeWorkflow(t.id, e.target.value)}
+            <span className="text-xs flex-1 truncate">{t.current_workflow_name || <span className="italic text-muted-foreground">None</span>}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-xs h-6"
+              onClick={() => setPickerOpen(true)}
             >
-              <option value="">None</option>
-              {workflows.filter(w => w.is_active).map(w => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
+              Change
+            </Button>
           </div>
 
           <div className="flex items-center gap-2">
@@ -443,104 +445,874 @@ function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTa
           </div>
         </div>
       )}
+
+      <WorkflowPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        workflows={workflows}
+        currentWorkflowId={t.current_workflow_id}
+        onSelect={wfId => onChangeWorkflow(t.id, wfId)}
+      />
     </div>
   )
 }
 
 // ─── Policies Section ────────────────────────────────────────────────────────
 
-function PoliciesSection({ orgId }) {
-  const { data, loading, error, reload } = useApi(() => api.orgWipLimits(orgId), [orgId])
-  const [newRow, setNewRow] = useState({ stage_name: '', wip_limit: '', enforcement: 'soft' })
+const STAGE_CLASS_DOT = {
+  'intake': '#3B82F6', 'triage': '#F59E0B', 'queued': '#8B5CF6',
+  'in-progress': '#10B981', 'blocked': '#EF4444', 'review': '#14B8A6',
+  'approved': '#6366F1', 'delivery': '#6366F1', 'done': '#84CC16', 'cancelled': '#94A3B8',
+}
+
+const STAGE_CLASS_LABELS = {
+  'intake': 'Intake', 'triage': 'Triage', 'queued': 'Queued',
+  'in-progress': 'In Progress', 'blocked': 'Blocked', 'review': 'Review',
+  'approved': 'Approved', 'delivery': 'Delivery', 'done': 'Done', 'cancelled': 'Cancelled',
+}
+
+const POLICY_TABS = [
+  { id: 'wip', label: 'WIP Limits' },
+  { id: 'rules', label: 'Stage Rules' },
+]
+
+function PoliciesSection({ orgId, org, onSaved }) {
+  const { data, loading, error, reload } = useApi(() => api.orgPolicyData(orgId), [orgId])
+  const [retention, setRetention] = useState(String(org?.done_retention_days ?? 14))
+  const [policyTab, setPolicyTab] = useState('wip')
+  const [drawerStage, setDrawerStage] = useState(null)
+  const [drawerTransitions, setDrawerTransitions] = useState([])
+
+  useEffect(() => { setRetention(String(org?.done_retention_days ?? 14)) }, [org?.done_retention_days])
 
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} />
 
-  const limits = data?.rows || []
+  const workflows = data?.workflows || []
+  const wipLimits = data?.wip_limits || {}
+  const wipClassLimits = data?.wip_class_limits || {}
 
-  async function saveLimit(stageName, wipLimit, enforcement) {
+  async function saveRetention() {
+    const val = Math.max(0, parseInt(retention) || 0)
+    try {
+      await api.updateOrganization(orgId, { done_retention_days: val })
+      onSaved?.()
+    } catch (err) { console.error(err) }
+  }
+
+  async function saveWipLimit(stageName, wipLimit, enforcement = 'soft') {
     try {
       const val = parseInt(wipLimit)
       if (!val || val <= 0) {
-        const existing = limits.find(l => l.stage_name === stageName)
+        const existing = wipLimits[stageName]
         if (existing) await api.deleteOrgWipLimit(existing.id)
       } else {
         await api.setOrgWipLimit({ org_id: orgId, stage_name: stageName, wip_limit: val, enforcement })
       }
       reload()
-    } catch (err) {
-      console.error(err)
-    }
+    } catch (err) { console.error(err) }
   }
 
-  async function addLimit() {
-    if (!newRow.stage_name.trim() || !parseInt(newRow.wip_limit)) return
-    await saveLimit(newRow.stage_name.trim(), newRow.wip_limit, newRow.enforcement)
-    setNewRow({ stage_name: '', wip_limit: '', enforcement: 'soft' })
+  async function saveWipClassLimit(stageClass, wipLimit, enforcement = 'soft') {
+    try {
+      const val = parseInt(wipLimit)
+      if (!val || val <= 0) {
+        const existing = wipClassLimits[stageClass]
+        if (existing) await api.deleteOrgWipClassLimit(existing.id)
+      } else {
+        await api.setOrgWipClassLimit({ org_id: orgId, stage_class: stageClass, wip_limit: val, enforcement })
+      }
+      reload()
+    } catch (err) { console.error(err) }
+  }
+
+  function openStageRules(stage, transitions) {
+    setDrawerStage(stage)
+    setDrawerTransitions(transitions)
   }
 
   return (
-    <div className="space-y-3">
-      <span className="text-sm font-semibold">WIP Limits</span>
-      <table className="w-full text-xs">
-        <thead>
-          <tr className="text-muted-foreground uppercase tracking-wide border-b border-border">
-            <th className="text-left py-1.5 font-medium">Stage</th>
-            <th className="text-left py-1.5 font-medium w-20">Limit</th>
-            <th className="text-left py-1.5 font-medium w-20">Type</th>
-          </tr>
-        </thead>
-        <tbody>
-          {limits.map(l => (
-            <WipLimitRow key={l.id} limit={l} onSave={saveLimit} />
-          ))}
-          <tr className="border-t border-border/50">
-            <td className="py-1.5 pr-2">
-              <input
-                className="w-full bg-background border border-border rounded px-2 py-1 text-xs"
-                placeholder="Stage name"
-                value={newRow.stage_name}
-                onChange={e => setNewRow(r => ({ ...r, stage_name: e.target.value }))}
-              />
-            </td>
-            <td className="py-1.5 pr-2">
-              <input
-                className="w-20 bg-background border border-border rounded px-2 py-1 text-xs"
-                type="number"
-                placeholder="0"
-                value={newRow.wip_limit}
-                onChange={e => setNewRow(r => ({ ...r, wip_limit: e.target.value }))}
-              />
-            </td>
-            <td className="py-1.5">
-              <Button size="sm" variant="outline" className="text-xs h-6" onClick={addLimit}>Add</Button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div className="space-y-5">
+      {/* Board Policies */}
+      <div className="space-y-3">
+        <span className="text-sm font-semibold">Board</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-muted-foreground w-40">Completed item retention</span>
+          <input
+            className="w-16 bg-background border border-border rounded px-2 py-1 text-xs"
+            type="number"
+            min="0"
+            value={retention}
+            onChange={e => setRetention(e.target.value)}
+            onBlur={saveRetention}
+            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+          />
+          <span className="text-xs text-muted-foreground">days</span>
+        </div>
+      </div>
+
+      {/* Policy sub-tabs */}
+      <div className="flex gap-0 border-b border-border">
+        {POLICY_TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setPolicyTab(t.id)}
+            className={[
+              'px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors',
+              policyTab === t.id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {workflows.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-6 text-center">No workflows assigned to this org's types</p>
+      ) : policyTab === 'wip' ? (
+        <WipLimitsView
+          workflows={workflows}
+          wipLimits={wipLimits}
+          wipClassLimits={wipClassLimits}
+          onSaveWipLimit={saveWipLimit}
+          onSaveWipClassLimit={saveWipClassLimit}
+        />
+      ) : (
+        <StageRulesView
+          workflows={workflows}
+          onOpenStageRules={openStageRules}
+        />
+      )}
+
+      <StageRulesDrawer
+        stage={drawerStage}
+        transitions={drawerTransitions}
+        open={!!drawerStage}
+        onOpenChange={open => { if (!open) { setDrawerStage(null); setDrawerTransitions([]) } }}
+        onChanged={reload}
+      />
     </div>
   )
 }
 
-function WipLimitRow({ limit, onSave }) {
-  const [val, setVal] = useState(String(limit.wip_limit))
+// ─── WIP Limits View ──────────────────────────────────────────────────────────
 
-  useEffect(() => { setVal(String(limit.wip_limit)) }, [limit.wip_limit])
+function WipLimitsView({ workflows, wipLimits, wipClassLimits, onSaveWipLimit, onSaveWipClassLimit }) {
+  // Build hierarchical: stage_class → stages (deduplicated across workflows)
+  const hierarchy = useMemo(() => {
+    const classMap = new Map() // stage_class → { stages: Map<name, {stage_class, display_order}> }
+    for (const wf of workflows) {
+      for (const s of (wf.stages || [])) {
+        if (s.is_entry_stage || s.is_terminal) continue
+        if (!classMap.has(s.stage_class)) classMap.set(s.stage_class, new Map())
+        const stages = classMap.get(s.stage_class)
+        if (!stages.has(s.name) || s.display_order < stages.get(s.name).display_order) {
+          stages.set(s.name, { display_order: s.display_order })
+        }
+      }
+    }
+    return [...classMap.entries()]
+      .sort((a, b) => {
+        const aMin = Math.min(...[...a[1].values()].map(v => v.display_order))
+        const bMin = Math.min(...[...b[1].values()].map(v => v.display_order))
+        return aMin - bMin
+      })
+      .map(([cls, stagesMap]) => ({
+        stage_class: cls,
+        stages: [...stagesMap.entries()]
+          .sort((a, b) => a[1].display_order - b[1].display_order)
+          .map(([name]) => name),
+      }))
+  }, [workflows])
 
   return (
-    <tr className="border-t border-border/50">
-      <td className="py-1.5 text-foreground">{limit.stage_name}</td>
-      <td className="py-1.5">
+    <div className="space-y-0">
+      <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide mb-3">
+        org policy — limits apply to this org only
+      </p>
+      {hierarchy.map(group => (
+        <WipClassGroup
+          key={group.stage_class}
+          stageClass={group.stage_class}
+          stageNames={group.stages}
+          classLimit={wipClassLimits[group.stage_class]}
+          wipLimits={wipLimits}
+          onSaveClassLimit={onSaveWipClassLimit}
+          onSaveStageLimit={onSaveWipLimit}
+        />
+      ))}
+    </div>
+  )
+}
+
+function WipClassGroup({ stageClass, stageNames, classLimit, wipLimits, onSaveClassLimit, onSaveStageLimit }) {
+  const [classVal, setClassVal] = useState(classLimit ? String(classLimit.wip_limit) : '')
+  const [classEnf, setClassEnf] = useState(classLimit?.enforcement_type || 'soft')
+
+  useEffect(() => {
+    setClassVal(classLimit ? String(classLimit.wip_limit) : '')
+    setClassEnf(classLimit?.enforcement_type || 'soft')
+  }, [classLimit?.wip_limit, classLimit?.enforcement_type])
+
+  const dotColor = STAGE_CLASS_DOT[stageClass] || '#94A3B8'
+  const label = STAGE_CLASS_LABELS[stageClass] || stageClass
+  const hasMultipleStages = stageNames.length > 1
+
+  function handleClassBlur() {
+    const current = classLimit ? String(classLimit.wip_limit) : ''
+    if (classVal !== current) onSaveClassLimit(stageClass, classVal, classEnf)
+  }
+
+  function handleClassEnfChange(e) {
+    const newEnf = e.target.value
+    setClassEnf(newEnf)
+    if (classLimit) onSaveClassLimit(stageClass, classVal || classLimit.wip_limit, newEnf)
+  }
+
+  return (
+    <div className="mb-2">
+      {/* Class-level row */}
+      <div className="flex items-center gap-2 py-1.5 bg-muted/20 rounded px-2">
+        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ backgroundColor: dotColor }} />
+        <span className="text-xs font-medium flex-1">{label}</span>
+        {hasMultipleStages && (
+          <span className="text-[10px] text-muted-foreground">{stageNames.length} stages</span>
+        )}
+        <div className="flex items-center gap-1">
+          <input
+            className="w-12 bg-background border border-border rounded px-1.5 py-0.5 text-xs text-center"
+            type="number"
+            placeholder="—"
+            value={classVal}
+            onChange={e => setClassVal(e.target.value)}
+            onBlur={handleClassBlur}
+            onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+            title="Class-level WIP limit"
+          />
+          <select
+            className="bg-background border border-border rounded px-1 py-0.5 text-[10px] text-muted-foreground"
+            value={classEnf}
+            onChange={handleClassEnfChange}
+          >
+            <option value="soft">soft</option>
+            <option value="hard">hard</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Stage-level rows (indented) */}
+      {stageNames.map(name => (
+        <WipStageRow
+          key={name}
+          stageName={name}
+          stageClass={stageClass}
+          limit={wipLimits[name]}
+          onSave={onSaveStageLimit}
+        />
+      ))}
+    </div>
+  )
+}
+
+function WipStageRow({ stageName, stageClass, limit, onSave }) {
+  const [val, setVal] = useState(limit ? String(limit.wip_limit) : '')
+  const [enforcement, setEnforcement] = useState(limit?.enforcement_type || 'soft')
+
+  useEffect(() => {
+    setVal(limit ? String(limit.wip_limit) : '')
+    setEnforcement(limit?.enforcement_type || 'soft')
+  }, [limit?.wip_limit, limit?.enforcement_type])
+
+  function handleBlur() {
+    const current = limit ? String(limit.wip_limit) : ''
+    if (val !== current) onSave(stageName, val, enforcement)
+  }
+
+  function handleEnfChange(e) {
+    const newEnf = e.target.value
+    setEnforcement(newEnf)
+    if (limit) onSave(stageName, val || limit.wip_limit, newEnf)
+  }
+
+  return (
+    <div className="flex items-center gap-2 py-1 ml-5 pl-3 border-l border-border/40">
+      <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: STAGE_CLASS_DOT[stageClass] || '#94A3B8', opacity: 0.5 }} />
+      <span className="text-xs text-foreground flex-1">{stageName}</span>
+      <div className="flex items-center gap-1">
         <input
-          className="w-16 bg-background border border-border rounded px-2 py-1 text-xs"
+          className="w-12 bg-background border border-border rounded px-1.5 py-0.5 text-xs text-center"
           type="number"
+          placeholder="—"
           value={val}
           onChange={e => setVal(e.target.value)}
-          onBlur={() => val !== String(limit.wip_limit) && onSave(limit.stage_name, val, limit.enforcement)}
+          onBlur={handleBlur}
+          onKeyDown={e => e.key === 'Enter' && e.target.blur()}
         />
-      </td>
-      <td className="py-1.5 text-muted-foreground">{limit.enforcement || 'soft'}</td>
-    </tr>
+        <select
+          className="bg-background border border-border rounded px-1 py-0.5 text-[10px] text-muted-foreground"
+          value={enforcement}
+          onChange={handleEnfChange}
+        >
+          <option value="soft">soft</option>
+          <option value="hard">hard</option>
+        </select>
+      </div>
+    </div>
+  )
+}
+
+// ─── Stage Rules View ─────────────────────────────────────────────────────────
+
+function StageRulesView({ workflows, onOpenStageRules }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">
+        workflow policy — applies to all orgs using each workflow
+      </p>
+      {workflows.map(wf => (
+        <StageRulesWorkflow key={wf.id} workflow={wf} onOpenStageRules={onOpenStageRules} />
+      ))}
+    </div>
+  )
+}
+
+function StageRulesWorkflow({ workflow, onOpenStageRules }) {
+  const [expanded, setExpanded] = useState(true)
+  const stages = (workflow.stages || []).filter(s => !s.is_entry_stage)
+
+  return (
+    <div>
+      <button
+        className="flex items-center gap-2 w-full text-left py-1"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className="text-xs text-muted-foreground">{expanded ? '▾' : '▸'}</span>
+        <span className="text-xs font-semibold flex-1">{workflow.name}</span>
+        {workflow.is_system_default && <Badge variant="default" className="text-[10px]">system</Badge>}
+      </button>
+
+      {expanded && (
+        <div className="ml-1 border-l border-border/60 pl-3 space-y-0">
+          {stages.map(stage => {
+            const transitions = stage.transitions || []
+            const exitCount = stage.exit_criteria_count || 0
+            const actionCount = transitions.reduce((sum, t) => sum + (t.actions?.length || 0), 0)
+            const ruleCount = exitCount + actionCount
+            const dotColor = STAGE_CLASS_DOT[stage.stage_class] || '#94A3B8'
+
+            return (
+              <button
+                key={stage.id}
+                className="w-full text-left flex items-center gap-2 py-1.5 px-1 rounded hover:bg-black/[0.03] transition-colors group"
+                onClick={() => onOpenStageRules(stage, transitions)}
+              >
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
+                <span className="text-xs flex-1">{stage.name}</span>
+                {stage.is_terminal && <Badge variant="muted" className="text-[9px] px-1 py-0">terminal</Badge>}
+                {exitCount > 0 && (
+                  <span className="text-[10px] text-primary font-medium">{exitCount} condition{exitCount !== 1 ? 's' : ''}</span>
+                )}
+                {actionCount > 0 && (
+                  <span className="text-[10px] text-muted-foreground">{actionCount} action{actionCount !== 1 ? 's' : ''}</span>
+                )}
+                {ruleCount === 0 && (
+                  <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100">+ add rules</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Stage Rules Drawer ───────────────────────────────────────────────────────
+
+function StageRulesDrawer({ stage, transitions, open, onOpenChange, onChanged }) {
+  const [tab, setTab] = useState('conditions')
+
+  // Reset tab when stage changes
+  useEffect(() => { setTab('conditions') }, [stage?.id])
+
+  if (!stage) return null
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="flex flex-col gap-0 p-0 w-[480px]">
+        <SheetHeader className="px-4 pt-4 pb-3 border-b border-border">
+          <SheetTitle className="text-sm font-semibold flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STAGE_CLASS_DOT[stage.stage_class] || '#94A3B8' }} />
+            {stage.name}
+          </SheetTitle>
+          <p className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">
+            workflow policy — applies to all orgs using this workflow
+          </p>
+        </SheetHeader>
+
+        {/* Tabs */}
+        <div className="flex border-b border-border px-4">
+          <button
+            onClick={() => setTab('conditions')}
+            className={[
+              'px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+              tab === 'conditions' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            Exit Conditions
+          </button>
+          <button
+            onClick={() => setTab('actions')}
+            className={[
+              'px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',
+              tab === 'actions' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            Transition Actions
+          </button>
+        </div>
+
+        {tab === 'conditions' ? (
+          <ExitConditionsPanel stageId={stage.id} onChanged={onChanged} />
+        ) : (
+          <TransitionActionsPanel transitions={transitions} onChanged={onChanged} />
+        )}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+// ─── Exit Conditions Panel ────────────────────────────────────────────────────
+
+function ExitConditionsPanel({ stageId, onChanged }) {
+  const { data, loading, reload } = useApi(
+    () => stageId ? api.exitCriteria(stageId) : Promise.resolve({ rows: [] }),
+    [stageId]
+  )
+  const [adding, setAdding] = useState(false)
+  const [addType, setAddType] = useState('manual')
+  const [addName, setAddName] = useState('')
+  const [addDesc, setAddDesc] = useState('')
+  const [addCondition, setAddCondition] = useState('')
+  const [addEndpoint, setAddEndpoint] = useState('')
+
+  const criteria = data?.rows || []
+
+  async function addCriteria() {
+    if (!addName.trim()) return
+    try {
+      const payload = {
+        stage_id: stageId,
+        name: addName.trim(),
+        description: addDesc.trim() || null,
+        criteria_tier: addType,
+        is_blocking: true,
+      }
+      if (addType === 'codified' && addCondition.trim()) {
+        try { payload.codified_condition = JSON.parse(addCondition) } catch {}
+      }
+      if (addType === 'api' && addEndpoint.trim()) {
+        payload.api_endpoint = addEndpoint.trim()
+        payload.api_method = 'GET'
+      }
+      await api.createExitCriteria(payload)
+      resetAddForm()
+      reload()
+      onChanged?.()
+    } catch (err) { console.error(err) }
+  }
+
+  function resetAddForm() {
+    setAdding(false)
+    setAddName('')
+    setAddDesc('')
+    setAddCondition('')
+    setAddEndpoint('')
+    setAddType('manual')
+  }
+
+  async function toggleActive(c) {
+    try {
+      if (c.is_active) await api.deleteExitCriteria(c.id)
+      else await api.updateExitCriteria(c.id, { is_active: true })
+      reload()
+      onChanged?.()
+    } catch (err) { console.error(err) }
+  }
+
+  async function toggleBlocking(c) {
+    try {
+      await api.updateExitCriteria(c.id, { is_blocking: !c.is_blocking })
+      reload()
+    } catch (err) { console.error(err) }
+  }
+
+  const tierLabel = { manual: 'Manual sign-off', codified: 'System check', api: 'API gate' }
+  const tierBadge = { manual: 'muted', codified: 'blue', api: 'amber' }
+  const tierDesc = {
+    manual: 'Human acknowledges this condition is met before work can proceed.',
+    codified: 'System evaluates a condition: required field, child items complete, checklist done.',
+    api: 'External system returns pass/fail via API call.',
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
+        {loading ? <LoadingState /> : criteria.length === 0 && !adding ? (
+          <div className="text-center py-8">
+            <p className="text-xs text-muted-foreground mb-1">No exit conditions defined</p>
+            <p className="text-[10px] text-muted-foreground/60">Work can leave this stage without restrictions</p>
+          </div>
+        ) : (
+          criteria.map(c => (
+            <div key={c.id} className={`border border-border/60 rounded p-2.5 space-y-1.5 ${!c.is_active ? 'opacity-40' : ''}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium flex-1">{c.name}</span>
+                <Badge variant={tierBadge[c.criteria_tier] || 'muted'} className="text-[9px]">
+                  {c.criteria_tier}
+                </Badge>
+                {c.is_blocking ? (
+                  <span className="text-[9px] text-destructive font-medium">blocks</span>
+                ) : (
+                  <span className="text-[9px] text-muted-foreground">advisory</span>
+                )}
+              </div>
+              {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
+              {c.codified_condition && (
+                <ConditionSummary condition={c.codified_condition} />
+              )}
+              {c.api_endpoint && (
+                <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1">
+                  {c.api_method || 'GET'} {c.api_endpoint}
+                </div>
+              )}
+              <div className="flex items-center gap-3 pt-0.5">
+                <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => toggleBlocking(c)}>
+                  {c.is_blocking ? 'Make advisory' : 'Make blocking'}
+                </button>
+                <button className="text-[10px] text-muted-foreground hover:text-destructive" onClick={() => toggleActive(c)}>
+                  {c.is_active ? 'Deactivate' : 'Reactivate'}
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+
+        {adding && (
+          <div className="border border-primary/30 rounded p-3 space-y-2 bg-primary/5">
+            <div className="text-xs font-medium">New Exit Condition</div>
+
+            {/* Type selector */}
+            <div className="flex gap-1">
+              {['manual', 'codified', 'api'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setAddType(t)}
+                  className={[
+                    'text-[10px] px-2 py-1 rounded border transition-colors',
+                    addType === t ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground hover:text-foreground',
+                  ].join(' ')}
+                >
+                  {tierLabel[t]}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-muted-foreground">{tierDesc[addType]}</p>
+
+            <input
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+              placeholder="Condition name"
+              value={addName}
+              onChange={e => setAddName(e.target.value)}
+              autoFocus
+            />
+            <input
+              className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+              placeholder="Description (optional)"
+              value={addDesc}
+              onChange={e => setAddDesc(e.target.value)}
+            />
+
+            {addType === 'codified' && (
+              <>
+                <select
+                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+                  value={addCondition ? '' : ''}
+                  onChange={e => {
+                    const templates = {
+                      field_value: '{"type":"field_value","field_key":"","operator":"gt","value":0}',
+                      child_items_terminal: '{"type":"child_items_terminal","work_item_type_id":null}',
+                      checklist_complete: '{"type":"checklist_complete","checklist_id":null}',
+                    }
+                    if (templates[e.target.value]) setAddCondition(templates[e.target.value])
+                  }}
+                >
+                  <option value="">Select condition type...</option>
+                  <option value="field_value">Field has value</option>
+                  <option value="child_items_terminal">Child items complete</option>
+                  <option value="checklist_complete">Checklist complete</option>
+                </select>
+                <textarea
+                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs min-h-[60px]"
+                  placeholder="Condition JSON"
+                  value={addCondition}
+                  onChange={e => setAddCondition(e.target.value)}
+                />
+              </>
+            )}
+
+            {addType === 'api' && (
+              <input
+                className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+                placeholder="API endpoint URL"
+                value={addEndpoint}
+                onChange={e => setAddEndpoint(e.target.value)}
+              />
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <Button size="sm" className="text-xs h-7" onClick={addCriteria} disabled={!addName.trim()}>Add Condition</Button>
+              <Button size="sm" variant="outline" className="text-xs h-7" onClick={resetAddForm}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {!adding && (
+        <div className="px-4 py-3 border-t border-border">
+          <Button size="sm" variant="outline" className="text-xs h-7 w-full" onClick={() => setAdding(true)}>
+            + Add Exit Condition
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ConditionSummary({ condition }) {
+  if (!condition) return null
+  const c = typeof condition === 'string' ? JSON.parse(condition) : condition
+  let text = ''
+  if (c.type === 'field_value') {
+    text = `Field "${c.field_key}" ${c.operator} ${JSON.stringify(c.value)}`
+  } else if (c.type === 'child_items_terminal') {
+    text = `All child items${c.work_item_type_id ? ` of type #${c.work_item_type_id}` : ''} must be complete`
+  } else if (c.type === 'checklist_complete') {
+    text = `Checklist${c.checklist_id ? ` #${c.checklist_id}` : ''} must be fully checked`
+  } else {
+    text = JSON.stringify(c)
+  }
+  return <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1">{text}</div>
+}
+
+// ─── Transition Actions Panel ─────────────────────────────────────────────────
+
+function TransitionActionsPanel({ transitions, onChanged }) {
+  const [adding, setAdding] = useState(null) // transition id being added to
+  const [addType, setAddType] = useState('spawn')
+  const [addName, setAddName] = useState('')
+  const [addDesc, setAddDesc] = useState('')
+
+  // Spawn fields
+  const [spawnTypeId, setSpawnTypeId] = useState('')
+  const [spawnOrgId, setSpawnOrgId] = useState('')
+
+  // API fields
+  const [apiEndpoint, setApiEndpoint] = useState('')
+  const [apiMethod, setApiMethod] = useState('POST')
+
+  const { data: typesData } = useApi(() => api.witTypes())
+  const { data: orgsData } = useApi(() => api.organizations())
+
+  const types = typesData?.rows || []
+  const orgs = orgsData?.rows || []
+
+  function resetForm() {
+    setAdding(null)
+    setAddType('spawn')
+    setAddName('')
+    setAddDesc('')
+    setSpawnTypeId('')
+    setSpawnOrgId('')
+    setApiEndpoint('')
+    setApiMethod('POST')
+  }
+
+  async function createAction(transitionId) {
+    if (!addName.trim()) return
+    try {
+      const payload = {
+        stage_transition_id: transitionId,
+        name: addName.trim(),
+        description: addDesc.trim() || null,
+        action_type: addType,
+      }
+      if (addType === 'spawn' || addType === 'optional_spawn') {
+        if (spawnTypeId) payload.spawn_work_item_type_id = parseInt(spawnTypeId)
+        if (spawnOrgId) payload.spawn_target_org_id = parseInt(spawnOrgId)
+        if (addType === 'optional_spawn') {
+          payload.optional_spawn_prompt = addDesc.trim() || `Create ${addName.trim()}?`
+        }
+      }
+      if (addType === 'api_call') {
+        payload.api_endpoint = apiEndpoint.trim()
+        payload.api_method = apiMethod
+      }
+      await api.createTransitionAction(payload)
+      resetForm()
+      onChanged?.()
+    } catch (err) { console.error(err) }
+  }
+
+  async function deleteAction(id) {
+    try {
+      await api.deleteTransitionAction(id)
+      onChanged?.()
+    } catch (err) { console.error(err) }
+  }
+
+  const actionTypeLabel = { spawn: 'Create Work Item', optional_spawn: 'Prompt to Create', api_call: 'API Call', notify: 'Notification' }
+  const actionTypeBadge = { spawn: 'default', optional_spawn: 'blue', api_call: 'amber', notify: 'muted' }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {transitions.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-6">No outbound transitions from this stage</p>
+      ) : (
+        transitions.map(t => (
+          <div key={t.id} className="space-y-2">
+            {/* Transition header */}
+            <div className="flex items-center gap-2 py-1">
+              <span className="text-xs text-muted-foreground">→</span>
+              <span className="text-xs font-medium flex-1">{t.transition_label || t.to_stage_name}</span>
+              <Badge variant={t.transition_kind === 'forward' ? 'default' : t.transition_kind === 'backward' ? 'amber' : 'blue'} className="text-[9px] px-1 py-0">
+                {t.transition_kind}
+              </Badge>
+              {t.requires_reason && <span className="text-[9px] text-muted-foreground">requires reason</span>}
+            </div>
+
+            {/* Existing actions */}
+            {(t.actions || []).map(a => (
+              <div key={a.id} className="ml-4 border border-border/60 rounded p-2 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium flex-1">{a.name}</span>
+                  <Badge variant={actionTypeBadge[a.action_type] || 'muted'} className="text-[9px]">
+                    {actionTypeLabel[a.action_type] || a.action_type}
+                  </Badge>
+                  <button className="text-[10px] text-muted-foreground hover:text-destructive" onClick={() => deleteAction(a.id)}>×</button>
+                </div>
+                {a.description && <p className="text-[10px] text-muted-foreground">{a.description}</p>}
+                {a.spawn_type_name && (
+                  <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1">
+                    Creates: {a.spawn_type_name}{a.spawn_target_org_name ? ` in ${a.spawn_target_org_name}` : ''}
+                  </div>
+                )}
+                {a.api_endpoint && (
+                  <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1">
+                    {a.api_method || 'POST'} {a.api_endpoint}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Add action form */}
+            {adding === t.id ? (
+              <div className="ml-4 border border-primary/30 rounded p-3 space-y-2 bg-primary/5">
+                <div className="text-xs font-medium">New Action</div>
+                <div className="flex gap-1">
+                  {['spawn', 'optional_spawn', 'api_call'].map(at => (
+                    <button
+                      key={at}
+                      onClick={() => setAddType(at)}
+                      className={[
+                        'text-[10px] px-2 py-1 rounded border transition-colors',
+                        addType === at ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-border text-muted-foreground hover:text-foreground',
+                      ].join(' ')}
+                    >
+                      {actionTypeLabel[at]}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+                  placeholder="Action name"
+                  value={addName}
+                  onChange={e => setAddName(e.target.value)}
+                  autoFocus
+                />
+                <input
+                  className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+                  placeholder={addType === 'optional_spawn' ? 'Prompt text (e.g. "Create estimation request?")' : 'Description (optional)'}
+                  value={addDesc}
+                  onChange={e => setAddDesc(e.target.value)}
+                />
+
+                {(addType === 'spawn' || addType === 'optional_spawn') && (
+                  <div className="space-y-2">
+                    <select
+                      className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+                      value={spawnTypeId}
+                      onChange={e => setSpawnTypeId(e.target.value)}
+                    >
+                      <option value="">Select work item type to create...</option>
+                      {types.filter(t => t.is_active).map(t => (
+                        <option key={t.id} value={t.id}>{t.name}{t.owner_org_name ? ` (${t.owner_org_name})` : ''}</option>
+                      ))}
+                    </select>
+                    <select
+                      className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
+                      value={spawnOrgId}
+                      onChange={e => setSpawnOrgId(e.target.value)}
+                    >
+                      <option value="">Target org (same as source)</option>
+                      {orgs.map(o => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {addType === 'api_call' && (
+                  <div className="flex gap-2">
+                    <select
+                      className="bg-background border border-border rounded px-2 py-1.5 text-xs w-24"
+                      value={apiMethod}
+                      onChange={e => setApiMethod(e.target.value)}
+                    >
+                      <option>GET</option>
+                      <option>POST</option>
+                      <option>PUT</option>
+                      <option>PATCH</option>
+                    </select>
+                    <input
+                      className="flex-1 bg-background border border-border rounded px-2 py-1.5 text-xs"
+                      placeholder="https://..."
+                      value={apiEndpoint}
+                      onChange={e => setApiEndpoint(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 pt-1">
+                  <Button size="sm" className="text-xs h-7" onClick={() => createAction(t.id)} disabled={!addName.trim()}>Add Action</Button>
+                  <Button size="sm" variant="outline" className="text-xs h-7" onClick={resetForm}>Cancel</Button>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="ml-4 text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                onClick={() => { resetForm(); setAdding(t.id) }}
+              >
+                + add action
+              </button>
+            )}
+          </div>
+        ))
+      )}
+    </div>
   )
 }
 
@@ -748,7 +1520,7 @@ function OrgDetail({ org, section, setSection, onSaved, setTab }) {
         <div className="flex-1 overflow-y-auto p-4">
           {section === 'settings'  && <SettingsSection org={org} onSaved={onSaved} />}
           {section === 'catalog'   && <CatalogSection orgId={org.id} setTab={setTab} />}
-          {section === 'policies'  && <PoliciesSection orgId={org.id} />}
+          {section === 'policies'  && <PoliciesSection orgId={org.id} org={org} onSaved={onSaved} />}
           {section === 'members'   && <MembersSection orgId={org.id} />}
           {section === 'workflows' && <WorkflowsSection orgId={org.id} setTab={setTab} />}
         </div>
