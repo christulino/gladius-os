@@ -2,7 +2,7 @@
 
 > This file is read automatically by Claude Code on session start.
 > It is the source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-03-12 (Session 10 — 3-level board columns, waiting queues, simulation)
+> Last updated: 2026-03-16 (Session 15 — Unified policies, stage rules, hierarchical WIP)
 
 ---
 
@@ -469,21 +469,25 @@ types, and optionally test work items via `db/seeds/enterprise/` data files.
    `resolved_at`, `origin`, `requester_id` on work items. Native fields for query
    performance. GIN index on tags. `started_at` set automatically on first transition
    out of intake/queued. `resolved_at` set on terminal stage entry, cleared on backward transition.
+7. **Migration 007** — Custom field engine: lookup lists, field definitions.
+8. **Migration 008** — `done_retention_days` on organizations.
+9. **Migration 009** — `org_wip_limits_by_class` table for stage-class-level WIP limits.
 
 ---
 
 ## What Is and Isn't Built
 
 ### Working
-- PostgreSQL schema (blueprint + runtime, ~50 tables)
+- PostgreSQL schema (blueprint + runtime, ~50 tables, 9 migrations)
 - Docker Compose environment (PostgreSQL + Neo4j)
 - Seed data (enterprise org hierarchy, workflows, work item types, service classes, roles)
-- Express API — 40+ endpoints including organizations, work items, catalog, board, transitions,
-  comments, relationships, search, linking, WIP limits, class fields, simulation
+- Express API — 60+ endpoints including organizations, work items, catalog, board, transitions,
+  comments, relationships, search, linking, WIP limits, class fields, simulation,
+  exit criteria CRUD, transition actions CRUD, role restrictions, policy data aggregation
 - Transition engine — two-phase prepare/execute, spawn actions, api_call fire-and-forget,
   automatic `waiting` substate for stages with `has_waiting_queue`
 - Work item creation with pending state, display key generation (prefix.seq)
-- React + Vite + shadcn admin UI (cartography light theme, 14+ pages):
+- React + Vite + shadcn admin UI (cartography light theme, 16+ pages):
   Team Board (3-level column hierarchy, swimlanes, split waiting/active cells, pull button),
   Work Item Detail drawer (inline edit, transitions, comments, linking, urgency/scheduling,
   people management), Workflow Editor (stages, transitions), Organizations (tree view),
@@ -491,22 +495,65 @@ types, and optionally test work items via `db/seeds/enterprise/` data files.
   Reports page, Simulation page, Raw Tables browser, DB Console, Log Viewer, Summary
 - Board 3-level columns: L1 stage_class headers, L2 merged workflow stages, L3 waiting queues
 - Service class swimlanes on board (expedite/fixed_date/standard/deferred/personal)
-- Org-level WIP limits (keyed by stage name, soft/hard enforcement)
+- Hierarchical WIP limits: stage-class-level + stage-level (both org-scoped, soft/hard)
 - Class-level field definitions with copy-on-create to types
+- Custom field engine (lookup lists, 10 field types, JSONB storage)
 - Work item search by title/display_key, linking (parent/child/related)
 - Simulation engine (random work item generation, transitions, configurable pace)
+- Org Center: master-detail with Settings, Catalog, Policies, Members, Workflows pills
+- Policies section: Board (retention), WIP Limits (hierarchical), Stage Rules
+  (exit conditions + transition actions per stage, managed via drawer)
+- Exit criteria: manual sign-off, codified system checks, API gates — full CRUD
+- Transition actions: spawn work items, optional spawns, API calls — full CRUD
+- Acceptance criteria with template seeding from types
+- WorkflowPicker component for type→workflow assignment
 
-### Not Yet Built
-- Sub-state history tracking (toggle works but no history log)
+### Not Yet Built — Roadmap
+
+**Core engine gaps:**
 - Exit criteria evaluation engine (scaffolded but evaluates as always-pass)
 - Trigger/action processing (spawn works, notify/field-update/webhook not yet)
+- Sub-state history tracking (toggle works but no history log)
 - Neo4j seeding (sync queue fills but not drained)
-- Draft submission tray
-- Metrics and flow data views
-- Scheduled work item creation
 - Auth middleware (all endpoints use userId = 1 stub)
-- Work item type fields seeded (required field validation never blocks)
+
+**Service catalog & intake:**
+- Public service catalog (org exposes requestable services)
+- Intake forms (type-specific, field-driven, external-facing)
+- Draft submission tray (age indicators, auto-expiry)
+- Email/Slack/API intake channels
+
+**Automation & rules:**
+- Conditional transition actions ("if type = X then spawn Y")
+- Field-update actions on transition
+- Scheduled work item creation (recurring operations)
+- SLA enforcement (warning thresholds, escalation triggers)
+- Notification engine (in-app, email, webhook)
+
+**Queries & reporting:**
+- Saved queries / custom filters
+- Flow metrics: cycle time, lead time, throughput, WIP age
+- CFD (cumulative flow diagram)
+- Bottleneck detection / aging analysis
+- Org-level and cross-org rollup dashboards
+- Export (CSV, PDF)
+
+**Simulation & seed data:**
+- Goal-driven simulation agents (persona-based, not random)
+- Richer seed data (realistic enterprise scenarios)
+- Simulation scenarios (incident response, feature delivery, service requests)
+
+**Views & visualization:**
 - Network Board / Highway View
+- Work item hierarchy navigator (Neo4j-backed)
+- Timeline / Gantt view for date-driven work
+
+**Platform:**
+- Auth (local + SSO via SAML/OIDC)
+- Full-text search (tsvector → Elasticsearch)
+- Object storage for evidence (MinIO → S3)
+- Event bus (async processing, Neo4j sync)
+- API versioning / webhook subscriptions
 
 ---
 
@@ -548,11 +595,13 @@ These are not aspirational. When a product decision conflicts with one of these,
 - Git: `christulino/flowos` (private)
 
 ### What's been built (across all sessions):
-3 databases · ~50 PostgreSQL tables · 35+ JS source files · 45+ API endpoints ·
-enterprise seed data · 5 SQL schema files + 5 migrations · 5 workflows · ~30 stages · ~40 transitions ·
+3 databases · ~50 PostgreSQL tables · 40+ JS source files · 60+ API endpoints ·
+enterprise seed data · 5 SQL schema files + 9 migrations · 5 workflows · ~30 stages · ~40 transitions ·
 React admin UI (16+ pages, cartography light theme, Tufte-inspired style system) ·
 3-level board column hierarchy (stage_class → merged stages → waiting queues) ·
 Work item detail drawer · Derived class of service · Transition engine with waiting substates ·
-Display keys · Org WIP limits · Class fields · Simulation engine ·
-People management · Comments · Reports page ·
+Display keys · Hierarchical WIP limits (class + stage) · Class fields · Custom field engine ·
+Simulation engine · People management · Comments · Reports page ·
+Org Center (5 section pills) · Unified policies (exit criteria + transition actions + WIP) ·
+Acceptance criteria · Lookup lists · WorkflowPicker ·
 Design document (flowos-design-doc.docx, ~950 paragraphs)
