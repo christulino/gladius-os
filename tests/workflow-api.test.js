@@ -1,16 +1,8 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { createAuthApi } from './helpers/auth.js'
 
-const BASE = process.env.API_URL || 'http://localhost:3000/admin/api'
-
-async function api(path, options = {}) {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const data = await res.json()
-  return { status: res.status, data }
-}
+const api = createAuthApi()
 
 // ─── Workflow CRUD ──────────────────────────────────────────────────────────
 
@@ -259,5 +251,14 @@ describe('Workflow — generic vs org-specific', () => {
     assert.equal(status, 201)
     assert.equal(data.owner_org_id, orgId)
     assert.equal(data.is_system_default, false)
+  })
+})
+
+// ─── Auth protection ────────────────────────────────────────────────────────
+
+describe('Auth — unauthenticated access', () => {
+  it('should reject unauthenticated requests with 401', async () => {
+    const res = await fetch((process.env.API_URL || 'http://localhost:3000/admin/api') + '/workflows')
+    assert.equal(res.status, 401, 'Unauthenticated request should get 401')
   })
 })

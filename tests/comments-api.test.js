@@ -1,16 +1,8 @@
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
+import { createAuthApi } from './helpers/auth.js'
 
-const BASE = process.env.API_URL || 'http://localhost:3000/admin/api'
-
-async function api(path, options = {}) {
-  const res = await fetch(BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const data = await res.json()
-  return { status: res.status, data }
-}
+const api = createAuthApi()
 
 describe('Comments API', () => {
   let workItemId

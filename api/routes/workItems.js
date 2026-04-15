@@ -56,7 +56,7 @@ router.get('/', async (req, res, next) => {
 router.get('/hierarchy', async (req, res, next) => {
   try {
     const uri    = req.query.uri
-    const userId = req.user?.id || 1
+    const userId = req.userId
     if (!uri) return res.status(400).json({ error: 'uri query parameter is required' })
     const hierarchy = await getWorkItemHierarchy(uri, userId)
     res.json(hierarchy)
@@ -74,7 +74,7 @@ router.get('/transition/prepare', async (req, res, next) => {
   try {
     const uri       = req.query.uri
     const toStageId = parseInt(req.query.to_stage_id)
-    const userId    = req.user?.id || 1
+    const userId    = req.userId
     if (!uri)       return res.status(400).json({ error: 'uri query parameter is required' })
     if (!toStageId) return res.status(400).json({ error: 'to_stage_id query parameter is required' })
     const workItemResult = await query('SELECT id FROM runtime.work_items WHERE uri = $1', [uri])
@@ -91,7 +91,7 @@ router.get('/transition/prepare', async (req, res, next) => {
 router.post('/transition', async (req, res, next) => {
   try {
     const { uri, to_stage_id, reason, spawn_decisions } = req.body
-    const userId = req.user?.id || 1
+    const userId = req.userId
     if (!uri)         return res.status(400).json({ error: 'uri is required' })
     if (!to_stage_id) return res.status(400).json({ error: 'to_stage_id is required' })
     const workItemResult = await query('SELECT id FROM runtime.work_items WHERE uri = $1', [uri])
@@ -112,7 +112,7 @@ router.post('/transition', async (req, res, next) => {
  */
 router.post('/', async (req, res, next) => {
   try {
-    const userId = req.user?.id || 1
+    const userId = req.userId
     const workItem = await createWorkItem(req.body, userId)
     res.status(201).json(workItem)
   } catch (err) {
@@ -129,7 +129,7 @@ router.post('/', async (req, res, next) => {
 router.patch('/', async (req, res, next) => {
   try {
     const uri    = req.query.uri
-    const userId = req.user?.id || 1
+    const userId = req.userId
     if (!uri) return res.status(400).json({ error: 'uri query parameter is required' })
     if (!req.body.field_values) return res.status(400).json({ error: 'field_values is required' })
     const workItem = await updateWorkItemFields(uri, req.body.field_values, userId)

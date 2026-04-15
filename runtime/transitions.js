@@ -30,7 +30,7 @@
 
 import { query, getClient }        from '../db/postgres.js'
 import { syncToGraph }             from '../graph/sync.js'
-import { evaluateExitCriteria }    from './exitCriteria.js'
+import { evaluateExitCriteria, populateExitCriteriaStatus } from './exitCriteria.js'
 import { resolveOrgCalendar, calculateWorkingTime } from '../core/calendar.js'
 
 // =============================================================================
@@ -78,15 +78,6 @@ export async function prepareTransition(workItemId, toStageId, userId) {
 
   // Evaluate exit criteria on the current stage
   const criteriaResult = await evaluateExitCriteria(workItemId, workItem.current_stage_id)
-  if (!criteriaResult.passed) {
-    return {
-      canTransition:   false,
-      blockedCriteria: criteriaResult.failed,
-      warnings:        criteriaResult.warnings,
-      workItem,
-      transition,
-    }
-  }
 
   // Collect optional spawn prompts
   const optionalSpawns = await loadOptionalSpawnActions(transition.id)
@@ -94,10 +85,25 @@ export async function prepareTransition(workItemId, toStageId, userId) {
   // Load required spawn and api_call actions for transparency
   const requiredActions = await loadRequiredActions(transition.id)
 
+  if (!criteriaResult.passed) {
+    return {
+      canTransition:   false,
+      blockedCriteria: criteriaResult.failed,
+      warnings:        criteriaResult.warnings,
+      allCriteria:     criteriaResult.all,
+      optionalSpawns,
+      requiredActions,
+      workItem,
+      transition,
+      requiresReason:  transition.requires_reason,
+    }
+  }
+
   return {
     canTransition:    true,
     blockedCriteria:  [],
     warnings:         criteriaResult.warnings,
+    allCriteria:      criteriaResult.all,
     optionalSpawns,   // Show these to user before executing
     requiredActions,  // Informational — these will fire automatically
     workItem,
@@ -212,7 +218,10 @@ export async function executeTransition(workItemId, toStageId, userId, options =
 
     await client.query(updateSql, updateVals)
 
-    // 2. Record transition history
+    // 2. Populate exit criteria status rows for the new stage
+    await populateExitCriteriaStatus(client, workItemId, toStageId)
+
+    // 3. Record transition history
     const workingTime = calculateWorkingTime(
       workItem.entered_current_stage_at,
       now,
@@ -242,7 +251,7 @@ export async function executeTransition(workItemId, toStageId, userId, options =
     ])
     transitionHistoryId = historyResult.rows[0].id
 
-    // 3. Execute spawn actions (fatal if any fail — rolls back entire transaction)
+    // 4. Execute spawn actions (fatal if any fail — rolls back entire transaction)
     for (const action of allSpawns) {
       const spawned = await executeSpawnAction(client, action, workItem, transitionHistoryId, now)
       spawnedWorkItems.push(spawned)

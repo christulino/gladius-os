@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Bug, Sparkles, CheckSquare, Layers, FolderKanban, Headphones, AlertTriangle, FileText } from 'lucide-react'
 import { formatElapsed } from '@/lib/utils'
 
 const SERVICE_CLASS_CONFIG = {
@@ -7,6 +8,17 @@ const SERVICE_CLASS_CONFIG = {
   standard:   { label: 'Standard',   color: '#1E5C3A', bg: '#1E5C3A18' },
   deferred:   { label: 'Deferred',   color: '#6A6460', bg: '#6A646018' },
 }
+
+const TYPE_ICON_MAP = {
+  'Bug':              Bug,
+  'Feature':          Sparkles,
+  'Task':             CheckSquare,
+  'Epic':             Layers,
+  'Project':          FolderKanban,
+  'Service Request':  Headphones,
+  'Incident':         AlertTriangle,
+}
+const DEFAULT_TYPE_ICON = FileText
 
 function formatDueDate(iso) {
   if (!iso) return null
@@ -48,9 +60,8 @@ export function WorkItemCard({ item, onClick, onPull, isSelected }) {
       className={`group relative w-full text-left p-2 flex flex-col gap-0.5 transition-colors ${cornerRadius}`}
       style={{
         backgroundColor: isSelected ? 'hsl(var(--primary) / 0.06)' : '#FFFFFF',
-        border: isSelected ? '2px solid hsl(var(--primary))' : '1px solid #D4D4D4',
-        padding: isSelected ? '7px' : undefined,
-        ...(isBlocked ? { borderRightColor: '#8B1A1A', borderRightWidth: '4px' } : {}),
+        border: isSelected ? '2px solid hsl(var(--primary))' : isBlocked ? '2px solid hsl(var(--destructive) / 0.4)' : '1px solid #D4D4D4',
+        padding: (isSelected || isBlocked) ? '7px' : undefined,
       }}
     >
       {/* Pull arrow button (waiting items only) */}
@@ -66,9 +77,10 @@ export function WorkItemCard({ item, onClick, onPull, isSelected }) {
 
       {/* Row 1: icon + title + assignee */}
       <div className="flex items-start gap-1.5 min-w-0">
-        {item.work_item_type_icon && (
-          <span className="text-sm flex-shrink-0 leading-none" title={item.work_item_type_name}>{item.work_item_type_icon}</span>
-        )}
+        {(() => {
+          const TypeIcon = TYPE_ICON_MAP[item.work_item_type_class_name] || DEFAULT_TYPE_ICON
+          return <TypeIcon className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" title={item.work_item_type_name} />
+        })()}
         <p className="text-xs font-medium leading-snug truncate flex-1">
           {item.title}
         </p>

@@ -37,7 +37,7 @@ export async function evaluateExitCriteria(workItemId, stageId) {
   `, [stageId])
 
   const criteria = criteriaResult.rows
-  if (!criteria.length) return { passed: true, failed: [], warnings: [] }
+  if (!criteria.length) return { passed: true, failed: [], warnings: [], all: [] }
 
   // Load the work item with its field values
   const workItemResult = await query(`
@@ -50,27 +50,31 @@ export async function evaluateExitCriteria(workItemId, stageId) {
 
   const failed   = []
   const warnings = []
+  const all      = []
 
   for (const criterion of criteria) {
     const result = await evaluateSingleCriterion(criterion, workItem)
 
+    const entry = {
+      id:          criterion.id,
+      name:        criterion.name,
+      tier:        criterion.criteria_tier,
+      description: criterion.description,
+      is_blocking: criterion.is_blocking,
+      passed:      result.passed,
+      reason:      result.reason || null,
+    }
+    all.push(entry)
+
+    // Update runtime status row (upsert — create if missing)
+    const newStatus = result.passed ? 'met' : (criterion.criteria_tier === 'manual' ? 'pending' : 'failed')
+    await upsertCriteriaStatus(workItemId, criterion, newStatus, result)
+
     if (!result.passed) {
       if (criterion.is_blocking) {
-        failed.push({
-          id:          criterion.id,
-          name:        criterion.name,
-          tier:        criterion.criteria_tier,
-          reason:      result.reason,
-          is_blocking: true,
-        })
+        failed.push({ ...entry })
       } else {
-        warnings.push({
-          id:          criterion.id,
-          name:        criterion.name,
-          tier:        criterion.criteria_tier,
-          reason:      result.reason,
-          is_blocking: false,
-        })
+        warnings.push({ ...entry })
       }
     }
   }
@@ -79,6 +83,7 @@ export async function evaluateExitCriteria(workItemId, stageId) {
     passed:   failed.length === 0,
     failed,
     warnings,
+    all,
   }
 }
 
@@ -101,18 +106,18 @@ async function evaluateSingleCriterion(criterion, workItem) {
 }
 
 /**
- * Manual — check if a human has explicitly completed this criterion.
- * Looks for a completion record in exit_criteria_completions.
+ * Manual — check if a human has explicitly acknowledged this criterion.
+ * Looks for a 'met' or 'waived' status in exit_criteria_status.
  */
 async function evaluateManual(criterion, workItem) {
   const result = await query(`
-    SELECT id FROM runtime.exit_criteria_completions
+    SELECT status FROM runtime.exit_criteria_status
     WHERE exit_criteria_id = $1
       AND work_item_id = $2
-      AND is_active = true
   `, [criterion.id, workItem.id])
 
-  if (result.rows.length) {
+  const row = result.rows[0]
+  if (row && (row.status === 'met' || row.status === 'waived')) {
     return { passed: true }
   }
   return { passed: false, reason: `"${criterion.name}" has not been manually confirmed` }
@@ -191,8 +196,8 @@ async function evaluateCodified(criterion, workItem) {
     case 'checklist_complete': {
       const result = await query(`
         SELECT COUNT(*) AS total,
-               COUNT(*) FILTER (WHERE is_completed = true) AS completed
-        FROM runtime.checklist_items
+               COUNT(*) FILTER (WHERE is_checked = true) AS completed
+        FROM runtime.checklist_completions
         WHERE checklist_id = $1 AND work_item_id = $2
       `, [condition.checklist_id, workItem.id])
 
@@ -267,6 +272,192 @@ async function evaluateApi(criterion, workItem) {
 }
 
 // =============================================================================
+// STATUS MANAGEMENT
+// =============================================================================
+
+/**
+ * Populate exit_criteria_status rows when a work item enters a new stage.
+ * Creates 'pending' rows for each active criterion on the stage.
+ * Called from the transition engine after the work item moves.
+ *
+ * @param {Object} client - PG client (inside transaction) or null for pool query
+ * @param {number} workItemId
+ * @param {number} stageId
+ */
+export async function populateExitCriteriaStatus(client, workItemId, stageId) {
+  const q = client ? client.query.bind(client) : query
+
+  const criteriaResult = await q(`
+    SELECT id FROM blueprint.exit_criteria
+    WHERE stage_id = $1 AND is_active = true
+  `, [stageId])
+
+  for (const row of criteriaResult.rows) {
+    await q(`
+      INSERT INTO runtime.exit_criteria_status (work_item_id, exit_criteria_id, stage_id, status)
+      VALUES ($1, $2, $3, 'pending')
+      ON CONFLICT (work_item_id, exit_criteria_id) DO NOTHING
+    `, [workItemId, row.id, stageId])
+  }
+}
+
+/**
+ * Acknowledge a manual exit criterion for a work item.
+ *
+ * @param {number} workItemId
+ * @param {number} exitCriteriaId
+ * @param {number} userId
+ * @returns {Promise<Object>} Updated status row
+ */
+export async function acknowledgeCriterion(workItemId, exitCriteriaId, userId) {
+  // Verify criterion exists and is manual
+  const criterionResult = await query(
+    'SELECT id, criteria_tier, name FROM blueprint.exit_criteria WHERE id = $1 AND is_active = true',
+    [exitCriteriaId]
+  )
+  if (!criterionResult.rows.length) {
+    throw new Error('Exit criterion not found')
+  }
+  if (criterionResult.rows[0].criteria_tier !== 'manual') {
+    throw new Error('Only manual criteria can be acknowledged')
+  }
+
+  const result = await query(`
+    INSERT INTO runtime.exit_criteria_status
+      (work_item_id, exit_criteria_id, stage_id, status, acknowledged_by_user_id, acknowledged_at)
+    VALUES ($1, $2,
+      (SELECT current_stage_id FROM runtime.work_items WHERE id = $1),
+      'met', $3, NOW())
+    ON CONFLICT (work_item_id, exit_criteria_id)
+    DO UPDATE SET
+      status = 'met',
+      acknowledged_by_user_id = $3,
+      acknowledged_at = NOW(),
+      updated_at = NOW()
+    RETURNING *
+  `, [workItemId, exitCriteriaId, userId])
+
+  return result.rows[0]
+}
+
+/**
+ * Un-acknowledge a manual exit criterion (set back to pending).
+ *
+ * @param {number} workItemId
+ * @param {number} exitCriteriaId
+ * @returns {Promise<Object>} Updated status row
+ */
+export async function unacknowledgeCriterion(workItemId, exitCriteriaId) {
+  const result = await query(`
+    UPDATE runtime.exit_criteria_status
+    SET status = 'pending',
+        acknowledged_by_user_id = NULL,
+        acknowledged_at = NULL,
+        updated_at = NOW()
+    WHERE work_item_id = $1 AND exit_criteria_id = $2
+    RETURNING *
+  `, [workItemId, exitCriteriaId])
+
+  return result.rows[0]
+}
+
+/**
+ * Waive an exit criterion — authorized override.
+ *
+ * @param {number} workItemId
+ * @param {number} exitCriteriaId
+ * @param {number} userId
+ * @param {string} reason
+ * @returns {Promise<Object>} Updated status row
+ */
+export async function waiveCriterion(workItemId, exitCriteriaId, userId, reason) {
+  if (!reason?.trim()) {
+    throw new Error('A reason is required to waive an exit criterion')
+  }
+
+  const result = await query(`
+    INSERT INTO runtime.exit_criteria_status
+      (work_item_id, exit_criteria_id, stage_id, status, waived_by_user_id, waived_at, waiver_reason)
+    VALUES ($1, $2,
+      (SELECT current_stage_id FROM runtime.work_items WHERE id = $1),
+      'waived', $3, NOW(), $4)
+    ON CONFLICT (work_item_id, exit_criteria_id)
+    DO UPDATE SET
+      status = 'waived',
+      waived_by_user_id = $3,
+      waived_at = NOW(),
+      waiver_reason = $4,
+      updated_at = NOW()
+    RETURNING *
+  `, [workItemId, exitCriteriaId, userId, reason.trim()])
+
+  return result.rows[0]
+}
+
+/**
+ * Get current exit criteria status for a work item at its current stage.
+ *
+ * @param {number} workItemId
+ * @returns {Promise<Object[]>} Array of criteria with their status
+ */
+export async function getWorkItemCriteriaStatus(workItemId) {
+  const result = await query(`
+    SELECT
+      ec.id, ec.name, ec.description, ec.criteria_tier, ec.is_blocking,
+      ec.codified_condition, ec.display_order,
+      ecs.status, ecs.acknowledged_by_user_id, ecs.acknowledged_at,
+      ecs.waived_by_user_id, ecs.waived_at, ecs.waiver_reason,
+      ecs.last_evaluated_at, ecs.evaluation_result,
+      u_ack.display_name AS acknowledged_by_name,
+      u_waive.display_name AS waived_by_name
+    FROM blueprint.exit_criteria ec
+    LEFT JOIN runtime.exit_criteria_status ecs
+      ON ecs.exit_criteria_id = ec.id AND ecs.work_item_id = $1
+    LEFT JOIN blueprint.users u_ack ON u_ack.id = ecs.acknowledged_by_user_id
+    LEFT JOIN blueprint.users u_waive ON u_waive.id = ecs.waived_by_user_id
+    WHERE ec.stage_id = (SELECT current_stage_id FROM runtime.work_items WHERE id = $1)
+      AND ec.is_active = true
+    ORDER BY ec.display_order ASC, ec.id ASC
+  `, [workItemId])
+
+  return result.rows
+}
+
+/**
+ * Upsert a criteria status row during evaluation.
+ * For manual criteria, don't overwrite 'met' or 'waived' status.
+ */
+async function upsertCriteriaStatus(workItemId, criterion, newStatus, evalResult) {
+  // For manual criteria, preserve existing acknowledgments
+  if (criterion.criteria_tier === 'manual') {
+    await query(`
+      INSERT INTO runtime.exit_criteria_status
+        (work_item_id, exit_criteria_id, stage_id, status)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (work_item_id, exit_criteria_id) DO NOTHING
+    `, [workItemId, criterion.id, criterion.stage_id, newStatus])
+    return
+  }
+
+  // For codified/api criteria, update with evaluation result
+  await query(`
+    INSERT INTO runtime.exit_criteria_status
+      (work_item_id, exit_criteria_id, stage_id, status, last_evaluated_at, evaluation_result)
+    VALUES ($1, $2, $3, $4, NOW(), $5)
+    ON CONFLICT (work_item_id, exit_criteria_id)
+    DO UPDATE SET
+      status = CASE
+        WHEN runtime.exit_criteria_status.status = 'waived' THEN 'waived'
+        ELSE $4
+      END,
+      last_evaluated_at = NOW(),
+      evaluation_result = $5,
+      updated_at = NOW()
+  `, [workItemId, criterion.id, criterion.stage_id, newStatus,
+      JSON.stringify({ passed: evalResult.passed, reason: evalResult.reason })])
+}
+
+// =============================================================================
 // HELPERS
 // =============================================================================
 
@@ -321,4 +512,11 @@ function interpolateTemplate(template, workItem) {
   }
 }
 
-export default { evaluateExitCriteria }
+export default {
+  evaluateExitCriteria,
+  populateExitCriteriaStatus,
+  acknowledgeCriterion,
+  unacknowledgeCriterion,
+  waiveCriterion,
+  getWorkItemCriteriaStatus,
+}

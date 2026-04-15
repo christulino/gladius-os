@@ -1244,12 +1244,8 @@ router.post('/workflows', async (req, res, next) => {
     const { name, description, owner_org_id } = req.body
     if (!name?.trim())   return res.status(400).json({ error: 'name is required' })
 
-    let resolvedOrgId = owner_org_id
-    if (!resolvedOrgId) {
-      const sysOrg = await query("SELECT id FROM blueprint.organizations WHERE slug = 'system' LIMIT 1")
-      if (!sysOrg.rows.length) return res.status(500).json({ error: 'System org not found' })
-      resolvedOrgId = sysOrg.rows[0].id
-    }
+    if (!owner_org_id) return res.status(400).json({ error: 'owner_org_id is required' })
+    const resolvedOrgId = owner_org_id
 
     const orgResult = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [resolvedOrgId])
     if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
@@ -1829,7 +1825,7 @@ router.post('/work-items', async (req, res, next) => {
       estimate_unit:      estimate_unit || undefined,
       origin:             origin || 'manual',
       requester_id:       requester_id ? parseInt(requester_id) : undefined,
-    }, 1 /* stub userId */)
+    }, req.userId)
 
     res.status(201).json(workItem)
   } catch (err) {
@@ -2209,6 +2205,16 @@ router.get('/work-items/:id/transitions', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// GET /admin/api/work-items/:id/transition/prepare?to_stage_id=N — prepare transition (evaluate criteria)
+router.get('/work-items/:id/transition/prepare', async (req, res, next) => {
+  try {
+    const toStageId = parseInt(req.query.to_stage_id)
+    if (!toStageId) return res.status(400).json({ error: 'to_stage_id query parameter is required' })
+    const prep = await prepareTransition(parseInt(req.params.id), toStageId, req.userId)
+    res.json(prep)
+  } catch (err) { next(err) }
+})
+
 // POST /admin/api/work-items/:id/transition — execute transition
 router.post('/work-items/:id/transition', async (req, res, next) => {
   try {
@@ -2217,12 +2223,79 @@ router.post('/work-items/:id/transition', async (req, res, next) => {
     const result = await executeTransition(
       parseInt(req.params.id),
       parseInt(to_stage_id),
-      1, // stub userId
+      req.userId,
       { reason }
     )
     if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
     res.json(result)
   } catch (err) { next(err) }
+})
+
+// =============================================================================
+// EXIT CRITERIA — RUNTIME STATUS
+// =============================================================================
+
+import {
+  acknowledgeCriterion,
+  unacknowledgeCriterion,
+  waiveCriterion,
+  getWorkItemCriteriaStatus,
+} from '../runtime/exitCriteria.js'
+
+// GET /admin/api/work-items/:id/exit-criteria — current criteria status for work item
+router.get('/work-items/:id/exit-criteria-status', async (req, res, next) => {
+  try {
+    const criteria = await getWorkItemCriteriaStatus(parseInt(req.params.id))
+    res.json({ rows: criteria, count: criteria.length })
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/:id/exit-criteria/:criteriaId/acknowledge
+router.post('/work-items/:id/exit-criteria/:criteriaId/acknowledge', async (req, res, next) => {
+  try {
+    const result = await acknowledgeCriterion(
+      parseInt(req.params.id),
+      parseInt(req.params.criteriaId),
+      req.userId
+    )
+    res.json(result)
+  } catch (err) {
+    if (err.message.includes('not found') || err.message.includes('Only manual')) {
+      return res.status(400).json({ error: err.message })
+    }
+    next(err)
+  }
+})
+
+// DELETE /admin/api/work-items/:id/exit-criteria/:criteriaId/acknowledge — undo
+router.delete('/work-items/:id/exit-criteria/:criteriaId/acknowledge', async (req, res, next) => {
+  try {
+    const result = await unacknowledgeCriterion(
+      parseInt(req.params.id),
+      parseInt(req.params.criteriaId)
+    )
+    if (!result) return res.status(404).json({ error: 'Status record not found' })
+    res.json(result)
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/:id/exit-criteria/:criteriaId/waive
+router.post('/work-items/:id/exit-criteria/:criteriaId/waive', async (req, res, next) => {
+  try {
+    const { reason } = req.body
+    const result = await waiveCriterion(
+      parseInt(req.params.id),
+      parseInt(req.params.criteriaId),
+      req.userId,
+      reason
+    )
+    res.json(result)
+  } catch (err) {
+    if (err.message.includes('reason is required')) {
+      return res.status(400).json({ error: err.message })
+    }
+    next(err)
+  }
 })
 
 // =============================================================================
@@ -2253,7 +2326,7 @@ router.post('/work-items/:id/comments', async (req, res, next) => {
       INSERT INTO runtime.work_item_comments (uri, work_item_id, author_user_id, body, parent_comment_id)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
-    `, [uri, req.params.id, 1 /* stub userId */, body.trim(), parent_comment_id || null])
+    `, [uri, req.params.id, req.userId, body.trim(), parent_comment_id || null])
 
     // Update work item updated_at
     await query('UPDATE runtime.work_items SET updated_at = NOW() WHERE id = $1', [req.params.id])
@@ -2332,7 +2405,7 @@ router.post('/work-items/:id/links', async (req, res, next) => {
       INSERT INTO runtime.work_item_links (source_work_item_id, target_work_item_id, link_type, created_by_user_id)
       VALUES ($1, $2, $3, $4)
       RETURNING *
-    `, [sourceId, target_work_item_id, link_type, 1 /* stub userId */])
+    `, [sourceId, target_work_item_id, link_type, req.userId])
     res.status(201).json(result.rows[0])
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Link already exists' })
@@ -3248,6 +3321,136 @@ router.delete('/transition-actions/:id', async (req, res, next) => {
       [req.params.id]
     )
     if (!result.rows.length) return res.status(404).json({ error: 'Transition action not found' })
+    res.json({ deleted: true, id: result.rows[0].id })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
+// SERVICE CATALOG
+// =============================================================================
+
+// List catalog items for an org
+router.get('/catalog-items', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.query.org_id)
+    if (!orgId) return res.status(400).json({ error: 'org_id is required' })
+    const result = await query(`
+      SELECT sci.*, wit.name AS type_name, wit.icon AS type_icon,
+             wit.key_prefix, o.name AS org_name
+      FROM blueprint.service_catalog_items sci
+      JOIN blueprint.work_item_types wit ON wit.id = sci.work_item_type_id
+      JOIN blueprint.organizations o     ON o.id = sci.owner_org_id
+      WHERE sci.owner_org_id = $1 AND sci.is_active = true
+      ORDER BY sci.name ASC
+    `, [orgId])
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// Create catalog item
+router.post('/catalog-items', async (req, res, next) => {
+  try {
+    const { name, description, owner_org_id, work_item_type_id,
+            is_internal, is_cross_org, is_external,
+            external_slug, requires_approval } = req.body
+    if (!name?.trim()) return res.status(400).json({ error: 'name is required' })
+    if (!owner_org_id) return res.status(400).json({ error: 'owner_org_id is required' })
+    if (!work_item_type_id) return res.status(400).json({ error: 'work_item_type_id is required' })
+
+    // Generate slug from name if not provided and is_external is true
+    let slug = external_slug?.trim() || null
+    if (is_external && !slug) {
+      slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    }
+
+    // Validate slug uniqueness
+    if (slug) {
+      const existing = await query(
+        'SELECT id FROM blueprint.service_catalog_items WHERE external_slug = $1',
+        [slug]
+      )
+      if (existing.rows.length) {
+        return res.status(409).json({ error: `Slug "${slug}" is already in use` })
+      }
+    }
+
+    // Generate URI
+    const orgResult = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
+    if (!orgResult.rows.length) return res.status(404).json({ error: 'Organization not found' })
+
+    const { generateUri } = await import('../core/uri.js')
+    const uri = generateUri(orgResult.rows[0].slug, 'service-catalog')
+
+    const result = await query(`
+      INSERT INTO blueprint.service_catalog_items
+        (uri, name, description, owner_org_id, work_item_type_id,
+         is_internal, is_cross_org, is_external,
+         external_slug, requires_approval, is_active, created_at, updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,NOW(),NOW())
+      RETURNING *
+    `, [
+      uri, name.trim(), description || null, owner_org_id, work_item_type_id,
+      is_internal ?? true, is_cross_org ?? false, is_external ?? false,
+      slug, requires_approval ?? false,
+    ])
+    res.status(201).json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// Update catalog item
+router.patch('/catalog-items/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { name, description, is_internal, is_cross_org, is_external,
+            external_slug, requires_approval, request_mode, is_active } = req.body
+
+    // Validate slug uniqueness if changing
+    if (external_slug !== undefined) {
+      const slug = external_slug?.trim() || null
+      if (slug) {
+        const existing = await query(
+          'SELECT id FROM blueprint.service_catalog_items WHERE external_slug = $1 AND id <> $2',
+          [slug, id]
+        )
+        if (existing.rows.length) {
+          return res.status(409).json({ error: `Slug "${slug}" is already in use` })
+        }
+      }
+    }
+
+    const result = await query(`
+      UPDATE blueprint.service_catalog_items SET
+        name              = COALESCE($1, name),
+        description       = COALESCE($2, description),
+        is_internal       = COALESCE($3, is_internal),
+        is_cross_org      = COALESCE($4, is_cross_org),
+        is_external       = COALESCE($5, is_external),
+        external_slug     = COALESCE($6, external_slug),
+        requires_approval = COALESCE($7, requires_approval),
+        request_mode      = COALESCE($8, request_mode),
+        is_active         = COALESCE($9, is_active),
+        updated_at        = NOW()
+      WHERE id = $10
+      RETURNING *
+    `, [
+      name?.trim() ?? null, description ?? null,
+      is_internal ?? null, is_cross_org ?? null, is_external ?? null,
+      external_slug?.trim() ?? null, requires_approval ?? null,
+      request_mode ?? null, is_active ?? null, id,
+    ])
+    if (!result.rows.length) return res.status(404).json({ error: 'Catalog item not found' })
+    res.json(result.rows[0])
+  } catch (err) { next(err) }
+})
+
+// Delete (soft) catalog item
+router.delete('/catalog-items/:id', async (req, res, next) => {
+  try {
+    const result = await query(
+      'UPDATE blueprint.service_catalog_items SET is_active = false, updated_at = NOW() WHERE id = $1 RETURNING id',
+      [req.params.id]
+    )
+    if (!result.rows.length) return res.status(404).json({ error: 'Catalog item not found' })
     res.json({ deleted: true, id: result.rows[0].id })
   } catch (err) { next(err) }
 })

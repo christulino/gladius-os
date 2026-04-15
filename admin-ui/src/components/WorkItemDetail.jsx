@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
 
 // ─── Custom Fields Renderer ─────────────────────────────────────────────────
 
@@ -268,6 +268,12 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   const [reasonPrompt, setReasonPrompt] = useState(null)
   const [reasonText, setReasonText] = useState('')
 
+  // Exit criteria gate
+  const [criteriaGate, setCriteriaGate] = useState(null)  // { transition, allCriteria, canTransition, warnings }
+  const [criteriaLoading, setCriteriaLoading] = useState(false)
+  const [waiveTarget, setWaiveTarget] = useState(null)     // { id, name } — criterion being waived
+  const [waiveReason, setWaiveReason] = useState('')
+
   // People / assignments
   const [showAddPerson, setShowAddPerson] = useState(false)
   const [personType, setPersonType] = useState('owns')
@@ -377,18 +383,110 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   }
 
   async function handleTransition(t) {
-    if (t.requires_reason) {
-      setTransitionOpen(false)
-      setReasonPrompt(t)
+    setTransitionOpen(false)
+    setCriteriaLoading(true)
+    try {
+      const prep = await api.prepareTransition(workItemId, t.to_stage_id)
+      const hasCriteria = prep.allCriteria && prep.allCriteria.length > 0
+      const hasBlockingFailures = prep.blockedCriteria && prep.blockedCriteria.length > 0
+
+      if (hasCriteria || hasBlockingFailures) {
+        // Show criteria gate panel
+        setCriteriaGate({
+          transition: t,
+          toStageId: t.to_stage_id,
+          allCriteria: prep.allCriteria || [],
+          blockedCriteria: prep.blockedCriteria || [],
+          warnings: prep.warnings || [],
+          canTransition: prep.canTransition,
+          requiresReason: prep.requiresReason || t.requires_reason,
+        })
+        setCriteriaLoading(false)
+        return
+      }
+
+      // No criteria — proceed directly (or prompt for reason)
+      if (t.requires_reason || prep.requiresReason) {
+        setCriteriaLoading(false)
+        setReasonPrompt(t)
+        setReasonText('')
+        return
+      }
+
+      // Execute directly
+      await api.transitionWorkItem(workItemId, t.to_stage_id)
+      await loadData()
+      onChanged?.()
+    } catch (err) {
+      console.error('Transition prepare failed:', err)
+    } finally { setCriteriaLoading(false) }
+  }
+
+  async function handleAcknowledge(criterionId) {
+    if (!criteriaGate) return
+    try {
+      await api.acknowledgeCriterion(workItemId, criterionId)
+      // Re-prepare to get updated state
+      const prep = await api.prepareTransition(workItemId, criteriaGate.toStageId)
+      setCriteriaGate(prev => ({
+        ...prev,
+        allCriteria: prep.allCriteria || [],
+        blockedCriteria: prep.blockedCriteria || [],
+        warnings: prep.warnings || [],
+        canTransition: prep.canTransition,
+      }))
+    } catch (err) { console.error('Acknowledge failed:', err) }
+  }
+
+  async function handleUnacknowledge(criterionId) {
+    if (!criteriaGate) return
+    try {
+      await api.unacknowledgeCriterion(workItemId, criterionId)
+      const prep = await api.prepareTransition(workItemId, criteriaGate.toStageId)
+      setCriteriaGate(prev => ({
+        ...prev,
+        allCriteria: prep.allCriteria || [],
+        blockedCriteria: prep.blockedCriteria || [],
+        warnings: prep.warnings || [],
+        canTransition: prep.canTransition,
+      }))
+    } catch (err) { console.error('Unacknowledge failed:', err) }
+  }
+
+  async function handleWaive() {
+    if (!waiveTarget || !waiveReason.trim()) return
+    try {
+      await api.waiveCriterion(workItemId, waiveTarget.id, waiveReason.trim())
+      setWaiveTarget(null)
+      setWaiveReason('')
+      // Re-prepare
+      const prep = await api.prepareTransition(workItemId, criteriaGate.toStageId)
+      setCriteriaGate(prev => ({
+        ...prev,
+        allCriteria: prep.allCriteria || [],
+        blockedCriteria: prep.blockedCriteria || [],
+        warnings: prep.warnings || [],
+        canTransition: prep.canTransition,
+      }))
+    } catch (err) { console.error('Waive failed:', err) }
+  }
+
+  async function confirmTransitionFromGate() {
+    if (!criteriaGate) return
+    const { toStageId, requiresReason } = criteriaGate
+    if (requiresReason) {
+      setReasonPrompt({ ...criteriaGate.transition, to_stage_id: toStageId })
       setReasonText('')
+      setCriteriaGate(null)
       return
     }
     setSaving(true)
     try {
-      await api.transitionWorkItem(workItemId, t.to_stage_id)
+      await api.transitionWorkItem(workItemId, toStageId)
+      setCriteriaGate(null)
       await loadData()
       onChanged?.()
-    } finally { setSaving(false); setTransitionOpen(false) }
+    } finally { setSaving(false) }
   }
 
   async function confirmTransitionWithReason() {
@@ -397,6 +495,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
     try {
       await api.transitionWorkItem(workItemId, reasonPrompt.to_stage_id, reasonText)
       setReasonPrompt(null)
+      setCriteriaGate(null)
       await loadData()
       onChanged?.()
     } finally { setSaving(false); setTransitionOpen(false) }
@@ -826,8 +925,153 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                       </Button>
                     </div>
 
+                    {/* Exit criteria gate */}
+                    {criteriaLoading && (
+                      <div className="flex items-center gap-2 p-3 border border-border rounded bg-background">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Evaluating exit criteria...</span>
+                      </div>
+                    )}
+
+                    {criteriaGate && (
+                      <div className="flex flex-col gap-2 p-3 border border-border rounded bg-background">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-medium text-foreground">
+                            Exit criteria for transition to "{criteriaGate.transition.transition_label || criteriaGate.transition.to_stage_name}"
+                          </span>
+                          <button
+                            onClick={() => { setCriteriaGate(null); setWaiveTarget(null); setWaiveReason('') }}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          {criteriaGate.allCriteria.map(c => {
+                            const isMet = c.passed
+                            const isManual = c.tier === 'manual'
+                            const isBlocking = c.is_blocking
+
+                            return (
+                              <div
+                                key={c.id}
+                                className={[
+                                  'flex items-start gap-2 px-2 py-1.5 rounded text-xs',
+                                  isMet ? 'bg-[#2D6A3C]/5' : (isBlocking ? 'bg-[#A33A25]/5' : 'bg-[#AD7B1A]/5'),
+                                ].join(' ')}
+                              >
+                                {/* Status icon */}
+                                {isMet ? (
+                                  <Check className="h-3.5 w-3.5 text-[#2D6A3C] mt-0.5 flex-shrink-0" />
+                                ) : isManual ? (
+                                  <CircleDot className="h-3.5 w-3.5 text-[#AD7B1A] mt-0.5 flex-shrink-0" />
+                                ) : (
+                                  <AlertTriangle className="h-3.5 w-3.5 text-[#A33A25] mt-0.5 flex-shrink-0" />
+                                )}
+
+                                {/* Content */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={isMet ? 'text-muted-foreground' : 'text-foreground'}>{c.name}</span>
+                                    <span className="text-muted-foreground/50">
+                                      {c.tier === 'manual' ? '(manual)' : c.tier === 'codified' ? '(auto)' : '(api)'}
+                                    </span>
+                                    {!isBlocking && <span className="text-muted-foreground/50 italic">advisory</span>}
+                                  </div>
+                                  {!isMet && c.reason && (
+                                    <div className="text-muted-foreground mt-0.5">{c.reason}</div>
+                                  )}
+                                  {c.description && isMet && (
+                                    <div className="text-muted-foreground/60 mt-0.5">{c.description}</div>
+                                  )}
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                  {isManual && !isMet && (
+                                    <button
+                                      onClick={() => handleAcknowledge(c.id)}
+                                      className="px-2 py-0.5 text-xs rounded bg-primary/10 text-primary hover:bg-primary/20"
+                                    >
+                                      Confirm
+                                    </button>
+                                  )}
+                                  {isManual && isMet && (
+                                    <button
+                                      onClick={() => handleUnacknowledge(c.id)}
+                                      className="px-2 py-0.5 text-xs rounded text-muted-foreground hover:text-foreground hover:bg-black/[0.03]"
+                                    >
+                                      Undo
+                                    </button>
+                                  )}
+                                  {!isMet && isBlocking && c.tier !== 'manual' && (
+                                    <button
+                                      onClick={() => { setWaiveTarget({ id: c.id, name: c.name }); setWaiveReason('') }}
+                                      className="px-2 py-0.5 text-xs rounded text-muted-foreground hover:text-[#AD7B1A] hover:bg-[#AD7B1A]/5"
+                                      title="Waive this criterion"
+                                    >
+                                      <Shield className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Waive reason input */}
+                        {waiveTarget && (
+                          <div className="flex flex-col gap-1.5 p-2 bg-[#AD7B1A]/5 rounded">
+                            <span className="text-xs text-muted-foreground">
+                              Waive "{waiveTarget.name}" — reason required:
+                            </span>
+                            <input
+                              value={waiveReason}
+                              onChange={e => setWaiveReason(e.target.value)}
+                              className="text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
+                              placeholder="Why is this criterion being waived?"
+                              autoFocus
+                            />
+                            <div className="flex gap-2">
+                              <Button size="sm" onClick={handleWaive} disabled={!waiveReason.trim()}>
+                                Waive
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => setWaiveTarget(null)}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Warnings */}
+                        {criteriaGate.warnings.length > 0 && (
+                          <div className="text-xs text-[#AD7B1A] flex items-center gap-1.5">
+                            <AlertTriangle className="h-3 w-3" />
+                            {criteriaGate.warnings.length} advisory warning{criteriaGate.warnings.length !== 1 ? 's' : ''} (non-blocking)
+                          </div>
+                        )}
+
+                        {/* Confirm/blocked actions */}
+                        <div className="flex items-center gap-2 pt-1">
+                          {criteriaGate.canTransition ? (
+                            <Button size="sm" onClick={confirmTransitionFromGate} disabled={saving}>
+                              {saving ? 'Transitioning...' : 'Confirm Transition'}
+                            </Button>
+                          ) : (
+                            <Button size="sm" disabled className="opacity-50">
+                              Blocked — criteria not met
+                            </Button>
+                          )}
+                          <Button variant="outline" size="sm" onClick={() => { setCriteriaGate(null); setWaiveTarget(null) }}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Reason prompt */}
-                    {reasonPrompt && (
+                    {reasonPrompt && !criteriaGate && (
                       <div className="flex flex-col gap-2 p-3 border border-border rounded bg-background">
                         <span className="text-xs text-muted-foreground">
                           Reason required for "{reasonPrompt.transition_label || reasonPrompt.to_stage_name}":

@@ -1,7 +1,7 @@
 # Flow OS — Feature Roadmap
 
 > Evaluated against: 100-person IT company replacing Jira + ServiceNow.
-> Last updated: 2026-03-12 (Session 10)
+> Last updated: 2026-03-30 (Session 17)
 > Priority tiers reflect deployment readiness, not build order.
 > See "Architecture-First Sequencing" at bottom for recommended build order.
 
@@ -11,13 +11,13 @@
 
 | # | Feature | Jira/SNOW Equivalent | Flow OS Status | Notes |
 |---|---------|---------------------|----------------|-------|
-| 1 | **Authentication & authorization** | Login, SSO, RBAC | Hardcoded userId=1. access.js engine built but not wired. | Need at minimum email/password + JWT. SAML/OIDC for enterprise. |
+| 1 | **Authentication & authorization** | Login, SSO, RBAC | ~~DONE~~ (Session 17). Server-side sessions, bcrypt, setup wizard, requireAuth. | RBAC/SSO still needed for enterprise. |
 | 2 | **Notifications** | Email, in-app, Slack | Nothing | People need to know when work arrives, is blocked, transitions. Without this the board is a passive display. |
 | 3 | **Search** | JQL, full-text, filters | Title substring only | Need saved filters, field-based search, full-text. This is how people find work outside the board. |
 | 4 | **Attachments / evidence** | File upload on tickets | Schema exists, no implementation | S3/MinIO storage designed but not built. Common need: screenshots, docs, logs. |
 | 5 | **Audit trail UI** | Activity log on each ticket | History endpoint exists, no per-item UI | WorkItemDetail needs a visible history tab showing all state changes. |
 | 6 | **Bulk operations** | Multi-select + transition/assign | Nothing | "Move these 8 items to Done" — daily need for any team. |
-| 7 | **Form-based intake** | ServiceNow catalog forms, Jira create screens | Catalog request returns 501 | Service catalog concept is designed but request flow isn't wired. |
+| 7 | **Form-based intake** | ServiceNow catalog forms, Jira create screens | ~~DONE~~ (Session 17). Public intake forms at /intake/:slug, dynamic field rendering, tracking numbers. | Admin toggle per type in Org Center. |
 
 ---
 
@@ -25,7 +25,7 @@
 
 | # | Feature | Jira/SNOW Equivalent | Notes |
 |---|---------|---------------------|-------|
-| 8 | **Custom fields per type** | Jira custom fields, SNOW variables | Field definitions exist in schema but aren't rendered on forms or cards. |
+| 8 | **Custom fields per type** | Jira custom fields, SNOW variables | ~~DONE~~ (Session 14-17). Full field engine: 10 types, lookup lists, constraints, JSONB storage, rendered on intake forms. |
 | 9 | **SLA tracking & alerts** | ServiceNow SLA engine | `sla_hours` exists on service_classes. Need countdown display, breach alerts, escalation. |
 | 10 | **Email-to-ticket** | Both platforms support this | External intake channel — creates work items from inbound email. |
 | 11 | **Recurring / scheduled work** | SNOW scheduled tasks, Jira automation | Design mentions it. Ops teams need this (weekly deploys, monthly reviews). |
@@ -71,6 +71,31 @@ These are partly built or designed and represent the *reason* someone would leav
 
 ---
 
+## UI/UX Review — Remaining Action Items
+
+Expert review conducted Session 17. Six immediate fixes were implemented (sidebar icons,
+theme tokens, blocked borders, sidebar layout, Lucide SVG type icons, skeleton loading).
+These items remain actionable:
+
+### Architectural UX Changes
+
+| Item | Effort | Description |
+|------|--------|-------------|
+| **Simplify nav groups** | Medium | Current 5-group sidebar (Board, Catalog, Configure, Admin, Dev Tools) → 3 groups: "Work" (Board), "Design" (Orgs, Types, Classes, Workflows, Lists), "Admin" (Users, Roles). Type Classes and Work Item Types are conceptually linked but currently in separate sections. |
+| **Dev Tools behind env flag** | Small | Raw Tables, DB Console, Log Viewer, Simulation confuse non-developer users. Add `FLOWOS_DEV_TOOLS=true` env var. Default hidden in production, visible in development. |
+| **Promote Org Center to full layout** | Large | The 5-pill Org Center (Settings, Catalog, Policies, Members, Workflows) is cramped in a drawer. Consider full page with left tree + right content (like VS Code explorer). Drawer pattern works for quick edits but deep config deserves more space. |
+
+### Workflow & Interaction Improvements
+
+| Item | Effort | Description |
+|------|--------|-------------|
+| **Streamline "New Work Item" flow** | Medium | Currently: button → Service Library drawer → pick type → Create drawer (2 clicks, 2 transitions). For power users: default to most recently used type (localStorage), open create form directly. Keep Service Library for deliberate type selection. |
+| **First-use board experience** | Small | Board auto-scrolls right on load (correct Kanban, confusing for first-timers who think board is empty). Default left-aligned for boards with <8 columns, or show first-use hint. |
+| **Keyboard shortcuts** | Medium | No keyboard navigation yet. Priority: `n` new work item, `/` search, `←`/`→` board scroll, `Esc` close drawers, `?` show shortcut help. |
+| **Empty state improvements** | Small | When board/org/section has no data, show guidance + action buttons instead of just "No items." e.g. "No work items yet — create one or run the simulation." |
+
+---
+
 ## Architecture-First Sequencing
 
 > Priority is not "what users want first" but "what has the deepest architectural
@@ -78,13 +103,13 @@ These are partly built or designed and represent the *reason* someone would leav
 
 ### Phase 1: Foundations (architectural load-bearing)
 1. **Event system** — backbone for notifications, SLA alerts, webhooks, integrations, audit
-2. **Auth & authorization wiring** — touches every endpoint, every query, every UI component
-3. **Custom field rendering pipeline** — field schema → form → validation → storage → display → search
+2. ~~**Auth & authorization wiring**~~ — DONE (Session 17). Sessions, requireAuth, setup wizard.
+3. ~~**Custom field rendering pipeline**~~ — DONE (Sessions 14-17). Field engine + intake form rendering.
 
 ### Phase 2: Core Experience
 4. Search & saved filters
 5. Notifications (built on event system)
-6. Form-based intake (built on custom fields)
+6. ~~Form-based intake (built on custom fields)~~ — DONE (Session 17). Public intake forms.
 7. Attachments / evidence storage
 8. Audit trail UI per work item
 
