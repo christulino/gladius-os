@@ -1,5 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { auth } from '@/lib/api'
+import {
+  LayoutDashboard,
+  Building2,
+  Shapes,
+  FolderTree,
+  GitBranch,
+  List,
+  Users as UsersIcon,
+  Shield,
+  BarChart3,
+  Play,
+  FileText,
+  ArrowRightLeft,
+  Table2,
+  ScrollText,
+  Database,
+} from 'lucide-react'
 
+import Login         from '@/pages/Login'
+import Setup         from '@/pages/Setup'
+import IntakeForm    from '@/pages/IntakeForm'
 import Board         from '@/pages/Board'
 import Summary       from '@/pages/Summary'
 import OrgTypes      from '@/pages/OrgTypes'
@@ -19,26 +40,26 @@ import Reports       from '@/pages/Reports'
 import Simulation   from '@/pages/Simulation'
 
 const NAV = [
-  { id: 'board',         label: 'Board',            section: null },
+  { id: 'board',         label: 'Board',            section: null,       icon: LayoutDashboard },
 
-  { id: 'organizations', label: 'Organizations',    section: 'Catalog' },
-  { id: 'wittypes',      label: 'Work Item Types',  section: null },
+  { id: 'organizations', label: 'Organizations',    section: 'Catalog',   icon: Building2 },
+  { id: 'wittypes',      label: 'Work Item Types',  section: null,       icon: Shapes },
 
-  { id: 'witclasses',    label: 'Type Classes',     section: 'Configure' },
-  { id: 'workflows',     label: 'Workflows',        section: null },
-  { id: 'lookuplists',   label: 'Lists',            section: null },
+  { id: 'witclasses',    label: 'Type Classes',     section: 'Configure', icon: FolderTree },
+  { id: 'workflows',     label: 'Workflows',        section: null,       icon: GitBranch },
+  { id: 'lookuplists',   label: 'Lists',            section: null,       icon: List },
 
-  { id: 'users',         label: 'Users',            section: 'Admin' },
-  { id: 'roles',         label: 'Roles',            section: null },
+  { id: 'users',         label: 'Users',            section: 'Admin',     icon: UsersIcon },
+  { id: 'roles',         label: 'Roles',            section: null,       icon: Shield },
 
-  { id: 'reports',       label: 'Reports',          section: 'Reports' },
+  { id: 'reports',       label: 'Reports',          section: 'Reports',   icon: BarChart3 },
 
-  { id: 'simulation',    label: 'Simulation',       section: 'Dev Tools' },
-  { id: 'workitems',     label: 'Work Items',       section: null },
-  { id: 'history',       label: 'Transitions',      section: null },
-  { id: 'raw',           label: 'Raw Tables',       section: null },
-  { id: 'logs',          label: 'Log Viewer',       section: null },
-  { id: 'db',            label: 'DB Console',       section: null },
+  { id: 'simulation',    label: 'Simulation',       section: 'Dev Tools', icon: Play },
+  { id: 'workitems',     label: 'Work Items',       section: null,       icon: FileText },
+  { id: 'history',       label: 'Transitions',      section: null,       icon: ArrowRightLeft },
+  { id: 'raw',           label: 'Raw Tables',       section: null,       icon: Table2 },
+  { id: 'logs',          label: 'Log Viewer',       section: null,       icon: ScrollText },
+  { id: 'db',            label: 'DB Console',       section: null,       icon: Database },
 ]
 
 const PAGES = {
@@ -62,8 +83,63 @@ const PAGES = {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('board')
+  const [tab, setTab]         = useState('board')
+  const [authState, setAuthState] = useState('loading')  // 'loading' | 'setup' | 'login' | 'authenticated'
+  const [user, setUser]       = useState(null)
 
+  // Check auth status on mount
+  useEffect(() => {
+    auth.status()
+      .then(({ needsSetup, authenticated, user }) => {
+        if (needsSetup)       setAuthState('setup')
+        else if (authenticated && user) { setUser(user); setAuthState('authenticated') }
+        else                  setAuthState('login')
+      })
+      .catch(() => setAuthState('login'))
+  }, [])
+
+  function handleLogin(u) {
+    setUser(u)
+    setAuthState('authenticated')
+  }
+
+  function handleSetup(u) {
+    setUser(u)
+    setAuthState('authenticated')
+  }
+
+  async function handleLogout() {
+    try { await auth.logout() } catch {}
+    setUser(null)
+    setAuthState('login')
+  }
+
+  // ─── Public intake form (no auth, no sidebar) ───
+  const formsMatch = window.location.pathname.match(/^\/intake\/([a-z0-9-]+)\/?$/)
+  if (formsMatch) {
+    return <IntakeForm slug={formsMatch[1]} />
+  }
+
+  // ─── Loading ───
+  if (authState === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-xs text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  // ─── Setup wizard ───
+  if (authState === 'setup') {
+    return <Setup onSetup={handleSetup} />
+  }
+
+  // ─── Login ───
+  if (authState === 'login') {
+    return <Login onLogin={handleLogin} />
+  }
+
+  // ─── Authenticated app ───
   const Page = PAGES[tab] ?? Summary
 
   return (
@@ -77,11 +153,11 @@ export default function App() {
       </main>
 
       {/* Sidebar (right) */}
-      <nav className="w-44 flex-shrink-0 border-l border-border bg-card overflow-y-auto">
+      <nav className="w-44 flex-shrink-0 border-l border-border bg-card flex flex-col">
         <div className="px-3 py-3 border-b border-border">
           <span className="text-sm font-semibold text-foreground">Flow OS</span>
         </div>
-        <div className="py-3">
+        <div className="py-3 flex-1 overflow-y-auto">
           {NAV.map(item => (
             <div key={item.id}>
               {item.section && (
@@ -98,11 +174,23 @@ export default function App() {
                     : 'text-muted-foreground hover:text-foreground hover:bg-black/[0.04]',
                 ].join(' ')}
               >
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${tab === item.id ? 'bg-primary' : 'bg-border'}`} />
+                <item.icon className={`w-3.5 h-3.5 flex-shrink-0 ${tab === item.id ? 'text-primary' : 'text-muted-foreground'}`} />
                 {item.label}
               </button>
             </div>
           ))}
+        </div>
+
+        {/* User footer */}
+        <div className="border-t border-border px-3 py-3 mt-auto">
+          <div className="text-xs text-foreground truncate">{user?.display_name}</div>
+          <div className="text-xs text-muted-foreground truncate">{user?.email}</div>
+          <button
+            onClick={handleLogout}
+            className="mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Sign out
+          </button>
         </div>
       </nav>
     </div>

@@ -18,6 +18,9 @@ import 'dotenv/config'
 import { initLogger }                 from '../admin/logger.js'
 import { healthCheck as pgHealth }    from '../db/postgres.js'
 import { healthCheck as neo4jHealth } from '../db/neo4j.js'
+import { createSessionMiddleware, requireAuth } from '../core/auth.js'
+import authRoutes       from './routes/auth.js'
+import formRoutes       from './routes/forms.js'
 import workItemRoutes   from './routes/workItems.js'
 import orgRoutes        from './routes/organizations.js'
 import catalogRoutes    from './routes/catalog.js'
@@ -43,6 +46,9 @@ mkdir(uploadsDir, { recursive: true }).catch(() => {})
 
 app.use(express.json())
 
+// Session middleware — must come before any route that reads req.session
+app.use(createSessionMiddleware())
+
 // Request logger — always captured to log buffer, printed in debug mode
 app.use((req, _res, next) => {
   const msg = `[api] ${req.method} ${req.path}`
@@ -55,12 +61,17 @@ app.use((req, _res, next) => {
 // ROUTES
 // =============================================================================
 
-app.use('/v1/work-items',    workItemRoutes)
-app.use('/v1/organizations', orgRoutes)
-app.use('/v1/catalog',       catalogRoutes)
-app.use('/v1/board',         boardRoutes)
-app.use('/admin/api/simulation', simulationRoutes)
-app.use('/admin/api',        adminApiRoutes)
+// Public routes — no requireAuth
+app.use('/auth',             authRoutes)
+app.use('/forms',            formRoutes)
+
+// All API routes require authentication
+app.use('/v1/work-items',        requireAuth, workItemRoutes)
+app.use('/v1/organizations',     requireAuth, orgRoutes)
+app.use('/v1/catalog',           requireAuth, catalogRoutes)
+app.use('/v1/board',             requireAuth, boardRoutes)
+app.use('/admin/api/simulation', requireAuth, simulationRoutes)
+app.use('/admin/api',            requireAuth, adminApiRoutes)
 
 // Serve uploaded files (avatars, etc.)
 app.use('/uploads', express.static(join(__dirname, '../public/uploads')))
@@ -70,6 +81,14 @@ app.use('/uploads', express.static(join(__dirname, '../public/uploads')))
 const adminDist = join(__dirname, '../admin-ui/dist')
 app.use('/admin', express.static(adminDist))
 app.get('/admin/*', (_req, res) => {
+  res.sendFile(join(adminDist, 'index.html'), err => {
+    if (err) res.status(503).send('Admin UI not built yet. Run: cd admin-ui && npm run build')
+  })
+})
+
+// Serve React app for public intake forms (browser navigation)
+// The /forms API handles JSON; /intake/:slug serves the SPA shell
+app.get('/intake/:slug', (_req, res) => {
   res.sendFile(join(adminDist, 'index.html'), err => {
     if (err) res.status(503).send('Admin UI not built yet. Run: cd admin-ui && npm run build')
   })

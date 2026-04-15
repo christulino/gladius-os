@@ -7,9 +7,33 @@ async function apiFetch(path, options = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   })
+  // If 401, signal the app to show login
+  if (res.status === 401) {
+    const err = new Error('Authentication required')
+    err.status = 401
+    throw err
+  }
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
   return data
+}
+
+async function authFetch(path, options = {}) {
+  const res = await fetch('/auth' + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
+  return data
+}
+
+export const auth = {
+  status:  () => authFetch('/status'),
+  login:   (email, password) => authFetch('/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  logout:  () => authFetch('/logout', { method: 'POST' }),
+  setup:   (data) => authFetch('/setup', { method: 'POST', body: JSON.stringify(data) }),
+  me:      () => authFetch('/me'),
 }
 
 export const api = {
@@ -68,6 +92,7 @@ export const api = {
   updateWorkItem:    (id, data) => apiFetch(`/work-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   setSubstate:       (id, substate) => apiFetch(`/work-items/${id}/substate`, { method: 'POST', body: JSON.stringify({ substate }) }),
   workItemTransitions: (id) => apiFetch(`/work-items/${id}/transitions`),
+  prepareTransition:   (id, to_stage_id) => apiFetch(`/work-items/${id}/transition/prepare?to_stage_id=${to_stage_id}`),
   transitionWorkItem:  (id, to_stage_id, reason) => apiFetch(`/work-items/${id}/transition`, { method: 'POST', body: JSON.stringify({ to_stage_id, reason }) }),
 
   // Comments
@@ -104,11 +129,17 @@ export const api = {
   // Transitions
   updateTransition:     (id, data) => apiFetch(`/transitions/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
-  // Exit Criteria
+  // Exit Criteria (blueprint CRUD)
   exitCriteria:         (stage_id) => apiFetch(`/exit-criteria?stage_id=${stage_id}`),
   createExitCriteria:   (data) => apiFetch('/exit-criteria', { method: 'POST', body: JSON.stringify(data) }),
   updateExitCriteria:   (id, data) => apiFetch(`/exit-criteria/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteExitCriteria:   (id) => apiFetch(`/exit-criteria/${id}`, { method: 'DELETE' }),
+
+  // Exit Criteria (runtime status)
+  workItemCriteriaStatus: (id) => apiFetch(`/work-items/${id}/exit-criteria-status`),
+  acknowledgeCriterion:   (workItemId, criteriaId) => apiFetch(`/work-items/${workItemId}/exit-criteria/${criteriaId}/acknowledge`, { method: 'POST' }),
+  unacknowledgeCriterion: (workItemId, criteriaId) => apiFetch(`/work-items/${workItemId}/exit-criteria/${criteriaId}/acknowledge`, { method: 'DELETE' }),
+  waiveCriterion:         (workItemId, criteriaId, reason) => apiFetch(`/work-items/${workItemId}/exit-criteria/${criteriaId}/waive`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
   // Transition Role Restrictions
   transitionRoles:      (transition_id) => apiFetch(`/transition-roles?transition_id=${transition_id}`),
@@ -190,4 +221,27 @@ export const api = {
   simulationResume:   () => apiFetch('/simulation/resume', { method: 'POST' }),
   simulationSpeed:    (speed) => apiFetch('/simulation/speed', { method: 'PUT', body: JSON.stringify({ speed }) }),
   simulationStatus:   () => apiFetch('/simulation/status'),
+
+  // Service Catalog
+  catalogItems:       (org_id) => apiFetch(`/catalog-items?org_id=${org_id}`),
+  createCatalogItem:  (data) => apiFetch('/catalog-items', { method: 'POST', body: JSON.stringify(data) }),
+  updateCatalogItem:  (id, data) => apiFetch(`/catalog-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteCatalogItem:  (id) => apiFetch(`/catalog-items/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Public forms API (no auth) ─────────────────────────────────────────────
+
+async function formsFetch(path, options = {}) {
+  const res = await fetch('/forms' + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
+  return data
+}
+
+export const forms = {
+  getForm:  (slug) => formsFetch(`/${slug}`),
+  submit:   (slug, data) => formsFetch(`/${slug}`, { method: 'POST', body: JSON.stringify(data) }),
 }

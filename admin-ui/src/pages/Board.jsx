@@ -313,8 +313,55 @@ export default function Board({ setTab }) {
 
   const hasColumns = flatColumns.length > 0
 
-  // ─── Scroll state for indicators + auto-scroll-right ─────────────────────
+  // ─── Drag-to-pan ──────────────────────────────────────────────────────────
   const scrollRef = useRef(null)
+  const dragState = useRef({ active: false, startX: 0, startY: 0, scrollX: 0, scrollY: 0 })
+
+  const handleDragStart = useCallback((e) => {
+    // Only left mouse button, and only on empty board space (not cards/buttons/inputs)
+    if (e.button !== 0) return
+    const tag = e.target.tagName.toLowerCase()
+    if (tag === 'button' || tag === 'input' || tag === 'select' || tag === 'a') return
+    if (e.target.closest('[data-item-id], button, input, select, a, [role="button"]')) return
+
+    const el = scrollRef.current
+    if (!el) return
+    dragState.current = { active: true, startX: e.clientX, startY: e.clientY, scrollX: el.scrollLeft, scrollY: el.scrollTop }
+    el.style.cursor = 'grabbing'
+    el.style.userSelect = 'none'
+    e.preventDefault()
+  }, [])
+
+  const handleDragMove = useCallback((e) => {
+    if (!dragState.current.active) return
+    const el = scrollRef.current
+    if (!el) return
+    const dx = e.clientX - dragState.current.startX
+    const dy = e.clientY - dragState.current.startY
+    el.scrollLeft = dragState.current.scrollX - dx
+    el.scrollTop = dragState.current.scrollY - dy
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    if (!dragState.current.active) return
+    dragState.current.active = false
+    const el = scrollRef.current
+    if (el) {
+      el.style.cursor = ''
+      el.style.userSelect = ''
+    }
+  }, [])
+
+  useEffect(() => {
+    document.addEventListener('mousemove', handleDragMove)
+    document.addEventListener('mouseup', handleDragEnd)
+    return () => {
+      document.removeEventListener('mousemove', handleDragMove)
+      document.removeEventListener('mouseup', handleDragEnd)
+    }
+  }, [handleDragMove, handleDragEnd])
+
+  // ─── Scroll indicators + auto-scroll-right ──────────────────────────────
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(false)
 
@@ -416,10 +463,31 @@ export default function Board({ setTab }) {
 
       {/* Board area */}
       <div className="flex-1 min-h-0 relative">
-      <div className="absolute inset-0 overflow-auto" ref={scrollRef} style={{ backgroundColor: '#FAFAFA' }}>
+      <div className="absolute inset-0 overflow-auto bg-background" ref={scrollRef} onMouseDown={handleDragStart} style={{ cursor: 'grab' }}>
         {boardLoading && (
-          <div className="flex items-center justify-center h-full">
-            <span className="text-xs text-muted-foreground">Loading...</span>
+          <div className="p-4">
+            {/* Skeleton column headers */}
+            <div className="flex gap-px mb-3">
+              {[1,2,3,4,5].map(i => (
+                <div key={i} className="flex-shrink-0" style={{ width: 220 }}>
+                  <div className="h-5 bg-muted/40 rounded animate-pulse mb-2" />
+                  <div className="h-8 bg-card border border-border rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+            {/* Skeleton card rows */}
+            {[1,2,3].map(row => (
+              <div key={row} className="flex gap-px mb-2">
+                <div className="flex-shrink-0 w-16" />
+                {[1,2,3,4,5].map(col => (
+                  <div key={col} className="flex-shrink-0 p-1" style={{ width: 220 }}>
+                    {Array.from({ length: Math.max(1, 3 - row) }).map((_, ci) => (
+                      <div key={ci} className="h-12 bg-card border border-border/40 rounded-sm animate-pulse mb-1.5" />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
         {boardError && (
@@ -441,7 +509,7 @@ export default function Board({ setTab }) {
         {!boardLoading && !boardError && hasColumns && (
           <div className="min-w-max">
             {/* ─── Column Headers (sticky) ─── */}
-            <div className="sticky top-0 z-10 px-4 pt-3" style={{ backgroundColor: '#FAFAFA' }}>
+            <div className="sticky top-0 z-10 px-4 pt-3 bg-background">
               {/* Row 1: L1 stage_class headers — semantic colors */}
               <div className="flex flex-row">
                 <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
@@ -476,9 +544,9 @@ export default function Board({ setTab }) {
 
                   return (
                     <div key={col.key} className="flex-shrink-0" style={{ width: colWidth, borderLeft: colIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
-                      <div className={`flex items-center gap-2 px-3 py-2 ${
-                        wipOver ? 'bg-destructive/10 border-b-2 border-destructive' : 'border-b-2'
-                      }`} style={wipOver ? undefined : { backgroundColor: '#FFFFFF', borderBottomColor: '#9CA3AF' }}>
+                      <div className={`flex items-center gap-2 px-3 py-2 border-b-2 ${
+                        wipOver ? 'bg-destructive/10 border-destructive' : 'bg-card border-border'
+                      }`}>
                         <span className="text-sm font-semibold text-foreground truncate flex-1">
                           {col.name}
                         </span>
@@ -491,7 +559,7 @@ export default function Board({ setTab }) {
                       </div>
                       {/* L3: waiting queue sub-header */}
                       {col.has_waiting_queue && (
-                        <div className="flex flex-row" style={{ backgroundColor: '#FFFFFF' }}>
+                        <div className="flex flex-row bg-card">
                           <div className="text-xs text-muted-foreground/60 px-2 py-0.5" style={{ width: COL_WIDTH }}>
                             Ready for...
                           </div>

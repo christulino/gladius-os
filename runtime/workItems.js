@@ -237,12 +237,14 @@ export async function createWorkItem(params, userId) {
 
     workItem = insertResult.rows[0]
 
-    // Record creator as 'requested_by' relationship
-    await client.query(`
-      INSERT INTO runtime.work_item_user_relationships
-        (work_item_id, user_id, relationship_type, assigned_at, is_active)
-      VALUES ($1, $2, 'requested_by', $3, true)
-    `, [workItem.id, userId, now])
+    // Record creator as 'requested_by' relationship (skip for anonymous submissions)
+    if (userId) {
+      await client.query(`
+        INSERT INTO runtime.work_item_user_relationships
+          (work_item_id, user_id, relationship_type, assigned_at, is_active)
+        VALUES ($1, $2, 'requested_by', $3, true)
+      `, [workItem.id, userId, now])
+    }
 
     // Queue Neo4j sync — async, non-blocking
     await client.query(`

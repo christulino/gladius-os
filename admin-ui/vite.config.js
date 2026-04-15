@@ -16,7 +16,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/admin/api': 'http://localhost:3000',
+      '/auth':      'http://localhost:3000',
       '/v1':        'http://localhost:3000',
+      '/forms':     'http://localhost:3000',
+      '/intake':    'http://localhost:3000',
     },
   },
   // Build output goes into ../admin-ui/dist

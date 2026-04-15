@@ -51,7 +51,7 @@ export class AgentBase {
     // Resolve userId on first tick
     if (this.userId === null) {
       const user = world.userByEmail(this.userEmail)
-      this.userId = user?.id || 1
+      this.userId = user?.id ?? 1
     }
 
     // Cooldown

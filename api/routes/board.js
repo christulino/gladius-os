@@ -23,9 +23,7 @@ const router = Router()
  */
 router.get('/:orgUri(*)', async (req, res, next) => {
   try {
-    // TODO: extract userId from auth middleware
-    // Hardcoded to 1 for scaffolding — replace with req.user.id
-    const userId = req.user?.id || 1
+    const userId = req.userId
 
     const orgUri = decodeURIComponent(req.params.orgUri)
 
