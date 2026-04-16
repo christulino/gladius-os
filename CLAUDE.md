@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-03-30 (Session 18 — Exit criteria evaluation engine)
+> Last updated: 2026-04-15 (Session 19 — Housekeeping commit, git push pending)
 
 ---
 
