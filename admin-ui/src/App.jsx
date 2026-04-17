@@ -16,6 +16,7 @@ import {
   Table2,
   ScrollText,
   Database,
+  Activity,
 } from 'lucide-react'
 
 import Login         from '@/pages/Login'
@@ -38,6 +39,7 @@ import LogViewer     from '@/pages/LogViewer'
 import DbConsole     from '@/pages/DbConsole'
 import Reports       from '@/pages/Reports'
 import Simulation   from '@/pages/Simulation'
+import EventSubscribers from '@/pages/EventSubscribers'
 
 const NAV = [
   { id: 'board',         label: 'Board',            section: null,       icon: LayoutDashboard },
@@ -60,6 +62,7 @@ const NAV = [
   { id: 'raw',           label: 'Raw Tables',       section: null,       icon: Table2 },
   { id: 'logs',          label: 'Log Viewer',       section: null,       icon: ScrollText },
   { id: 'db',            label: 'DB Console',       section: null,       icon: Database },
+  { id: 'events',        label: 'Events',           section: null,       icon: Activity },
 ]
 
 const PAGES = {
@@ -80,6 +83,7 @@ const PAGES = {
   db:            DbConsole,
   reports:       Reports,
   simulation:    Simulation,
+  events:        EventSubscribers,
 }
 
 export default function App() {
