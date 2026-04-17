@@ -14,6 +14,7 @@
  */
 
 import { pool, query, getClient } from '../db/postgres.js'
+import { neo4jSyncHandler, handlesEventType as neo4jHandles } from './subscribers/neo4jSync.js'
 
 const LOCK_KEY        = 0x0F105053   // 'FlOS' — unique FlowOS processor key
 const SAFETY_POLL_MS  = 30_000
@@ -288,3 +289,13 @@ export default {
   nudge,
   clearSubscribersForTests,
 }
+
+// =============================================================================
+// BUILT-IN SUBSCRIBERS — registered on first import
+// =============================================================================
+
+registerSubscriber({
+  name:    'neo4j-sync',
+  handles: neo4jHandles,
+  handler: neo4jSyncHandler,
+})

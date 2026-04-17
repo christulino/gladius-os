@@ -9,6 +9,7 @@ import {
   clearSubscribersForTests,
   drainNow,
 } from '../runtime/eventProcessor.js'
+import { neo4jSyncHandler } from '../runtime/subscribers/neo4jSync.js'
 
 describe('core/events.js — emitEvent', () => {
   before(async () => {
@@ -213,5 +214,37 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
     )
     assert.ok(Number(rows[0].last_processed_event_id) > 0,
       'cursor should advance past skipped events')
+  })
+})
+
+describe('subscribers/neo4jSync — event-type mapping', () => {
+  it('routes work_item.created to syncToGraph work_item create', async () => {
+    // We just assert the handler does not throw when called with a synthetic event.
+    // Full Neo4j end-to-end sync is tested in Task 14.
+    await neo4jSyncHandler({
+      id: 9999,
+      event_type: 'work_item.created',
+      entity_id: 1,
+      entity_uri: 'flowos://test/work-items/abc',
+      actor_id: null,
+      occurred_at: new Date(),
+      payload: {
+        title: 'Test', work_item_type_uri: null, owner_org_uri: 'flowos://test/orgs/x',
+        owner_org_slug: 'x', current_stage_uri: null, current_stage_name: null,
+        current_stage_class: null, current_substate: 'active', spawn_state: 'active',
+        service_class: 'standard', sla_status: 'no_sla', due_date: null,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      },
+    })
+  })
+
+  it('is a no-op for unmapped event types', async () => {
+    await neo4jSyncHandler({
+      id: 9998,
+      event_type: 'unknown.event_type',
+      entity_id: 1,
+      payload: {},
+    })
+    // should not throw
   })
 })
