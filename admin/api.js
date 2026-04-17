@@ -2391,7 +2391,8 @@ router.delete('/work-items/:id/exit-criteria/:criteriaId/acknowledge', async (re
   try {
     const result = await unacknowledgeCriterion(
       parseInt(req.params.id),
-      parseInt(req.params.criteriaId)
+      parseInt(req.params.criteriaId),
+      req.userId
     )
     if (!result) return res.status(404).json({ error: 'Status record not found' })
     res.json(result)

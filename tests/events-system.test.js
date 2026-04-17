@@ -457,3 +457,58 @@ describe('Emission on people / link / comment / substate endpoints', () => {
     assert.ok(rows[0].n >= 1)
   })
 })
+
+describe('Emission on exit-criteria endpoints', () => {
+  it('emits exit_criteria.acknowledged / unacknowledged / waived when invoked', async () => {
+    // Find any work item with at least one manual exit criterion
+    const { rows: stageItems } = await query(`
+      SELECT wi.id AS work_item_id, ec.id AS ec_id
+      FROM runtime.work_items wi
+      JOIN blueprint.exit_criteria ec ON ec.stage_id = wi.current_stage_id
+      WHERE ec.criteria_tier = 'manual' AND ec.is_active = true
+      LIMIT 1
+    `)
+    if (!stageItems.length) {
+      console.log('[skip] no manual exit criteria found in seed; skipping')
+      return
+    }
+    const { work_item_id, ec_id } = stageItems[0]
+
+    await query(`DELETE FROM runtime.events
+                 WHERE event_type IN ('exit_criteria.acknowledged',
+                                      'exit_criteria.unacknowledged',
+                                      'exit_criteria.waived')
+                 AND entity_id = $1`, [work_item_id])
+
+    // Acknowledge
+    let res = await api(`/work-items/${work_item_id}/exit-criteria/${ec_id}/acknowledge`, { method: 'POST' })
+    assert.equal(res.status, 200)
+    await new Promise(r => setTimeout(r, 200))
+
+    // Unacknowledge
+    res = await api(`/work-items/${work_item_id}/exit-criteria/${ec_id}/acknowledge`, { method: 'DELETE' })
+    assert.equal(res.status, 200)
+    await new Promise(r => setTimeout(r, 200))
+
+    // Waive
+    res = await api(`/work-items/${work_item_id}/exit-criteria/${ec_id}/waive`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: 'Test waive' }),
+    })
+    assert.equal(res.status, 200)
+    await new Promise(r => setTimeout(r, 200))
+
+    const { rows } = await query(`
+      SELECT event_type FROM runtime.events
+      WHERE entity_id = $1
+        AND event_type LIKE 'exit_criteria.%'
+      ORDER BY id DESC LIMIT 3
+    `, [work_item_id])
+    const types = rows.map(r => r.event_type).sort()
+    assert.deepEqual(types, [
+      'exit_criteria.acknowledged',
+      'exit_criteria.unacknowledged',
+      'exit_criteria.waived',
+    ].sort())
+  })
+})

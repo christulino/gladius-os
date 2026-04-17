@@ -19,7 +19,8 @@
  *   }
  */
 
-import { query }  from '../db/postgres.js'
+import { query, getClient } from '../db/postgres.js'
+import { emitEvent, nudgeAfterCommit } from '../core/events.js'
 
 /**
  * Evaluate all exit criteria for a stage against a work item's current state.
@@ -310,7 +311,6 @@ export async function populateExitCriteriaStatus(client, workItemId, stageId) {
  * @returns {Promise<Object>} Updated status row
  */
 export async function acknowledgeCriterion(workItemId, exitCriteriaId, userId) {
-  // Verify criterion exists and is manual
   const criterionResult = await query(
     'SELECT id, criteria_tier, name FROM blueprint.exit_criteria WHERE id = $1 AND is_active = true',
     [exitCriteriaId]
@@ -322,22 +322,41 @@ export async function acknowledgeCriterion(workItemId, exitCriteriaId, userId) {
     throw new Error('Only manual criteria can be acknowledged')
   }
 
-  const result = await query(`
-    INSERT INTO runtime.exit_criteria_status
-      (work_item_id, exit_criteria_id, stage_id, status, acknowledged_by_user_id, acknowledged_at)
-    VALUES ($1, $2,
-      (SELECT current_stage_id FROM runtime.work_items WHERE id = $1),
-      'met', $3, NOW())
-    ON CONFLICT (work_item_id, exit_criteria_id)
-    DO UPDATE SET
-      status = 'met',
-      acknowledged_by_user_id = $3,
-      acknowledged_at = NOW(),
-      updated_at = NOW()
-    RETURNING *
-  `, [workItemId, exitCriteriaId, userId])
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query(`
+      INSERT INTO runtime.exit_criteria_status
+        (work_item_id, exit_criteria_id, stage_id, status, acknowledged_by_user_id, acknowledged_at)
+      VALUES ($1, $2,
+        (SELECT current_stage_id FROM runtime.work_items WHERE id = $1),
+        'met', $3, NOW())
+      ON CONFLICT (work_item_id, exit_criteria_id)
+      DO UPDATE SET
+        status = 'met',
+        acknowledged_by_user_id = $3,
+        acknowledged_at = NOW(),
+        updated_at = NOW()
+      RETURNING *
+    `, [workItemId, exitCriteriaId, userId])
 
-  return result.rows[0]
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    await emitEvent(client, {
+      eventType: 'exit_criteria.acknowledged',
+      entityId:  workItemId,
+      entityUri: wi[0]?.uri ?? null,
+      actorId:   userId,
+      payload:   { exit_criteria_id: exitCriteriaId, criterion_name: criterionResult.rows[0].name, stage_id: rows[0].stage_id },
+    })
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    return rows[0]
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 /**
@@ -347,18 +366,42 @@ export async function acknowledgeCriterion(workItemId, exitCriteriaId, userId) {
  * @param {number} exitCriteriaId
  * @returns {Promise<Object>} Updated status row
  */
-export async function unacknowledgeCriterion(workItemId, exitCriteriaId) {
-  const result = await query(`
-    UPDATE runtime.exit_criteria_status
-    SET status = 'pending',
-        acknowledged_by_user_id = NULL,
-        acknowledged_at = NULL,
-        updated_at = NOW()
-    WHERE work_item_id = $1 AND exit_criteria_id = $2
-    RETURNING *
-  `, [workItemId, exitCriteriaId])
+export async function unacknowledgeCriterion(workItemId, exitCriteriaId, userId) {
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query(`
+      UPDATE runtime.exit_criteria_status
+      SET status = 'pending',
+          acknowledged_by_user_id = NULL,
+          acknowledged_at = NULL,
+          updated_at = NOW()
+      WHERE work_item_id = $1 AND exit_criteria_id = $2
+      RETURNING *
+    `, [workItemId, exitCriteriaId])
 
-  return result.rows[0]
+    if (!rows.length) {
+      await client.query('ROLLBACK')
+      return null
+    }
+
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    await emitEvent(client, {
+      eventType: 'exit_criteria.unacknowledged',
+      entityId:  workItemId,
+      entityUri: wi[0]?.uri ?? null,
+      actorId:   userId ?? null,
+      payload:   { exit_criteria_id: exitCriteriaId, stage_id: rows[0].stage_id },
+    })
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    return rows[0]
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 /**
@@ -375,23 +418,42 @@ export async function waiveCriterion(workItemId, exitCriteriaId, userId, reason)
     throw new Error('A reason is required to waive an exit criterion')
   }
 
-  const result = await query(`
-    INSERT INTO runtime.exit_criteria_status
-      (work_item_id, exit_criteria_id, stage_id, status, waived_by_user_id, waived_at, waiver_reason)
-    VALUES ($1, $2,
-      (SELECT current_stage_id FROM runtime.work_items WHERE id = $1),
-      'waived', $3, NOW(), $4)
-    ON CONFLICT (work_item_id, exit_criteria_id)
-    DO UPDATE SET
-      status = 'waived',
-      waived_by_user_id = $3,
-      waived_at = NOW(),
-      waiver_reason = $4,
-      updated_at = NOW()
-    RETURNING *
-  `, [workItemId, exitCriteriaId, userId, reason.trim()])
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query(`
+      INSERT INTO runtime.exit_criteria_status
+        (work_item_id, exit_criteria_id, stage_id, status, waived_by_user_id, waived_at, waiver_reason)
+      VALUES ($1, $2,
+        (SELECT current_stage_id FROM runtime.work_items WHERE id = $1),
+        'waived', $3, NOW(), $4)
+      ON CONFLICT (work_item_id, exit_criteria_id)
+      DO UPDATE SET
+        status = 'waived',
+        waived_by_user_id = $3,
+        waived_at = NOW(),
+        waiver_reason = $4,
+        updated_at = NOW()
+      RETURNING *
+    `, [workItemId, exitCriteriaId, userId, reason.trim()])
 
-  return result.rows[0]
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    await emitEvent(client, {
+      eventType: 'exit_criteria.waived',
+      entityId:  workItemId,
+      entityUri: wi[0]?.uri ?? null,
+      actorId:   userId,
+      payload:   { exit_criteria_id: exitCriteriaId, stage_id: rows[0].stage_id, waiver_reason: reason.trim() },
+    })
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    return rows[0]
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 /**
