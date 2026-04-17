@@ -512,3 +512,41 @@ describe('Emission on exit-criteria endpoints', () => {
     ].sort())
   })
 })
+
+describe('Admin API — event subscribers endpoints', () => {
+  it('GET /event-subscribers returns registered subscribers with cursors', async () => {
+    const { status, data } = await api('/event-subscribers')
+    assert.equal(status, 200)
+    assert.ok(Array.isArray(data.rows))
+    const names = data.rows.map(r => r.name)
+    assert.ok(names.includes('neo4j-sync'))
+    assert.ok(names.includes('audit-log'))
+  })
+
+  it('POST /event-subscribers/:name/pause toggles pause', async () => {
+    const pauseRes = await api('/event-subscribers/audit-log/pause', {
+      method: 'POST',
+      body: JSON.stringify({ is_paused: true }),
+    })
+    assert.equal(pauseRes.status, 200)
+
+    const { data } = await api('/event-subscribers')
+    const sub = data.rows.find(r => r.name === 'audit-log')
+    assert.equal(sub.is_paused, true)
+
+    // Un-pause for subsequent tests
+    await api('/event-subscribers/audit-log/pause', {
+      method: 'POST',
+      body: JSON.stringify({ is_paused: false }),
+    })
+  })
+
+  it('GET /events returns recent events ordered newest-first', async () => {
+    const { status, data } = await api('/events?limit=10')
+    assert.equal(status, 200)
+    assert.ok(Array.isArray(data.rows))
+    if (data.rows.length >= 2) {
+      assert.ok(data.rows[0].id >= data.rows[1].id, 'should be newest-first')
+    }
+  })
+})

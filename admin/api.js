@@ -3702,4 +3702,72 @@ router.delete('/catalog-items/:id', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// =============================================================================
+// EVENT SUBSCRIBERS (admin / ops view)
+// =============================================================================
+
+router.get('/event-subscribers', async (req, res, next) => {
+  try {
+    const { rows } = await query(`
+      SELECT name, last_processed_event_id, is_paused, last_error, last_error_at,
+             failure_count, last_success_at, events_processed_total, updated_at
+      FROM runtime.event_subscribers
+      ORDER BY name ASC
+    `)
+    res.json({ rows, count: rows.length })
+  } catch (err) { next(err) }
+})
+
+router.post('/event-subscribers/:name/pause', async (req, res, next) => {
+  try {
+    const { is_paused } = req.body
+    if (typeof is_paused !== 'boolean') {
+      return res.status(400).json({ error: 'is_paused (boolean) is required' })
+    }
+    const { rows } = await query(`
+      UPDATE runtime.event_subscribers
+      SET is_paused = $1, updated_at = NOW()
+      WHERE name = $2
+      RETURNING *
+    `, [is_paused, req.params.name])
+    if (!rows.length) return res.status(404).json({ error: 'Subscriber not found' })
+    res.json(rows[0])
+  } catch (err) { next(err) }
+})
+
+// Manually bump cursor past a bad event (ops recovery)
+router.post('/event-subscribers/:name/skip-past/:eventId', async (req, res, next) => {
+  try {
+    const eventId = parseInt(req.params.eventId)
+    const { rows } = await query(`
+      UPDATE runtime.event_subscribers
+      SET last_processed_event_id = GREATEST(last_processed_event_id, $1),
+          failure_count = 0,
+          last_error = NULL,
+          last_error_at = NULL,
+          updated_at = NOW()
+      WHERE name = $2
+      RETURNING *
+    `, [eventId, req.params.name])
+    if (!rows.length) return res.status(404).json({ error: 'Subscriber not found' })
+    res.json(rows[0])
+  } catch (err) { next(err) }
+})
+
+// Event firehose (latest N events)
+router.get('/events', async (req, res, next) => {
+  try {
+    const limit    = Math.min(parseInt(req.query.limit) || 100, 500)
+    const typeLike = req.query.type_prefix ? `${req.query.type_prefix}%` : null
+    const { rows } = await query(`
+      SELECT id, event_type, entity_id, entity_uri, actor_id, occurred_at, payload
+      FROM runtime.events
+      ${typeLike ? 'WHERE event_type LIKE $2' : ''}
+      ORDER BY id DESC
+      LIMIT $1
+    `, typeLike ? [limit, typeLike] : [limit])
+    res.json({ rows, count: rows.length })
+  } catch (err) { next(err) }
+})
+
 export default router
