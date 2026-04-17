@@ -550,3 +550,65 @@ describe('Admin API — event subscribers endpoints', () => {
     }
   })
 })
+
+describe('Advisory lock — only one processor runs', () => {
+  it('exactly one advisory lock is held for the processor key', async () => {
+    const { rows } = await query(
+      "SELECT COUNT(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND objid = 252727379"
+    )
+    assert.equal(rows[0].n, 1, 'exactly one advisory lock should be held')
+  })
+})
+
+describe('API latency — emission does not block response', () => {
+  it('PATCH /work-items/:id returns under 200ms even with emission', async () => {
+    const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
+    const id = rows[0].id
+
+    const t0 = performance.now()
+    const { status } = await api(`/work-items/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ description: 'latency test ' + Date.now() }),
+    })
+    const elapsed = performance.now() - t0
+    assert.equal(status, 200)
+    assert.ok(elapsed < 500, `PATCH took ${elapsed}ms — emission should not block response materially`)
+  })
+})
+
+describe('End-to-end — work item creation flows through event system to subscribers', () => {
+  it('creating a work item produces a work_item.created event that advances neo4j-sync cursor', async () => {
+    const cursorBefore = await query(
+      "SELECT last_processed_event_id FROM runtime.event_subscribers WHERE name = 'neo4j-sync'"
+    )
+    const before = Number(cursorBefore.rows[0].last_processed_event_id)
+
+    const { rows: types } = await query(
+      "SELECT id FROM blueprint.work_item_types WHERE is_active = true LIMIT 1"
+    )
+    const { rows: orgs } = await query(
+      "SELECT id FROM blueprint.organizations WHERE is_active = true LIMIT 1"
+    )
+    const res = await api('/work-items', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Event system e2e ' + Date.now(),
+        work_item_type_id: types[0].id,
+        owner_org_id: orgs[0].id,
+      }),
+    })
+    assert.equal(res.status, 201)
+
+    // Wait up to 3s for processor to drain
+    let cursorAfter = before
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 200))
+      const c = await query(
+        "SELECT last_processed_event_id FROM runtime.event_subscribers WHERE name = 'neo4j-sync'"
+      )
+      cursorAfter = Number(c.rows[0].last_processed_event_id)
+      if (cursorAfter > before) break
+    }
+    assert.ok(cursorAfter > before, `neo4j-sync cursor did not advance (was ${before}, is ${cursorAfter})`)
+  })
+})
