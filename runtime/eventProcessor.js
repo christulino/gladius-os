@@ -26,6 +26,7 @@ let safetyPollTimer = null
 let failoverTimer   = null
 let drainPending    = false
 let draining        = false
+let rearmRequested  = false
 
 const SUBSCRIBERS = []   // { name, handles, handler, isPaused (loaded) }
 
@@ -83,8 +84,10 @@ export async function stopProcessor() {
   if (safetyPollTimer) { clearInterval(safetyPollTimer); safetyPollTimer = null }
   if (failoverTimer)   { clearInterval(failoverTimer);   failoverTimer   = null }
   if (lockConn) {
-    try { await lockConn.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]) } catch {}
-    try { lockConn.release() } catch {}
+    try { await lockConn.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]) }
+    catch (err) { console.warn('[events] pg_advisory_unlock failed (continuing):', err.message) }
+    try { lockConn.release() }
+    catch (err) { console.warn('[events] lock connection release failed (continuing):', err.message) }
     lockConn = null
   }
   isPrimary = false
@@ -134,12 +137,15 @@ async function upsertSubscriberRows() {
 }
 
 async function loadSubscriberState() {
+  if (!SUBSCRIBERS.length) return
+  const names = SUBSCRIBERS.map(s => s.name)
+  const { rows } = await query(
+    'SELECT name, is_paused FROM runtime.event_subscribers WHERE name = ANY($1)',
+    [names]
+  )
+  const byName = new Map(rows.map(r => [r.name, r.is_paused]))
   for (const sub of SUBSCRIBERS) {
-    const { rows } = await query(
-      'SELECT is_paused FROM runtime.event_subscribers WHERE name = $1',
-      [sub.name]
-    )
-    sub.isPaused = rows[0]?.is_paused ?? false
+    sub.isPaused = byName.get(sub.name) ?? false
   }
 }
 
@@ -157,18 +163,23 @@ export function nudge() {
   })
 }
 
-/** Test-only synchronous drain. */
+/**
+ * Test-only synchronous drain. Requires the processor to already be primary —
+ * call startProcessor({ forceTakeLock: true }) first in tests.
+ */
 export async function drainNow() {
   if (!isPrimary) {
-    // For tests running without a held lock — take it.
-    await startProcessor({ forceTakeLock: false })
-    if (!isPrimary) throw new Error('Could not acquire processor lock for drainNow')
+    throw new Error('drainNow requires processor to be primary — call startProcessor first')
   }
   await drainAll()
 }
 
 async function drainAll() {
-  if (!isPrimary || draining) return
+  if (!isPrimary) return
+  if (draining) {
+    rearmRequested = true
+    return
+  }
   draining = true
   try {
     // Ensure a row exists for each registered subscriber — covers subscribers
@@ -183,6 +194,10 @@ async function drainAll() {
     }
   } finally {
     draining = false
+    if (rearmRequested) {
+      rearmRequested = false
+      setImmediate(() => drainAll())
+    }
   }
 }
 
@@ -212,7 +227,7 @@ async function drainOne(sub) {
 
       if (!handles) {
         cursor = Number(event.id)
-        await advanceCursor(sub.name, cursor)
+        await advanceCursorSkipped(sub.name, cursor)
         continue
       }
 
@@ -221,6 +236,7 @@ async function drainOne(sub) {
         cursor = Number(event.id)
         await advanceCursor(sub.name, cursor)
       } catch (err) {
+        console.warn(`[events] subscriber "${sub.name}" failed on event ${event.id}: ${err.message}`)
         await recordFailure(sub.name, event.id, err)
         return   // cursor not advanced; next tick retries this event
       }
@@ -237,6 +253,17 @@ async function advanceCursor(name, cursor) {
         last_error_at = NULL,
         last_success_at = NOW(),
         events_processed_total = events_processed_total + 1,
+        updated_at = NOW()
+    WHERE name = $1
+  `, [name, cursor])
+}
+
+/** Advance cursor for an event the subscriber does not handle.
+ *  Does NOT bump events_processed_total (that counts events the subscriber actually handled). */
+async function advanceCursorSkipped(name, cursor) {
+  await query(`
+    UPDATE runtime.event_subscribers
+    SET last_processed_event_id = $2,
         updated_at = NOW()
     WHERE name = $1
   `, [name, cursor])
