@@ -856,7 +856,7 @@ Expected startup output:
 PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "SELECT locktype, objid, mode, granted FROM pg_locks WHERE locktype = 'advisory';"
 ```
 
-Expected: one row with `objid = 252779603` (decimal of 0x0F105053), `mode = ExclusiveLock`, `granted = t`.
+Expected: one row with `objid = 252727379` (decimal of 0x0F105053), `mode = ExclusiveLock`, `granted = t`.
 
 - [ ] **Step 4.4: Commit**
 
