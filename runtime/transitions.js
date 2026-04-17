@@ -29,7 +29,7 @@
  */
 
 import { query, getClient }        from '../db/postgres.js'
-import { syncToGraph }             from '../graph/sync.js'
+import { emitEvent, nudgeAfterCommit } from '../core/events.js'
 import { evaluateExitCriteria, populateExitCriteriaStatus } from './exitCriteria.js'
 import { resolveOrgCalendar, calculateWorkingTime } from '../core/calendar.js'
 
@@ -257,6 +257,25 @@ export async function executeTransition(workItemId, toStageId, userId, options =
       spawnedWorkItems.push(spawned)
     }
 
+    // 5. Emit the transition event (in-tx — rolls back with the transition)
+    await emitEvent(client, {
+      eventType: 'work_item.transitioned',
+      entityId:  workItemId,
+      entityUri: workItem.uri,
+      actorId:   userId,
+      payload: {
+        from_stage_id:          workItem.current_stage_id,
+        to_stage_id:            toStageId,
+        to_stage_uri:           toStage.uri,
+        to_stage_name:          toStage.name,
+        to_stage_class:         toStage.stage_class,
+        transition_history_id:  transitionHistoryId,
+        working_time_seconds:   workingTime,
+        reason:                 reason ?? null,
+        initial_substate:       newSubstate,
+      },
+    })
+
     await client.query('COMMIT')
 
   } catch (err) {
@@ -274,23 +293,12 @@ export async function executeTransition(workItemId, toStageId, userId, options =
   // POST-TRANSACTION — fire and forget, never rolls back the transition
   // =========================================================================
 
-  // Sync to Neo4j — synchronous
-  try {
-    await syncToGraph('stage_transition', workItem.uri, 'update', {
-      to_stage_uri:   toStage.uri,
-      to_stage_name:  toStage.name,
-      to_stage_class: toStage.stage_class,
-      sla_status:     'on_track',
-    })
-    // Also sync each spawned work item to Neo4j
-    for (const spawned of spawnedWorkItems) {
-      await syncToGraph('work_item', spawned.uri, 'create', spawned)
-    }
-  } catch (err) {
-    console.error('[transitions] Neo4j sync failed (non-fatal):', err.message)
-  }
+  // Nudge the event processor so subscribers (neo4j-sync, audit-log) drain now
+  nudgeAfterCommit()
 
-  // Fire api_call actions — truly fire and forget
+  // Fire api_call actions — truly fire and forget.
+  // Each action logs its own runtime.transition_action_log row AND emits
+  // transition_action.api_call_fired after the call completes.
   for (const action of apiCallActions) {
     fireApiCallAction(action, workItem, transitionHistoryId)
       .catch(err => console.error(`[transitions] api_call action ${action.id} failed:`, err.message))
@@ -420,6 +428,46 @@ async function executeSpawnAction(client, action, workItem, historyId, now) {
     ) VALUES ($1, 'spawn', $2, true, $3)
   `, [historyId, now, spawned.id])
 
+  // Emit spawn fired event (so neo4j-sync creates the child node)
+  await emitEvent(client, {
+    eventType: 'transition_action.spawn_fired',
+    entityId:  workItem.id,
+    entityUri: workItem.uri,
+    actorId:   null,     // spawns are system-initiated within a transition
+    payload: {
+      transition_action_id: action.id,
+      stage_transition_history_id: historyId,
+      spawned_work_item_id: spawned.id,
+      spawned_uri:          spawned.uri,
+      spawned_type_id:      action.spawn_work_item_type_id,
+      spawned:              spawned,
+    },
+  })
+
+  // Emit work_item.created for the spawned item so neo4j-sync picks it up
+  await emitEvent(client, {
+    eventType: 'work_item.created',
+    entityId:  spawned.id,
+    entityUri: spawned.uri,
+    actorId:   null,
+    payload: {
+      title:               spawned.title,
+      work_item_type_uri:  null,
+      owner_org_uri:       spawned.owner_org_uri,
+      owner_org_slug:      spawned.owner_org_slug,
+      current_stage_uri:   spawned.current_stage_uri,
+      current_stage_name:  spawned.current_stage_name,
+      current_stage_class: spawned.current_stage_class,
+      current_substate:    'active',
+      spawn_state:         spawned.spawn_state,
+      service_class:       'standard',
+      sla_status:          'no_sla',
+      due_date:            null,
+      created_at:          spawned.created_at,
+      updated_at:          spawned.updated_at,
+    },
+  })
+
   return spawned
 }
 
@@ -470,6 +518,35 @@ async function fireApiCallAction(action, workItem, historyId) {
     responseBody ? JSON.stringify(responseBody) : null,
     failed, failureReason,
   ]).catch(err => console.error('[transitions] Failed to log api_call result:', err.message))
+
+  // Emit event — post-transaction, so use a short-lived tx of its own.
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    await emitEvent(client, {
+      eventType: 'transition_action.api_call_fired',
+      entityId:  workItem.id,
+      entityUri: workItem.uri,
+      actorId:   null,
+      payload: {
+        transition_action_id:        action.id,
+        stage_transition_history_id: historyId,
+        endpoint:                    action.api_endpoint,
+        method:                      action.api_method || 'POST',
+        response_code:               responseCode,
+        failed,
+        failure_reason:              failureReason,
+        started_at:                  startedAt.toISOString(),
+      },
+    })
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    console.error('[transitions] Failed to emit api_call_fired event:', err.message)
+  } finally {
+    client.release()
+  }
 }
 
 // =============================================================================
