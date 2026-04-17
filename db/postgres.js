@@ -86,4 +86,5 @@ export async function healthCheck() {
   }
 }
 
-export default { query, getClient, healthCheck }
+export { pool }
+export default { pool, query, getClient, healthCheck }

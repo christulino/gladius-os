@@ -214,6 +214,23 @@ export const api = {
     body:   JSON.stringify(updates),
   }),
 
+  // Event subscribers & events
+  eventSubscribers:       ()           => apiFetch('/event-subscribers'),
+  pauseEventSubscriber:   (name, isPaused) =>
+    apiFetch(`/event-subscribers/${encodeURIComponent(name)}/pause`, {
+      method: 'POST',
+      body:   JSON.stringify({ is_paused: isPaused }),
+    }),
+  skipPastEvent:          (name, eventId) =>
+    apiFetch(`/event-subscribers/${encodeURIComponent(name)}/skip-past/${eventId}`, {
+      method: 'POST',
+    }),
+  recentEvents:           ({ limit = 100, typePrefix } = {}) => {
+    const q = new URLSearchParams({ limit: String(limit) })
+    if (typePrefix) q.set('type_prefix', typePrefix)
+    return apiFetch(`/events?${q}`)
+  },
+
   // Simulation
   simulationStart:    (data) => apiFetch('/simulation/start', { method: 'POST', body: JSON.stringify(data || {}) }),
   simulationStop:     () => apiFetch('/simulation/stop', { method: 'POST' }),
