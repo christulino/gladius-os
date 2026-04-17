@@ -2256,20 +2256,55 @@ router.patch('/work-items/:id', async (req, res, next) => {
 
 // POST /admin/api/work-items/:id/substate — update substate
 router.post('/work-items/:id/substate', async (req, res, next) => {
+  const workItemId = parseInt(req.params.id)
+  const { substate } = req.body
+  if (!['active', 'blocked', 'waiting'].includes(substate)) {
+    return res.status(400).json({ error: 'substate must be "active", "blocked", or "waiting"' })
+  }
+
+  const client = await getClient()
   try {
-    const { substate } = req.body
-    if (!['active', 'blocked', 'waiting'].includes(substate)) {
-      return res.status(400).json({ error: 'substate must be "active", "blocked", or "waiting"' })
+    await client.query('BEGIN')
+    const { rows: before } = await client.query(
+      'SELECT current_substate, uri FROM runtime.work_items WHERE id = $1 FOR UPDATE',
+      [workItemId]
+    )
+    if (!before.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Work item not found' })
     }
-    const result = await query(`
+
+    const oldSubstate = before[0].current_substate
+    if (oldSubstate === substate) {
+      await client.query('ROLLBACK')
+      const { rows } = await query('SELECT * FROM runtime.work_items WHERE id = $1', [workItemId])
+      return res.json(rows[0])
+    }
+
+    const { rows: updated } = await client.query(`
       UPDATE runtime.work_items
       SET current_substate = $1, updated_at = NOW()
       WHERE id = $2
-      RETURNING id, current_substate
-    `, [substate, req.params.id])
-    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
-    res.json(result.rows[0])
-  } catch (err) { next(err) }
+      RETURNING *
+    `, [substate, workItemId])
+
+    await emitEvent(client, {
+      eventType: 'work_item.substate_changed',
+      entityId:  workItemId,
+      entityUri: before[0].uri,
+      actorId:   req.userId ?? null,
+      payload:   { old_substate: oldSubstate, new_substate: substate },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.json(updated[0])
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally {
+    client.release()
+  }
 })
 
 // GET /admin/api/work-items/:id/transitions — available transitions
@@ -2402,21 +2437,50 @@ router.get('/work-items/:id/comments', async (req, res, next) => {
 })
 
 router.post('/work-items/:id/comments', async (req, res, next) => {
+  const workItemId = parseInt(req.params.id)
+  const { body, parent_comment_id } = req.body
+  if (!body?.trim()) return res.status(400).json({ error: 'body is required' })
+
+  const client = await getClient()
   try {
-    const { body, parent_comment_id } = req.body
-    if (!body?.trim()) return res.status(400).json({ error: 'body is required' })
+    await client.query('BEGIN')
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    if (!wi.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Work item not found' })
+    }
+
     const uri = generateUri('system', 'comments')
-    const result = await query(`
+    const { rows: comment } = await client.query(`
       INSERT INTO runtime.work_item_comments (uri, work_item_id, author_user_id, body, parent_comment_id)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
-    `, [uri, req.params.id, req.userId, body.trim(), parent_comment_id || null])
+    `, [uri, workItemId, req.userId, body.trim(), parent_comment_id || null])
 
-    // Update work item updated_at
-    await query('UPDATE runtime.work_items SET updated_at = NOW() WHERE id = $1', [req.params.id])
+    await client.query('UPDATE runtime.work_items SET updated_at = NOW() WHERE id = $1', [workItemId])
 
-    res.status(201).json(result.rows[0])
-  } catch (err) { next(err) }
+    await emitEvent(client, {
+      eventType: 'work_item.commented',
+      entityId:  workItemId,
+      entityUri: wi[0].uri,
+      actorId:   req.userId ?? null,
+      payload: {
+        comment_id:        comment[0].id,
+        comment_uri:       uri,
+        parent_comment_id: parent_comment_id || null,
+        body:              body.trim(),
+      },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.status(201).json(comment[0])
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally {
+    client.release()
+  }
 })
 
 // =============================================================================
@@ -2438,62 +2502,160 @@ router.get('/work-items/:id/relationships', async (req, res, next) => {
 })
 
 router.post('/work-items/:id/relationships', async (req, res, next) => {
+  const workItemId = parseInt(req.params.id)
+  const { user_id, relationship_type } = req.body
+  if (!user_id)           return res.status(400).json({ error: 'user_id is required' })
+  if (!relationship_type) return res.status(400).json({ error: 'relationship_type is required' })
+
+  const client = await getClient()
   try {
-    const { user_id, relationship_type } = req.body
-    if (!user_id)            return res.status(400).json({ error: 'user_id is required' })
-    if (!relationship_type)  return res.status(400).json({ error: 'relationship_type is required' })
-    const result = await query(`
+    await client.query('BEGIN')
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    if (!wi.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Work item not found' })
+    }
+
+    const { rows: inserted } = await client.query(`
       INSERT INTO runtime.work_item_user_relationships (work_item_id, user_id, relationship_type, assigned_at, is_active)
       VALUES ($1, $2, $3, NOW(), true)
       RETURNING *
-    `, [req.params.id, user_id, relationship_type])
-    res.status(201).json(result.rows[0])
+    `, [workItemId, user_id, relationship_type])
+
+    const { rows: userRow } = await client.query(
+      'SELECT uri FROM blueprint.users WHERE id = $1', [user_id]
+    )
+
+    await emitEvent(client, {
+      eventType: 'work_item.assigned',
+      entityId:  workItemId,
+      entityUri: wi[0].uri,
+      actorId:   req.userId ?? null,
+      payload: {
+        user_id,
+        user_uri:          userRow[0]?.uri ?? null,
+        work_item_uri:     wi[0].uri,
+        relationship_type,
+      },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.status(201).json(inserted[0])
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
     if (err.code === '23505') return res.status(409).json({ error: 'Relationship already exists' })
     next(err)
+  } finally {
+    client.release()
   }
 })
 
 router.delete('/work-item-relationships/:id', async (req, res, next) => {
+  const relId = parseInt(req.params.id)
+  const client = await getClient()
   try {
-    const result = await query(
-      'UPDATE runtime.work_item_user_relationships SET is_active = false WHERE id = $1 RETURNING id',
-      [req.params.id]
+    await client.query('BEGIN')
+    const { rows: rel } = await client.query(`
+      SELECT r.id, r.work_item_id, r.user_id, r.relationship_type, wi.uri AS work_item_uri, u.uri AS user_uri
+      FROM runtime.work_item_user_relationships r
+      JOIN runtime.work_items wi ON wi.id = r.work_item_id
+      LEFT JOIN blueprint.users u ON u.id = r.user_id
+      WHERE r.id = $1
+    `, [relId])
+    if (!rel.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Relationship not found' })
+    }
+    const r = rel[0]
+
+    await client.query(
+      'UPDATE runtime.work_item_user_relationships SET is_active = false WHERE id = $1',
+      [relId]
     )
-    if (!result.rows.length) return res.status(404).json({ error: 'Relationship not found' })
-    res.json({ deleted: result.rows[0].id })
-  } catch (err) { next(err) }
+
+    await emitEvent(client, {
+      eventType: 'work_item.unassigned',
+      entityId:  r.work_item_id,
+      entityUri: r.work_item_uri,
+      actorId:   req.userId ?? null,
+      payload: {
+        user_id:           r.user_id,
+        user_uri:          r.user_uri,
+        work_item_uri:     r.work_item_uri,
+        relationship_type: r.relationship_type,
+      },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.json({ deleted: r.id })
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally {
+    client.release()
+  }
 })
 
 router.post('/work-items/:id/links', async (req, res, next) => {
+  const sourceId = parseInt(req.params.id)
+  const { target_work_item_id, link_type } = req.body
+  if (!target_work_item_id) return res.status(400).json({ error: 'target_work_item_id is required' })
+  if (!link_type)           return res.status(400).json({ error: 'link_type is required' })
+
+  const client = await getClient()
   try {
-    const { target_work_item_id, link_type } = req.body
-    if (!target_work_item_id) return res.status(400).json({ error: 'target_work_item_id is required' })
-    if (!link_type)           return res.status(400).json({ error: 'link_type is required' })
+    await client.query('BEGIN')
+    const { rows: src } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [sourceId])
+    const { rows: tgt } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [target_work_item_id])
+    if (!src.length || !tgt.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Work item not found' })
+    }
 
-    const sourceId = parseInt(req.params.id)
-
+    let responsePayload
     if (link_type === 'parent') {
-      // Set target as parent of source
-      await query('UPDATE runtime.work_items SET parent_id = $1, updated_at = NOW() WHERE id = $2', [target_work_item_id, sourceId])
-      return res.json({ linked: true, link_type: 'parent' })
-    }
-    if (link_type === 'child') {
-      // Set source as parent of target
-      await query('UPDATE runtime.work_items SET parent_id = $1, updated_at = NOW() WHERE id = $2', [sourceId, target_work_item_id])
-      return res.json({ linked: true, link_type: 'child' })
+      await client.query('UPDATE runtime.work_items SET parent_id = $1, updated_at = NOW() WHERE id = $2',
+        [target_work_item_id, sourceId])
+      responsePayload = { linked: true, link_type: 'parent' }
+    } else if (link_type === 'child') {
+      await client.query('UPDATE runtime.work_items SET parent_id = $1, updated_at = NOW() WHERE id = $2',
+        [sourceId, target_work_item_id])
+      responsePayload = { linked: true, link_type: 'child' }
+    } else {
+      const { rows: inserted } = await client.query(`
+        INSERT INTO runtime.work_item_links (source_work_item_id, target_work_item_id, link_type, created_by_user_id)
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+      `, [sourceId, target_work_item_id, link_type, req.userId ?? null])
+      responsePayload = inserted[0]
     }
 
-    // "related" or other link types use the links table
-    const result = await query(`
-      INSERT INTO runtime.work_item_links (source_work_item_id, target_work_item_id, link_type, created_by_user_id)
-      VALUES ($1, $2, $3, $4)
-      RETURNING *
-    `, [sourceId, target_work_item_id, link_type, req.userId])
-    res.status(201).json(result.rows[0])
+    await emitEvent(client, {
+      eventType: 'work_item.linked',
+      entityId:  sourceId,
+      entityUri: src[0].uri,
+      actorId:   req.userId ?? null,
+      payload: {
+        source_id:   sourceId,
+        source_uri:  src[0].uri,
+        target_id:   target_work_item_id,
+        target_uri:  tgt[0].uri,
+        link_type,
+      },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    const status = link_type === 'parent' || link_type === 'child' ? 200 : 201
+    res.status(status).json(responsePayload)
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
     if (err.code === '23505') return res.status(409).json({ error: 'Link already exists' })
     next(err)
+  } finally {
+    client.release()
   }
 })
 

@@ -386,3 +386,74 @@ describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows',
     assert.equal(rows[0].n, 0)
   })
 })
+
+describe('Emission on people / link / comment / substate endpoints', () => {
+  let workItemId, userId
+  before(async () => {
+    const { rows: wi } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
+    workItemId = wi[0].id
+    const { rows: u } = await query('SELECT id FROM blueprint.users WHERE is_active = true ORDER BY id ASC LIMIT 1')
+    userId = u[0].id
+    // Force substate to 'blocked' so the substate test's change to 'active' actually emits
+    await query(`UPDATE runtime.work_items SET current_substate = 'blocked' WHERE id = $1`, [workItemId])
+  })
+
+  it('emits work_item.assigned when a relationship is created', async () => {
+    await query(`DELETE FROM runtime.work_item_user_relationships
+                 WHERE work_item_id = $1 AND user_id = $2 AND relationship_type = 'watching'`,
+                [workItemId, userId])
+    await query(`DELETE FROM runtime.events WHERE event_type = 'work_item.assigned' AND entity_id = $1`, [workItemId])
+
+    const { status } = await api(`/work-items/${workItemId}/relationships`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, relationship_type: 'watching' }),
+    })
+    assert.equal(status, 201)
+    await new Promise(r => setTimeout(r, 200))
+
+    const { rows } = await query(
+      `SELECT payload FROM runtime.events
+       WHERE event_type = 'work_item.assigned' AND entity_id = $1
+       ORDER BY id DESC LIMIT 1`,
+      [workItemId]
+    )
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].payload.relationship_type, 'watching')
+  })
+
+  it('emits work_item.commented when a comment is posted', async () => {
+    await query(`DELETE FROM runtime.events WHERE event_type = 'work_item.commented' AND entity_id = $1`, [workItemId])
+
+    const { status } = await api(`/work-items/${workItemId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ body: 'Event system test comment' }),
+    })
+    assert.equal(status, 201)
+    await new Promise(r => setTimeout(r, 200))
+
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS n FROM runtime.events
+       WHERE event_type = 'work_item.commented' AND entity_id = $1`,
+      [workItemId]
+    )
+    assert.ok(rows[0].n >= 1)
+  })
+
+  it('emits work_item.substate_changed', async () => {
+    await query(`DELETE FROM runtime.events WHERE event_type = 'work_item.substate_changed' AND entity_id = $1`, [workItemId])
+
+    const { status } = await api(`/work-items/${workItemId}/substate`, {
+      method: 'POST',
+      body: JSON.stringify({ substate: 'active' }),
+    })
+    assert.equal(status, 200)
+    await new Promise(r => setTimeout(r, 200))
+
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS n FROM runtime.events
+       WHERE event_type = 'work_item.substate_changed' AND entity_id = $1`,
+      [workItemId]
+    )
+    assert.ok(rows[0].n >= 1)
+  })
+})
