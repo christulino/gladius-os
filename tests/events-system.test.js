@@ -52,6 +52,45 @@ describe('core/events.js — emitEvent', () => {
     assert.equal(rows.length, 0, 'event row must not exist after rollback')
   })
 
+  it('throws when client is missing', async () => {
+    await assert.rejects(
+      () => emitEvent(null, { eventType: 'test.no_client', entityId: 1 }),
+      /requires a pg client/,
+    )
+  })
+
+  it('throws when eventType is missing or non-string', async () => {
+    const client = await getClient()
+    try {
+      await assert.rejects(
+        () => emitEvent(client, { entityId: 1 }),
+        /requires eventType/,
+      )
+      await assert.rejects(
+        () => emitEvent(client, { eventType: 42, entityId: 1 }),
+        /requires eventType/,
+      )
+    } finally {
+      client.release()
+    }
+  })
+
+  it('throws when entityId is missing or not an integer', async () => {
+    const client = await getClient()
+    try {
+      await assert.rejects(
+        () => emitEvent(client, { eventType: 'test.no_id' }),
+        /requires entityId/,
+      )
+      await assert.rejects(
+        () => emitEvent(client, { eventType: 'test.string_id', entityId: '42' }),
+        /requires entityId \(integer\)/,
+      )
+    } finally {
+      client.release()
+    }
+  })
+
   after(async () => {
     await query('DELETE FROM runtime.events WHERE event_type LIKE $1', ['test.%'])
   })
