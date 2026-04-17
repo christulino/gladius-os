@@ -21,3 +21,7 @@ pids
 
 # Vite temp files
 vite.config.js.timestamp-*
+
+# Claude Code — commit settings.json (shared), ignore local overrides + runtime state
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
