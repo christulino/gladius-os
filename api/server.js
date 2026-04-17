@@ -27,6 +27,7 @@ import catalogRoutes    from './routes/catalog.js'
 import boardRoutes      from './routes/board.js'
 import adminApiRoutes   from '../admin/api.js'
 import simulationRoutes from './routes/simulation.js'
+import { startProcessor } from '../runtime/eventProcessor.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -128,9 +129,15 @@ app.use((err, _req, res, _next) => {
 // START
 // =============================================================================
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`[api] Flow OS running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
   console.log(`[api] Health: http://localhost:${PORT}/health`)
+  try {
+    await startProcessor()
+    console.log('[events] Processor started')
+  } catch (err) {
+    console.error('[events] Processor failed to start:', err.message)
+  }
 })
 
 export default app

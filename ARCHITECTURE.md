@@ -103,7 +103,9 @@ Key tables:
 - `work_item_history` — full audit trail, immutable, sacred timestamps
 - `assignments` — work item ↔ user with role
 - `sub_state_history` — sub-state transition log
-- `search_index_queue` — Neo4j sync queue
+- `events` — append-only event log (id, event_type, entity_id, entity_uri, actor_id, occurred_at, payload)
+- `event_subscribers` — per-subscriber cursor + health (name PK, last_processed_event_id, is_paused, last_error, failure_count)
+- `work_item_edits` — field-level audit log (Jira changegroup/changeitem analog)
 
 ### Neo4j — Graph Store (not yet seeded)
 
@@ -173,7 +175,7 @@ Exit criteria OWN all blocking logic. Transition actions never block.
 2. Optional spawn prompt → before transition fires
 3. Spawn action failure → rolls back entire transition
 4. api_call actions → fire and forget after commit
-5. Neo4j sync → async via search_index_queue
+5. Neo4j sync → async via the event system (`neo4j-sync` subscriber)
 
 ### Service Classes — Derived, Not Selected
 | Input | Derived Class |
@@ -268,6 +270,7 @@ Connection indicator on cards with relationships.
 6. **Migration 008** — done_retention_days on organizations
 7. **Migration 009** — org_wip_limits_by_class (stage-class-level WIP)
 8. **Migration 010** — Auth: password_hash, is_admin, sessions table
+9. **Migration 011** — Event system: events, event_subscribers, work_item_edits. Drops legacy search_index_queue.
 
 ---
 
@@ -325,3 +328,24 @@ calls (service catalog + intake), not federation. Each instance sovereign.
 Full exit criteria lifecycle: manual/codified/api evaluation, runtime status tracking
 (auto-populated on stage entry), acknowledgment/undo/waive endpoints, transition gate
 UI with inline confirm buttons and waive-with-reason.
+
+### Session 20 (2026-04-16) — Event system
+Event system shipped. Three new runtime tables: `events` (append-only bus),
+`event_subscribers` (per-subscriber cursor with PG advisory lock for
+single-processor enforcement), `work_item_edits` (Jira-shaped field audit).
+Two subscribers live: `neo4j-sync` (replaces direct `syncToGraph` calls)
+and `audit-log` (writes `work_item_edits` rows). Retired
+`runtime.search_index_queue`. 13 event types emitted across transitions,
+work-item CRUD, people, links, comments, substates, and exit-criteria
+ack/waive. Admin UI at `/admin/events`.
+
+**Known v1 limitations** (deferred to later sessions):
+- No per-tick event budget — a subscriber with a huge backlog can monopolize
+  the drain loop until it catches up.
+- Subscribers drain sequentially — one slow handler blocks all others.
+- Unit-style processor tests (drainNow-based in `tests/events-system.test.js`)
+  cannot run while the API server holds the advisory lock. Run those tests
+  with the server stopped; run integration tests (PATCH, emission, end-to-end)
+  with the server running.
+- No retention policy yet — events accumulate. Add a cron when volume warrants.
+- Cross-instance nudging uses the 30s safety poll, not PG LISTEN/NOTIFY.

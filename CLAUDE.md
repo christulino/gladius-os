@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-04-15 (Session 19 — Housekeeping commit, git push pending)
+> Last updated: 2026-04-16 (Session 20 — Event system shipped)
 
 ---
 
@@ -55,6 +55,9 @@ tests use the same local PostgreSQL instance.
 - **Public intake forms:** `/forms/:slug` (no auth), `/intake/:slug` serves React SPA
 - **Vite base path:** `base: '/admin/'` in vite.config.js — required for Express serving
 - **tailwind.config.js** uses `require()` not `import()` (jiti compatibility)
+- **Event system:** `runtime.events` append-only log + per-subscriber cursor. Emit
+  via `emitEvent(client, ...)` inside a transaction. Subscribers in `runtime/subscribers/`.
+  Single active processor per deployment (PG advisory lock).
 
 ---
 
@@ -72,6 +75,9 @@ tests use the same local PostgreSQL instance.
 | `db/postgres.js` | PG connection pool |
 | `admin-ui/src/lib/api.js` | All frontend API calls (~55 endpoints) |
 | `admin-ui/style/README.md` | **UI style guide — read before any frontend changes** |
+| `core/events.js` | Event emission + post-commit nudge |
+| `runtime/eventProcessor.js` | Advisory lock, drain loop, subscriber registry |
+| `runtime/subscribers/*.js` | Event subscribers (neo4j-sync, audit-log) |
 
 ---
 

@@ -4,13 +4,15 @@
  *
  * Design decisions:
  *   - Missing required fields → pending state, not rejection
- *   - Neo4j sync is async via search_index_queue
+ *   - Neo4j sync is async via runtime.events (neo4j-sync subscriber)
  *   - canCreate() is stubbed — visibility rules engine plugs in later
  *   - No hard deletes — work items are cancelled, not destroyed
  */
 
 import { query, getClient } from '../db/postgres.js'
 import { generateUri }      from '../core/uri.js'
+import { emitEvent, nudgeAfterCommit } from '../core/events.js'
+import { randomUUID }       from 'node:crypto'
 
 // =============================================================================
 // CREATE
@@ -246,14 +248,33 @@ export async function createWorkItem(params, userId) {
       `, [workItem.id, userId, now])
     }
 
-    // Queue Neo4j sync — async, non-blocking
-    await client.query(`
-      INSERT INTO runtime.search_index_queue
-        (resource_type, resource_id, operation, queued_at)
-      VALUES ('work_item', $1, 'index', $2)
-    `, [workItem.id, now])
+    // Emit work_item.created event (in-tx — rolls back with the insert)
+    await emitEvent(client, {
+      eventType: 'work_item.created',
+      entityId:  workItem.id,
+      entityUri: workItem.uri,
+      actorId:   userId ?? null,
+      payload: {
+        title:               workItem.title,
+        work_item_type_uri:  workItemType.uri ?? null,
+        work_item_type_name: workItemType.name,
+        owner_org_uri:       org.uri,
+        owner_org_slug:      org.slug,
+        current_stage_id:    workItem.current_stage_id,
+        current_stage_name:  entry_stage_name,
+        current_substate:    workItem.current_substate,
+        spawn_state:         workItem.spawn_state,
+        service_class:       'standard',
+        sla_status:          'no_sla',
+        due_date:            workItem.due_date,
+        parent_id:           workItem.parent_id,
+        created_at:          workItem.created_at,
+        updated_at:          workItem.updated_at,
+      },
+    })
 
     await client.query('COMMIT')
+    nudgeAfterCommit()
 
   } catch (err) {
     await client.query('ROLLBACK')
@@ -337,12 +358,31 @@ export async function updateWorkItemFields(workItemUri, fieldValues, userId) {
     workItemUri,
   ])
 
-  // Queue Neo4j sync
-  await query(`
-    INSERT INTO runtime.search_index_queue
-      (resource_type, resource_id, operation, queued_at)
-    VALUES ('work_item', $1, 'reindex', $2)
-  `, [workItem.id, now])
+  // Emit work_item.edited event so neo4j-sync reindexes.
+  // This function runs in `completeWorkItem` / field-update flow — a short-lived
+  // tx of its own is fine since we are outside the main transaction here.
+  const evtClient = await getClient()
+  try {
+    await evtClient.query('BEGIN')
+    await emitEvent(evtClient, {
+      eventType: 'work_item.edited',
+      entityId:  workItem.id,
+      entityUri: workItem.uri,
+      actorId:   userId ?? null,
+      payload: {
+        edit_group_id: randomUUID(),
+        changes: [],                  // empty — this is a field-completion re-sync, not a diff
+        current: workItem,
+      },
+    })
+    await evtClient.query('COMMIT')
+    nudgeAfterCommit()
+  } catch (err) {
+    await evtClient.query('ROLLBACK').catch(() => {})
+    console.error('[workItems] Failed to emit work_item.edited after field completion:', err.message)
+  } finally {
+    evtClient.release()
+  }
 
   return {
     ...updateResult.rows[0],
