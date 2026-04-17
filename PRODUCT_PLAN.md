@@ -102,7 +102,7 @@ These items remain actionable:
 > tentacles and will be most expensive to retrofit."
 
 ### Phase 1: Foundations (architectural load-bearing)
-1. **Event system** — backbone for notifications, SLA alerts, webhooks, integrations, audit
+1. ~~**Event system**~~ — DONE (Session 20). `runtime.events` bus, per-subscriber cursors with PG advisory lock, `work_item_edits` field-level audit, 13 event types across all mutation paths. Neo4j sync + audit log subscribers live.
 2. ~~**Auth & authorization wiring**~~ — DONE (Session 17). Sessions, requireAuth, setup wizard.
 3. ~~**Custom field rendering pipeline**~~ — DONE (Sessions 14-17). Field engine + intake form rendering.
 
