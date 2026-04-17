@@ -3,6 +3,9 @@
 -- and runtime.work_item_edits (Jira-shaped field audit).
 -- Drops runtime.search_index_queue (retired).
 
+-- pgcrypto required for gen_random_uuid() in work_item_edits
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- =============================================================================
 -- EVENT BUS (append-only log)
 -- =============================================================================
@@ -12,13 +15,15 @@ CREATE TABLE IF NOT EXISTS runtime.events (
     event_type   TEXT         NOT NULL,
     entity_id    INTEGER      NOT NULL,
     entity_uri   TEXT,
-    actor_id     INTEGER      REFERENCES blueprint.users(id),
+    actor_id     INTEGER      REFERENCES blueprint.users(id) ON DELETE SET NULL,
     occurred_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     payload      JSONB        NOT NULL
 );
 
+-- Primary reader query: "events for entity X, newest first"
+-- Drain query (WHERE id > cursor ORDER BY id) is served by the PK index.
 CREATE INDEX IF NOT EXISTS idx_events_type_entity
-    ON runtime.events (entity_id, event_type, occurred_at);
+    ON runtime.events (entity_id, occurred_at DESC, event_type);
 
 -- =============================================================================
 -- SUBSCRIBER CURSORS (per-subscriber progress + health)
@@ -43,7 +48,7 @@ CREATE TABLE IF NOT EXISTS runtime.event_subscribers (
 CREATE TABLE IF NOT EXISTS runtime.work_item_edits (
     id            BIGSERIAL    PRIMARY KEY,
     work_item_id  INTEGER      NOT NULL REFERENCES runtime.work_items(id) ON DELETE CASCADE,
-    edited_by     INTEGER      REFERENCES blueprint.users(id),
+    edited_by     INTEGER      REFERENCES blueprint.users(id) ON DELETE SET NULL,
     edited_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     edit_group_id UUID         NOT NULL DEFAULT gen_random_uuid(),
     field_key     TEXT         NOT NULL,
@@ -57,9 +62,6 @@ CREATE INDEX IF NOT EXISTS idx_work_item_edits_item
     ON runtime.work_item_edits (work_item_id, edited_at DESC);
 CREATE INDEX IF NOT EXISTS idx_work_item_edits_group
     ON runtime.work_item_edits (edit_group_id);
-
--- pgcrypto required for gen_random_uuid
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =============================================================================
 -- RETIRE LEGACY
