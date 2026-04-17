@@ -12,6 +12,7 @@ import { query, getClient } from '../db/postgres.js'
 import { getBuffer, sseHandler } from './logger.js'
 import { generateUri } from '../core/uri.js'
 import { createWorkItem, ValidationError } from '../runtime/workItems.js'
+import { emitEvent, nudgeAfterCommit } from '../core/events.js'
 import { writeFile }  from 'fs/promises'
 import { mkdir }      from 'fs/promises'
 import { randomUUID } from 'crypto'
@@ -21,6 +22,24 @@ import { dirname, join, extname } from 'path'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const router = Router()
+
+// Compare two values for equality, tolerating JSONB/array/date oddities.
+function valuesEqual(a, b) {
+  if (a === b) return true
+  if (a == null && b == null) return true
+  if (a == null || b == null) return false
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime()
+  if (a instanceof Date) return a.toISOString() === new Date(b).toISOString()
+  if (b instanceof Date) return new Date(a).toISOString() === b.toISOString()
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false
+    return a.every((v, i) => valuesEqual(v, b[i]))
+  }
+  if (typeof a === 'object' && typeof b === 'object') {
+    return JSON.stringify(a) === JSON.stringify(b)
+  }
+  return String(a) === String(b)
+}
 
 // Allowed raw tables — explicit whitelist for safety
 const ALLOWED_TABLES = {
@@ -2141,33 +2160,98 @@ router.get('/work-items/:id', async (req, res, next) => {
 
 // PATCH /admin/api/work-items/:id — update title, description, field_values
 router.patch('/work-items/:id', async (req, res, next) => {
+  const workItemId = parseInt(req.params.id)
+  if (!workItemId) return res.status(400).json({ error: 'Invalid id' })
+
+  const { title, description, field_values, due_date, is_expedited, work_nature,
+          priority, tags, estimate, estimate_unit, origin, requester_id } = req.body
+
+  // Map request fields -> (column, type, incoming value)
+  const UPDATABLE = [
+    { field: 'title',         type: 'text',     col: 'title',         incoming: title,         transform: v => v?.trim() },
+    { field: 'description',   type: 'textarea', col: 'description',   incoming: description,   transform: v => v || null },
+    { field: 'field_values',  type: 'jsonb',    col: 'field_values',  incoming: field_values,  transform: v => v,           isJson: true },
+    { field: 'due_date',      type: 'date',     col: 'due_date',      incoming: due_date,      transform: v => v || null },
+    { field: 'is_expedited',  type: 'boolean',  col: 'is_expedited',  incoming: is_expedited,  transform: v => !!v },
+    { field: 'work_nature',   type: 'text',     col: 'work_nature',   incoming: work_nature,   transform: v => v },
+    { field: 'priority',      type: 'number',   col: 'priority',      incoming: priority,      transform: v => v != null ? parseInt(v) : null },
+    { field: 'tags',          type: 'text[]',   col: 'tags',          incoming: tags,          transform: v => v || [] },
+    { field: 'estimate',      type: 'number',   col: 'estimate',      incoming: estimate,      transform: v => v != null ? parseFloat(v) : null },
+    { field: 'estimate_unit', type: 'text',     col: 'estimate_unit', incoming: estimate_unit, transform: v => v },
+    { field: 'origin',        type: 'text',     col: 'origin',        incoming: origin,        transform: v => v },
+    { field: 'requester_id',  type: 'number',   col: 'requester_id',  incoming: requester_id,  transform: v => v ? parseInt(v) : null },
+  ]
+
+  const provided = UPDATABLE.filter(u => u.incoming !== undefined)
+  if (!provided.length) return res.status(400).json({ error: 'No fields to update' })
+
+  const client = await getClient()
   try {
-    const { title, description, field_values, due_date, is_expedited, work_nature,
-            priority, tags, estimate, estimate_unit, origin, requester_id } = req.body
-    const fields = []
-    const vals   = []
-    if (title !== undefined)        { fields.push(`title = $${fields.length + 1}`);        vals.push(title.trim()) }
-    if (description !== undefined)  { fields.push(`description = $${fields.length + 1}`);  vals.push(description || null) }
-    if (field_values !== undefined) { fields.push(`field_values = $${fields.length + 1}`);  vals.push(JSON.stringify(field_values)) }
-    if (due_date !== undefined)     { fields.push(`due_date = $${fields.length + 1}`);      vals.push(due_date || null) }
-    if (is_expedited !== undefined) { fields.push(`is_expedited = $${fields.length + 1}`);  vals.push(!!is_expedited) }
-    if (work_nature !== undefined)  { fields.push(`work_nature = $${fields.length + 1}`);   vals.push(work_nature) }
-    if (priority !== undefined)     { fields.push(`priority = $${fields.length + 1}`);      vals.push(priority != null ? parseInt(priority) : null) }
-    if (tags !== undefined)         { fields.push(`tags = $${fields.length + 1}`);           vals.push(tags || '{}') }
-    if (estimate !== undefined)     { fields.push(`estimate = $${fields.length + 1}`);       vals.push(estimate != null ? parseFloat(estimate) : null) }
-    if (estimate_unit !== undefined){ fields.push(`estimate_unit = $${fields.length + 1}`);  vals.push(estimate_unit) }
-    if (origin !== undefined)       { fields.push(`origin = $${fields.length + 1}`);         vals.push(origin) }
-    if (requester_id !== undefined) { fields.push(`requester_id = $${fields.length + 1}`);   vals.push(requester_id ? parseInt(requester_id) : null) }
-    if (!fields.length) return res.status(400).json({ error: 'No fields to update' })
-    fields.push(`updated_at = NOW()`)
-    vals.push(parseInt(req.params.id))
-    const result = await query(
-      `UPDATE runtime.work_items SET ${fields.join(', ')} WHERE id = $${vals.length} RETURNING *`,
+    await client.query('BEGIN')
+
+    // 1. Load current values for only the columns being updated
+    const selectCols = provided.map(u => u.col).join(', ')
+    const { rows: beforeRows } = await client.query(
+      `SELECT id, uri, ${selectCols} FROM runtime.work_items WHERE id = $1 FOR UPDATE`,
+      [workItemId]
+    )
+    if (!beforeRows.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Work item not found' })
+    }
+    const before = beforeRows[0]
+
+    // 2. Compute diff — only fields whose value actually changed
+    const changes = []
+    const setFragments = []
+    const vals = []
+    for (const u of provided) {
+      const newVal = u.transform(u.incoming)
+      const oldVal = before[u.col]
+      if (valuesEqual(oldVal, newVal)) continue
+      changes.push({ field: u.field, type: u.type, old: oldVal, new: newVal })
+      setFragments.push(`${u.col} = $${vals.length + 1}`)
+      vals.push(u.isJson ? JSON.stringify(newVal) : newVal)
+    }
+
+    if (!changes.length) {
+      // No-op update — rollback and do not emit
+      await client.query('ROLLBACK')
+      const { rows: current } = await query('SELECT * FROM runtime.work_items WHERE id = $1', [workItemId])
+      return res.json(current[0])
+    }
+
+    // 3. Apply the update
+    setFragments.push('updated_at = NOW()')
+    vals.push(workItemId)
+    const { rows: updated } = await client.query(
+      `UPDATE runtime.work_items SET ${setFragments.join(', ')} WHERE id = $${vals.length} RETURNING *`,
       vals
     )
-    if (!result.rows.length) return res.status(404).json({ error: 'Work item not found' })
-    res.json(result.rows[0])
-  } catch (err) { next(err) }
+
+    // 4. Emit the edit event (in-tx)
+    const editGroupId = randomUUID()
+    await emitEvent(client, {
+      eventType: 'work_item.edited',
+      entityId:  workItemId,
+      entityUri: before.uri,
+      actorId:   req.userId ?? null,
+      payload: {
+        edit_group_id: editGroupId,
+        changes,
+        current: updated[0],
+      },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.json(updated[0])
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally {
+    client.release()
+  }
 })
 
 // POST /admin/api/work-items/:id/substate — update substate

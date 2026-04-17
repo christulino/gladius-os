@@ -317,3 +317,72 @@ describe('subscribers/auditLog — writes work_item_edits rows', () => {
     await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
   })
 })
+
+import { createAuthApi } from './helpers/auth.js'
+const api = createAuthApi()
+
+describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows', () => {
+  let workItemId
+  before(async () => {
+    const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
+    workItemId = rows[0].id
+    // Reset to known state so the diff-emission assertion is deterministic
+    // regardless of prior test runs
+    await query('UPDATE runtime.work_items SET priority = NULL WHERE id = $1', [workItemId])
+    await query('DELETE FROM runtime.events WHERE event_type = $1', ['work_item.edited'])
+    await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
+  })
+
+  it('emits one event and writes one audit row per changed field', async () => {
+    const { status } = await api(`/work-items/${workItemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: 'Edited by test ' + Date.now(), priority: 1 }),
+    })
+    assert.equal(status, 200)
+
+    // Give the processor a moment to drain
+    await new Promise(r => setTimeout(r, 500))
+
+    const { rows: events } = await query(
+      `SELECT payload FROM runtime.events
+       WHERE event_type = 'work_item.edited' AND entity_id = $1
+       ORDER BY id DESC LIMIT 1`,
+      [workItemId]
+    )
+    assert.equal(events.length, 1)
+    assert.ok(Array.isArray(events[0].payload.changes))
+    const fields = events[0].payload.changes.map(c => c.field)
+    assert.ok(fields.includes('title'))
+    assert.ok(fields.includes('priority'))
+
+    const { rows: audit } = await query(
+      `SELECT field_key FROM runtime.work_item_edits
+       WHERE edit_group_id = $1
+       ORDER BY field_key`,
+      [events[0].payload.edit_group_id]
+    )
+    assert.equal(audit.length, 2)
+  })
+
+  it('does not emit when the PATCH changes nothing', async () => {
+    // Fetch current title
+    const { data } = await api(`/work-items/${workItemId}`)
+    const current = data.title
+
+    await query('DELETE FROM runtime.events WHERE event_type = $1', ['work_item.edited'])
+
+    const { status } = await api(`/work-items/${workItemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: current }),
+    })
+    assert.equal(status, 200)
+    await new Promise(r => setTimeout(r, 200))
+
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS n FROM runtime.events
+       WHERE event_type = 'work_item.edited' AND entity_id = $1`,
+      [workItemId]
+    )
+    assert.equal(rows[0].n, 0)
+  })
+})
