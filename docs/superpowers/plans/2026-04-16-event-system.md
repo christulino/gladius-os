@@ -35,7 +35,7 @@ Before executing any task below, ensure the local environment is ready:
 docker-compose up -d
 
 # Confirm schema is current
-psql -h localhost -U postgres -d flowos -c "\dn"   # should list blueprint, runtime
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "\dn"   # should list blueprint, runtime
 
 # API server running (another terminal) — many tasks test against it
 npm run dev
@@ -155,7 +155,7 @@ DROP TABLE IF EXISTS runtime.search_index_queue;
 
 Run:
 ```bash
-psql -h localhost -U postgres -d flowos -f db/migrations/011_event_system.sql
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -f db/migrations/011_event_system.sql
 ```
 
 Expected output: `CREATE TABLE` (3 times), `CREATE INDEX` (3 times), `CREATE EXTENSION` (or `NOTICE: extension "pgcrypto" already exists`), `DROP TABLE`.
@@ -164,10 +164,10 @@ Expected output: `CREATE TABLE` (3 times), `CREATE INDEX` (3 times), `CREATE EXT
 
 Run:
 ```bash
-psql -h localhost -U postgres -d flowos -c "\d runtime.events"
-psql -h localhost -U postgres -d flowos -c "\d runtime.event_subscribers"
-psql -h localhost -U postgres -d flowos -c "\d runtime.work_item_edits"
-psql -h localhost -U postgres -d flowos -c "\dt runtime.search_index_queue"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "\d runtime.events"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "\d runtime.event_subscribers"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "\d runtime.work_item_edits"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "\dt runtime.search_index_queue"
 ```
 
 Expected: first three show full schema. Last command returns "Did not find any relation named 'runtime.search_index_queue'".
@@ -853,7 +853,7 @@ Expected startup output:
 - [ ] **Step 4.3: Verify the advisory lock is held**
 
 ```bash
-psql -h localhost -U postgres -d flowos -c "SELECT locktype, objid, mode, granted FROM pg_locks WHERE locktype = 'advisory';"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "SELECT locktype, objid, mode, granted FROM pg_locks WHERE locktype = 'advisory';"
 ```
 
 Expected: one row with `objid = 252779603` (decimal of 0x0F105053), `mode = ExclusiveLock`, `granted = t`.
@@ -1029,7 +1029,7 @@ Expected: all tests pass (7 total).
 
 ```bash
 # Restart npm run dev in the other terminal, then:
-psql -h localhost -U postgres -d flowos -c "SELECT * FROM runtime.event_subscribers WHERE name = 'neo4j-sync';"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "SELECT * FROM runtime.event_subscribers WHERE name = 'neo4j-sync';"
 ```
 
 Expected: one row with `last_processed_event_id = 0`, `is_paused = false`.
@@ -1514,7 +1514,7 @@ Expected: all pass. If the existing workflow-api tests use transitions, they sho
 
 ```bash
 # With API running and a seeded DB
-psql -h localhost -U postgres -d flowos -c "DELETE FROM runtime.events;"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "DELETE FROM runtime.events;"
 
 # Run a transition via the UI or curl
 curl -b cookies.txt -X POST http://localhost:3000/admin/api/work-items/1/transition \
@@ -1522,7 +1522,7 @@ curl -b cookies.txt -X POST http://localhost:3000/admin/api/work-items/1/transit
   -d '{"to_stage_id": <a valid stage id>, "reason": "test"}'
 
 # Verify the event landed
-psql -h localhost -U postgres -d flowos \
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos \
   -c "SELECT event_type, entity_id, payload->>'transition_history_id' FROM runtime.events ORDER BY id DESC LIMIT 5;"
 ```
 
@@ -1680,11 +1680,11 @@ Expected: all pass.
 - [ ] **Step 8.6: Manual smoke test**
 
 ```bash
-psql -h localhost -U postgres -d flowos -c "DELETE FROM runtime.events;"
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos -c "DELETE FROM runtime.events;"
 
 # Create a work item via UI or API
 # Then check:
-psql -h localhost -U postgres -d flowos \
+PGPASSWORD=flowos_dev psql -h localhost -U flowos -d flowos \
   -c "SELECT event_type, entity_id FROM runtime.events ORDER BY id DESC LIMIT 3;"
 ```
 
