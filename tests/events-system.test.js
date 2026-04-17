@@ -248,3 +248,72 @@ describe('subscribers/neo4jSync — event-type mapping', () => {
     // should not throw
   })
 })
+
+import { auditLogHandler, handlesEventType as auditHandles } from '../runtime/subscribers/auditLog.js'
+
+describe('subscribers/auditLog — writes work_item_edits rows', () => {
+  let workItemId
+
+  before(async () => {
+    // Need a real work item id to satisfy the FK. Use the first one in the DB.
+    const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
+    assert.ok(rows.length, 'Need at least one work item in the DB (run npm run seed)')
+    workItemId = rows[0].id
+    await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
+  })
+
+  it('writes one row per field change, all sharing edit_group_id', async () => {
+    const groupId = '00000000-0000-0000-0000-000000000001'
+    await auditLogHandler({
+      id: 1,
+      event_type: 'work_item.edited',
+      entity_id: workItemId,
+      actor_id: null,
+      occurred_at: new Date(),
+      payload: {
+        edit_group_id: groupId,
+        changes: [
+          { field: 'title',    type: 'text',   old: 'Old title', new: 'New title' },
+          { field: 'priority', type: 'number', old: 3,           new: 1 },
+        ],
+      },
+    })
+
+    const { rows } = await query(
+      'SELECT field_key, edit_group_id FROM runtime.work_item_edits WHERE work_item_id = $1 ORDER BY field_key',
+      [workItemId]
+    )
+    assert.equal(rows.length, 2)
+    assert.deepEqual(rows.map(r => r.field_key).sort(), ['priority', 'title'])
+    assert.equal(rows[0].edit_group_id, groupId)
+    assert.equal(rows[1].edit_group_id, groupId)
+  })
+
+  it('is idempotent — reprocessing the same event does not duplicate rows', async () => {
+    const groupId = '00000000-0000-0000-0000-000000000002'
+    const event = {
+      id: 2,
+      event_type: 'work_item.edited',
+      entity_id: workItemId,
+      actor_id: null,
+      occurred_at: new Date(),
+      payload: {
+        edit_group_id: groupId,
+        changes: [{ field: 'description', type: 'textarea', old: null, new: 'new desc' }],
+      },
+    }
+
+    await auditLogHandler(event)
+    await auditLogHandler(event)   // run twice
+
+    const { rows } = await query(
+      'SELECT COUNT(*) AS n FROM runtime.work_item_edits WHERE edit_group_id = $1',
+      [groupId]
+    )
+    assert.equal(Number(rows[0].n), 1, 'double-processing must not duplicate')
+  })
+
+  after(async () => {
+    await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
+  })
+})
