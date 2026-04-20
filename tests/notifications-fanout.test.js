@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { loadMatrix, isEnabled } from '../runtime/notifications/matrix.js'
 import { renderSummary } from '../runtime/notifications/summaries.js'
+import { extractMentions } from '../runtime/notifications/mentions.js'
 
 describe('notifications/matrix', () => {
   let testUserId
@@ -76,5 +77,29 @@ describe('notifications/summaries', () => {
       baseWorkItem,
     )
     assert.match(s, /BUG\.42/)
+  })
+})
+
+describe('notifications/mentions', () => {
+  it('extracts @handles from comment text', () => {
+    const ids = extractMentions('hey @alice and @bob, look at this', {
+      alice: 10, bob: 11, carol: 12,
+    })
+    assert.deepEqual(ids.sort((a, b) => a - b), [10, 11])
+  })
+
+  it('ignores unknown handles', () => {
+    const ids = extractMentions('@mystery wrote this', { alice: 10 })
+    assert.deepEqual(ids, [])
+  })
+
+  it('deduplicates repeated mentions', () => {
+    const ids = extractMentions('@alice @alice @alice', { alice: 10 })
+    assert.deepEqual(ids, [10])
+  })
+
+  it('handles empty / null input', () => {
+    assert.deepEqual(extractMentions('', {}), [])
+    assert.deepEqual(extractMentions(null, {}), [])
   })
 })
