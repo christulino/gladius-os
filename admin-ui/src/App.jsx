@@ -17,7 +17,10 @@ import {
   ScrollText,
   Database,
   Activity,
+  BellRing,
 } from 'lucide-react'
+import NotificationsBell from '@/components/NotificationsBell'
+import NotificationsDrawer from '@/components/NotificationsDrawer'
 
 import Login         from '@/pages/Login'
 import Setup         from '@/pages/Setup'
@@ -56,6 +59,8 @@ const NAV = [
 
   { id: 'reports',       label: 'Reports',          section: 'Reports',   icon: BarChart3 },
 
+  { id: 'settingsnotifications', label: 'Notifications', section: 'Settings', icon: BellRing },
+
   { id: 'simulation',    label: 'Simulation',       section: 'Dev Tools', icon: Play },
   { id: 'workitems',     label: 'Work Items',       section: null,       icon: FileText },
   { id: 'history',       label: 'Transitions',      section: null,       icon: ArrowRightLeft },
@@ -87,9 +92,10 @@ const PAGES = {
 }
 
 export default function App() {
-  const [tab, setTab]         = useState('board')
+  const [tab, setTab]           = useState('board')
   const [authState, setAuthState] = useState('loading')  // 'loading' | 'setup' | 'login' | 'authenticated'
-  const [user, setUser]       = useState(null)
+  const [user, setUser]         = useState(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   // Check auth status on mount
   useEffect(() => {
@@ -158,9 +164,11 @@ export default function App() {
 
       {/* Sidebar (right) */}
       <nav className="w-44 flex-shrink-0 border-l border-border bg-card flex flex-col">
-        <div className="px-3 py-3 border-b border-border">
+        <div className="px-3 py-3 border-b border-border flex items-center justify-between">
           <span className="text-sm font-semibold text-foreground">Flow OS</span>
+          <NotificationsBell onClick={() => setDrawerOpen(true)} />
         </div>
+        <NotificationsDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
         <div className="py-3 flex-1 overflow-y-auto">
           {NAV.map(item => (
             <div key={item.id}>
