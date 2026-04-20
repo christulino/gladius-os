@@ -3900,6 +3900,43 @@ router.put('/notification-preferences', async (req, res, next) => {
   } finally { client.release() }
 })
 
+// ─── Notifications: admin delivery inspect + retry ────────────────────────────
+
+router.get('/notification-deliveries', async (req, res, next) => {
+  try {
+    const { rows: userRows } = await query(
+      'SELECT is_admin FROM blueprint.users WHERE id = $1', [req.userId]
+    )
+    if (!userRows[0]?.is_admin) return res.status(403).json({ error: 'admin-only' })
+    const status = req.query.status || 'failed'
+    const { rows } = await query(
+      `SELECT d.*, n.user_id, n.summary
+       FROM runtime.notification_deliveries d
+       JOIN runtime.notifications n ON n.id = d.notification_id
+       WHERE d.status = $1
+       ORDER BY d.id DESC LIMIT 200`,
+      [status]
+    )
+    res.json({ rows })
+  } catch (err) { next(err) }
+})
+
+router.post('/notification-deliveries/:id/retry', async (req, res, next) => {
+  try {
+    const { rows: userRows } = await query(
+      'SELECT is_admin FROM blueprint.users WHERE id = $1', [req.userId]
+    )
+    if (!userRows[0]?.is_admin) return res.status(403).json({ error: 'admin-only' })
+    const { rowCount } = await query(
+      `UPDATE runtime.notification_deliveries
+       SET status='pending', attempt_count=0, next_attempt_at=now(), last_error=NULL
+       WHERE id=$1`,
+      [req.params.id]
+    )
+    res.json({ updated: rowCount })
+  } catch (err) { next(err) }
+})
+
 // Event firehose (latest N events)
 router.get('/events', async (req, res, next) => {
   try {
