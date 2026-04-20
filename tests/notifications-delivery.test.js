@@ -52,3 +52,28 @@ describe('channels/webhook', () => {
     assert.equal(res.status, 500)
   })
 })
+
+import { renderRealtimeBody, renderDigestBody } from '../runtime/channels/email.js'
+
+describe('channels/email — rendering', () => {
+  it('realtime body contains the summary and work item link', () => {
+    const { subject, text, html } = renderRealtimeBody(
+      { summary: 'BUG.1 moved to Done' },
+      { id: 1 },
+      'http://flowos.local',
+    )
+    assert.match(subject, /BUG\.1/)
+    assert.match(text,    /\/admin\/work-items\/1/)
+    assert.match(html,    /href="http:\/\/flowos\.local\/admin\/work-items\/1"/)
+  })
+
+  it('digest body groups multiple items', () => {
+    const { subject, text } = renderDigestBody(
+      [{ summary: 'one', work_item_id: 1 }, { summary: 'two', work_item_id: 2 }],
+      'http://flowos.local',
+    )
+    assert.match(subject, /2 updates/)
+    assert.match(text, /one/)
+    assert.match(text, /two/)
+  })
+})
