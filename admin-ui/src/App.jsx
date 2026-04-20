@@ -43,6 +43,7 @@ import DbConsole     from '@/pages/DbConsole'
 import Reports       from '@/pages/Reports'
 import Simulation   from '@/pages/Simulation'
 import EventSubscribers from '@/pages/EventSubscribers'
+import SettingsNotifications from '@/pages/SettingsNotifications'
 
 const NAV = [
   { id: 'board',         label: 'Board',            section: null,       icon: LayoutDashboard },
@@ -89,6 +90,7 @@ const PAGES = {
   reports:       Reports,
   simulation:    Simulation,
   events:        EventSubscribers,
+  settingsnotifications: SettingsNotifications,
 }
 
 export default function App() {
