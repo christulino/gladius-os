@@ -246,6 +246,24 @@ export const api = {
   deleteCatalogItem:  (id) => apiFetch(`/catalog-items/${id}`, { method: 'DELETE' }),
 }
 
+// ─── Notifications API ──────────────────────────────────────────────────────
+
+export const notificationsApi = {
+  list: ({ cursor, unread_only, limit } = {}) => {
+    const qs = new URLSearchParams()
+    if (cursor)      qs.set('cursor', cursor)
+    if (unread_only) qs.set('unread_only', unread_only)
+    if (limit)       qs.set('limit', limit)
+    return apiFetch(`/notifications?${qs.toString()}`)
+  },
+  markRead:            (id)     => apiFetch(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markReadBulk:        (filter) => apiFetch('/notifications/mark-read', { method: 'POST', body: JSON.stringify(filter) }),
+  getPrefs:            ()       => apiFetch('/notification-preferences'),
+  putPrefs:            (body)   => apiFetch('/notification-preferences', { method: 'PUT', body: JSON.stringify(body) }),
+  listFailedDeliveries:()       => apiFetch('/notification-deliveries?status=failed'),
+  retryDelivery:       (id)     => apiFetch(`/notification-deliveries/${id}/retry`, { method: 'POST' }),
+}
+
 // ─── Public forms API (no auth) ─────────────────────────────────────────────
 
 async function formsFetch(path, options = {}) {
