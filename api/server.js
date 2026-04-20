@@ -29,6 +29,7 @@ import adminApiRoutes   from '../admin/api.js'
 import simulationRoutes from './routes/simulation.js'
 import { startProcessor } from '../runtime/eventProcessor.js'
 import { startDeliveryWorker, startDigestTick, stopDeliveryWorker, stopDigestTick } from '../runtime/deliveryWorker.js'
+import { startRetentionJob, stopRetentionJob } from '../runtime/jobs/notificationRetention.js'
 import { initEmail } from '../runtime/channels/email.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -153,9 +154,15 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('[notifications] Digest tick failed to start:', err.message)
   }
+  try {
+    await startRetentionJob()
+    console.log('[notifications] Retention job started')
+  } catch (err) {
+    console.error('[notifications] Retention job failed to start:', err.message)
+  }
 })
 
-process.on('SIGTERM', async () => { await stopDeliveryWorker(); await stopDigestTick() })
-process.on('SIGINT',  async () => { await stopDeliveryWorker(); await stopDigestTick() })
+process.on('SIGTERM', async () => { await stopDeliveryWorker(); await stopDigestTick(); stopRetentionJob() })
+process.on('SIGINT',  async () => { await stopDeliveryWorker(); await stopDigestTick(); stopRetentionJob() })
 
 export default app
