@@ -64,6 +64,14 @@ export function WorkItemCard({ item, onClick, onPull, isSelected }) {
         padding: (isSelected || isBlocked) ? '7px' : undefined,
       }}
     >
+      {/* Unread notification dot */}
+      {!showPull && item.unread_count > 0 && (
+        <span
+          className="absolute top-1 right-1 h-2 w-2 rounded-full bg-[hsl(var(--primary))]"
+          title={`${item.unread_count} unread notification${item.unread_count === 1 ? '' : 's'}`}
+        />
+      )}
+
       {/* Pull arrow button (waiting items only) */}
       {showPull && (
         <span
