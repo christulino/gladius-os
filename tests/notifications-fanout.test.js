@@ -1,9 +1,11 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { query } from '../db/postgres.js'
+import { query, getClient } from '../db/postgres.js'
 import { loadMatrix, isEnabled } from '../runtime/notifications/matrix.js'
 import { renderSummary } from '../runtime/notifications/summaries.js'
 import { extractMentions } from '../runtime/notifications/mentions.js'
+import { emitEvent } from '../core/events.js'
+import { notificationsHandler, handlesEventType as notifHandles } from '../runtime/subscribers/notifications.js'
 
 describe('notifications/matrix', () => {
   let testUserId
@@ -101,5 +103,99 @@ describe('notifications/mentions', () => {
   it('handles empty / null input', () => {
     assert.deepEqual(extractMentions('', {}), [])
     assert.deepEqual(extractMentions(null, {}), [])
+  })
+})
+
+describe('subscribers/notifications — fanout', () => {
+  let ownerId, watcherId, actorId, workItemId
+
+  before(async () => {
+    const { rows: users } = await query(`
+      INSERT INTO blueprint.users (uri, email, password_hash, display_name, is_active)
+      VALUES
+        ('flowos://system/users/fanout-owner',   'fanout-owner@x',   'x', 'Owner',   true),
+        ('flowos://system/users/fanout-watcher', 'fanout-watcher@x', 'x', 'Watcher', true),
+        ('flowos://system/users/fanout-actor',   'fanout-actor@x',   'x', 'Actor',   true)
+      RETURNING id
+    `)
+    ;[ownerId, watcherId, actorId] = users.map(u => u.id)
+
+    const { rows: wi } = await query(`SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1`)
+    workItemId = wi[0].id
+
+    await query(`
+      INSERT INTO runtime.work_item_user_relationships (work_item_id, user_id, relationship_type)
+      VALUES ($1, $2, 'owns'), ($1, $3, 'watching'), ($1, $4, 'watching')
+      ON CONFLICT (work_item_id, user_id, relationship_type) DO NOTHING
+    `, [workItemId, ownerId, watcherId, actorId])
+  })
+
+  after(async () => {
+    // Clear requester_id if we set it in test 2 (avoids FK violation on user delete)
+    await query(`UPDATE runtime.work_items SET requester_id = NULL WHERE requester_id = ANY($1)`, [[ownerId, watcherId, actorId]])
+    await query(`DELETE FROM runtime.notifications WHERE user_id = ANY($1)`, [[ownerId, watcherId, actorId]])
+    await query(`DELETE FROM runtime.work_item_user_relationships WHERE user_id = ANY($1)`, [[ownerId, watcherId, actorId]])
+    await query(`DELETE FROM blueprint.users WHERE id = ANY($1)`, [[ownerId, watcherId, actorId]])
+  })
+
+  it('writes one notifications row per eligible recipient, excluding actor', async () => {
+    const c = await getClient()
+    let eventId
+    try {
+      await c.query('BEGIN')
+      eventId = await emitEvent(c, {
+        eventType: 'work_item.transitioned',
+        entityId:  workItemId,
+        actorId:   actorId,
+        payload:   { from_stage_name: 'A', to_stage_name: 'B' },
+      })
+      await c.query('COMMIT')
+    } finally { c.release() }
+
+    const event = (await query('SELECT * FROM runtime.events WHERE id = $1', [eventId])).rows[0]
+    await notificationsHandler(event)
+
+    const { rows } = await query(
+      'SELECT user_id, reasons FROM runtime.notifications WHERE event_id = $1 ORDER BY user_id',
+      [eventId]
+    )
+    const userIds = rows.map(r => r.user_id)
+    assert.ok(userIds.includes(ownerId),   'owner must receive notification')
+    assert.ok(userIds.includes(watcherId), 'watcher must receive notification')
+    assert.ok(!userIds.includes(actorId),  'actor must be suppressed')
+  })
+
+  it('collapses dedup: owner + requester -> one row with both reasons', async () => {
+    await query('UPDATE runtime.work_items SET requester_id = $1 WHERE id = $2', [ownerId, workItemId])
+
+    const c = await getClient()
+    let eventId
+    try {
+      await c.query('BEGIN')
+      eventId = await emitEvent(c, {
+        eventType: 'work_item.commented',
+        entityId:  workItemId,
+        actorId:   actorId,
+        payload:   { body: 'a thing', author_name: 'Actor' },
+      })
+      await c.query('COMMIT')
+    } finally { c.release() }
+
+    const event = (await query('SELECT * FROM runtime.events WHERE id = $1', [eventId])).rows[0]
+    await notificationsHandler(event)
+
+    const { rows } = await query(
+      'SELECT reasons FROM runtime.notifications WHERE event_id = $1 AND user_id = $2',
+      [eventId, ownerId]
+    )
+    assert.equal(rows.length, 1, 'dedup: exactly one row for owner')
+    assert.ok(rows[0].reasons.includes('owns'),      'reasons must include owns')
+    assert.ok(rows[0].reasons.includes('requester'), 'reasons must include requester')
+  })
+
+  it('handlesEventType covers every seeded event type', async () => {
+    const { rows } = await query('SELECT DISTINCT event_type FROM blueprint.notification_defaults')
+    for (const r of rows) assert.equal(notifHandles(r.event_type), true, r.event_type)
+    assert.equal(notifHandles('test.random'), false)
   })
 })
