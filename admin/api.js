@@ -3754,6 +3754,39 @@ router.post('/event-subscribers/:name/skip-past/:eventId', async (req, res, next
   } catch (err) { next(err) }
 })
 
+// ─── Notifications: inbox ─────────────────────────────────────────────────────
+
+router.get('/notifications', async (req, res, next) => {
+  try {
+    const userId     = req.userId
+    const cursor     = req.query.cursor ? Number(req.query.cursor) : null
+    const unreadOnly = req.query.unread_only === 'true'
+    const limit      = Math.min(Number(req.query.limit) || 50, 200)
+
+    const params = [userId]
+    let where = 'WHERE user_id = $1'
+    if (cursor)     { params.push(cursor); where += ` AND id < $${params.length}` }
+    if (unreadOnly) { where += ' AND read_at IS NULL' }
+    params.push(limit)
+
+    const { rows } = await query(`
+      SELECT id, event_id, work_item_id, event_type, reasons, summary, read_at, created_at
+      FROM runtime.notifications
+      ${where}
+      ORDER BY id DESC
+      LIMIT $${params.length}
+    `, params)
+
+    const next_cursor = rows.length === limit ? rows[rows.length - 1].id : null
+
+    const { rows: counts } = await query(
+      `SELECT COUNT(*)::int AS n FROM runtime.notifications WHERE user_id = $1 AND read_at IS NULL`,
+      [userId]
+    )
+    res.json({ rows, next_cursor, unread_count: counts[0].n })
+  } catch (err) { next(err) }
+})
+
 // Event firehose (latest N events)
 router.get('/events', async (req, res, next) => {
   try {
