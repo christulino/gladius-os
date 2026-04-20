@@ -12,7 +12,7 @@
 | # | Feature | Jira/SNOW Equivalent | Flow OS Status | Notes |
 |---|---------|---------------------|----------------|-------|
 | 1 | **Authentication & authorization** | Login, SSO, RBAC | ~~DONE~~ (Session 17). Server-side sessions, bcrypt, setup wizard, requireAuth. | RBAC/SSO still needed for enterprise. |
-| 2 | **Notifications** | Email, in-app, Slack | Nothing | People need to know when work arrives, is blocked, transitions. Without this the board is a passive display. |
+| 2 | **Notifications** | Email, in-app, Slack | ~~DONE~~ (Session 21). Four channels (in_app/email/webhook/agent), role×event matrix with user overrides, HMAC webhook signing, ownership challenge, rate limits, retention. Agent-as-first-class-subscriber reserved. | Follow-up: agent collaboration v1 (bidirectional protocol, tool-use policies). |
 | 3 | **Search** | JQL, full-text, filters | Title substring only | Need saved filters, field-based search, full-text. This is how people find work outside the board. |
 | 4 | **Attachments / evidence** | File upload on tickets | Schema exists, no implementation | S3/MinIO storage designed but not built. Common need: screenshots, docs, logs. |
 | 5 | **Audit trail UI** | Activity log on each ticket | History endpoint exists, no per-item UI | WorkItemDetail needs a visible history tab showing all state changes. |
@@ -108,7 +108,7 @@ These items remain actionable:
 
 ### Phase 2: Core Experience
 4. Search & saved filters
-5. Notifications (built on event system)
+5. ~~Notifications (built on event system)~~ — DONE (Session 21). Four channels, rate-limited delivery worker, ownership challenge, agent-channel reserved.
 6. ~~Form-based intake (built on custom fields)~~ — DONE (Session 17). Public intake forms.
 7. Attachments / evidence storage
 8. Audit trail UI per work item
