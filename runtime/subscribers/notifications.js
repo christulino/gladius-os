@@ -9,16 +9,22 @@ import { loadMatrix } from '../notifications/matrix.js'
 import { renderSummary } from '../notifications/summaries.js'
 import { extractMentions } from '../notifications/mentions.js'
 
-const HANDLED = new Set()
+const HANDLED = new Set([
+  'work_item.created',
+  'work_item.edited',
+  'work_item.transitioned',
+  'work_item.substate_changed',
+  'work_item.assigned',
+  'work_item.commented',
+  'work_item.spawned',
+  'work_item.linked',
+  'exit_criteria.acknowledged',
+  'exit_criteria.unacknowledged',
+  'exit_criteria.waived',
+])
 
 export function handlesEventType(eventType) {
   return HANDLED.has(eventType)
-}
-
-async function ensureHandledLoaded() {
-  if (HANDLED.size > 0) return
-  const { rows } = await query('SELECT DISTINCT event_type FROM blueprint.notification_defaults')
-  for (const r of rows) HANDLED.add(r.event_type)
 }
 
 async function fetchWorkItem(workItemId) {
@@ -58,7 +64,6 @@ async function fetchEnabledOutOfBandChannels(userId) {
 }
 
 export async function notificationsHandler(event) {
-  await ensureHandledLoaded()
   if (!HANDLED.has(event.event_type)) return
 
   const workItem = await fetchWorkItem(event.entity_id)
