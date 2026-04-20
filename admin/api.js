@@ -1657,6 +1657,7 @@ router.get('/board', async (req, res, next) => {
     const retentionDays = org.done_retention_days ?? 14
 
     // Run items, stages, service classes, and org WIP limits in parallel
+    const currentUserId = req.userId ?? null
     const [itemsResult, stagesResult, scResult, wipResult] = await Promise.all([
       query(`
         SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id, wi.workflow_id,
@@ -1673,7 +1674,11 @@ router.get('/board', async (req, res, next) => {
                  ELSE 'standard'
                END AS derived_service_class,
                owner_rel.user_id AS owner_user_id,
-               owner_user.display_name AS owner_display_name
+               owner_user.display_name AS owner_display_name,
+               COALESCE((
+                 SELECT COUNT(*)::int FROM runtime.notifications n
+                 WHERE n.user_id = $3 AND n.work_item_id = wi.id AND n.read_at IS NULL
+               ), 0) AS unread_count
         FROM runtime.work_items wi
         JOIN blueprint.work_item_types wit     ON wit.id = wi.work_item_type_id
         JOIN blueprint.stages s                ON s.id   = wi.current_stage_id
@@ -1690,7 +1695,7 @@ router.get('/board', async (req, res, next) => {
             OR (wi.spawn_state = 'done' AND wi.resolved_at > NOW() - make_interval(days => $2))
           )
         ORDER BY wi.entered_current_stage_at ASC
-      `, [orgId, retentionDays]),
+      `, [orgId, retentionDays, currentUserId]),
       // Fetch real stages from workflows that have active items in this org
       // PLUS stages from all workflows assigned to org's work item types (always-show)
       // Include workflows from recently-completed items too

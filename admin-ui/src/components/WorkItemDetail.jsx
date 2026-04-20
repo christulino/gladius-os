@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api } from '@/lib/api'
+import { api, notificationsApi } from '@/lib/api'
 import { formatElapsed, formatRelative } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
@@ -345,6 +345,13 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   useEffect(() => {
     if (open && workItemId) loadData()
   }, [open, workItemId, loadData])
+
+  // Mark all unread notifications for this work item as read when drawer opens
+  useEffect(() => {
+    if (open && workItemId) {
+      notificationsApi.markReadBulk({ work_item_id: workItemId }).catch(() => {})
+    }
+  }, [open, workItemId])
 
   useEffect(() => {
     if (!item) return
