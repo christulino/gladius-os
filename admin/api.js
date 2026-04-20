@@ -3825,6 +3825,81 @@ router.post('/notifications/mark-read', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// ─── Notifications: preferences ───────────────────────────────────────────────
+
+router.get('/notification-preferences', async (req, res, next) => {
+  try {
+    const uid = req.userId
+    const [defaults, overrides, channels] = await Promise.all([
+      query('SELECT * FROM blueprint.notification_defaults'),
+      query('SELECT * FROM blueprint.user_notification_overrides WHERE user_id = $1', [uid]),
+      query('SELECT channel, is_enabled, digest, next_digest_at, config FROM blueprint.user_notification_channels WHERE user_id = $1', [uid]),
+    ])
+    res.json({
+      defaults: defaults.rows,
+      overrides: overrides.rows,
+      channels:  channels.rows,
+    })
+  } catch (err) { next(err) }
+})
+
+router.put('/notification-preferences', async (req, res, next) => {
+  const uid = req.userId
+  const { overrides, channels } = req.body || {}
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    if (Array.isArray(overrides)) {
+      await client.query('DELETE FROM blueprint.user_notification_overrides WHERE user_id = $1', [uid])
+      for (const o of overrides) {
+        await client.query(
+          `INSERT INTO blueprint.user_notification_overrides (user_id, relationship_type, event_type, enabled)
+           VALUES ($1,$2,$3,$4)`,
+          [uid, o.relationship_type, o.event_type, !!o.enabled]
+        )
+      }
+    }
+    if (Array.isArray(channels)) {
+      for (const ch of channels) {
+        const { rows: existing } = await client.query(
+          `SELECT config FROM blueprint.user_notification_channels WHERE user_id=$1 AND channel=$2`,
+          [uid, ch.channel]
+        )
+        const urlChanged = (ch.channel === 'webhook' || ch.channel === 'agent')
+                        && ch.config?.url
+                        && ch.config.url !== existing[0]?.config?.url
+        const isEnabled = urlChanged ? false : !!ch.is_enabled
+        await client.query(
+          `INSERT INTO blueprint.user_notification_channels
+             (user_id, channel, is_enabled, digest, config)
+           VALUES ($1,$2,$3,$4,$5::jsonb)
+           ON CONFLICT (user_id, channel) DO UPDATE
+           SET is_enabled = EXCLUDED.is_enabled,
+               digest     = EXCLUDED.digest,
+               config     = EXCLUDED.config`,
+          [uid, ch.channel, isEnabled, ch.digest || 'realtime', JSON.stringify(ch.config || {})]
+        )
+        if (urlChanged) {
+          const { runChallenge } = await import('../runtime/notifications/ownershipChallenge.js')
+          ;(async () => {
+            const result = await runChallenge({ url: ch.config.url })
+            if (result.ok) {
+              await query(`UPDATE blueprint.user_notification_channels
+                           SET is_enabled = true WHERE user_id=$1 AND channel=$2`, [uid, ch.channel])
+            }
+          })().catch(e => console.error('[challenge]', e))
+        }
+      }
+    }
+    await client.query('COMMIT')
+    res.json({ ok: true })
+  } catch (e) {
+    await client.query('ROLLBACK')
+    res.status(500).json({ error: e.message })
+  } finally { client.release() }
+})
+
 // Event firehose (latest N events)
 router.get('/events', async (req, res, next) => {
   try {
