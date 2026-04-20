@@ -3787,6 +3787,44 @@ router.get('/notifications', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// ─── Notifications: mark-read ─────────────────────────────────────────────────
+
+router.patch('/notifications/:id/read', async (req, res, next) => {
+  try {
+    const { rowCount } = await query(
+      `UPDATE runtime.notifications SET read_at = now()
+       WHERE id = $1 AND user_id = $2 AND read_at IS NULL`,
+      [req.params.id, req.userId]
+    )
+    res.json({ updated: rowCount })
+  } catch (err) { next(err) }
+})
+
+router.post('/notifications/mark-read', async (req, res, next) => {
+  try {
+    const { ids, work_item_id, event_type, older_than } = req.body || {}
+    const params = [req.userId]
+    const conds = ['user_id = $1', 'read_at IS NULL']
+    if (Array.isArray(ids) && ids.length) {
+      params.push(ids); conds.push(`id = ANY($${params.length})`)
+    }
+    if (work_item_id) {
+      params.push(work_item_id); conds.push(`work_item_id = $${params.length}`)
+    }
+    if (event_type) {
+      params.push(event_type); conds.push(`event_type = $${params.length}`)
+    }
+    if (older_than) {
+      params.push(older_than); conds.push(`created_at < $${params.length}`)
+    }
+    const { rowCount } = await query(
+      `UPDATE runtime.notifications SET read_at = now() WHERE ${conds.join(' AND ')}`,
+      params,
+    )
+    res.json({ updated: rowCount })
+  } catch (err) { next(err) }
+})
+
 // Event firehose (latest N events)
 router.get('/events', async (req, res, next) => {
   try {
