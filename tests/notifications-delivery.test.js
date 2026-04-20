@@ -97,3 +97,16 @@ describe('channels/agent — envelope', () => {
     assert.ok(env.context)
   })
 })
+
+import { __testables as workerInternals } from '../runtime/deliveryWorker.js'
+
+describe('deliveryWorker — backoff constants', () => {
+  it('BACKOFF_MS has 5 entries escalating monotonically', () => {
+    const b = workerInternals.BACKOFF_MS
+    assert.equal(b.length, 5)
+    for (let i = 1; i < b.length; i++) assert.ok(b[i] > b[i - 1])
+  })
+  it('MAX_ATTEMPTS equals BACKOFF_MS length', () => {
+    assert.equal(workerInternals.MAX_ATTEMPTS, workerInternals.BACKOFF_MS.length)
+  })
+})
