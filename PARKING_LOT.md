@@ -2,10 +2,6 @@
 
 ## Open
 
-### [2026-04-16] Split events test file — drainNow tests conflict with live server
-**Status:** Open
-**Context:** `tests/events-system.test.js` has unit-style tests (3 in the `runtime/eventProcessor.js — cursor and drain` describe block) that call `drainNow()`. Those require the test process to hold the PG advisory lock, which means a live API server can't be running. The integration tests in the same file need the server running. Currently you can only pass either set, never both in the same run. Fix by splitting into `tests/events-processor.test.js` (no-server) and `tests/events-integration.test.js` (server-running). Small refactor, ~30 min.
-
 ### [2026-04-16] Event system v1 limitations to revisit under load
 **Status:** Open
 **Context:** Known deferred items from session 20:
@@ -16,6 +12,10 @@
 - Three v1 event types deferred because endpoints don't exist: `work_item.unlinked` (need DELETE /links), `work_item.comment_edited`, `work_item.comment_deleted`. Emit when those endpoints are built.
 
 ## Resolved
+
+### [2026-04-18] Split events test file — drainNow tests conflict with live server
+**Status:** Resolved
+**Context:** Split `tests/events-system.test.js` into `tests/events-processor.test.js` (emitEvent + `cursor and drain` + neo4jSync/auditLog handler tests — run with no live server) and `tests/events-integration.test.js` (all describes that hit `api(...)` + advisory-lock check — requires `npm run dev`). Processor file runs cleanly: 16/16 assertions pass. Neo4j driver keeps the test process alive ~until idle-timeout; cosmetic only.
 
 ### [2026-04-16] GitHub push credentials expired
 **Status:** Resolved
