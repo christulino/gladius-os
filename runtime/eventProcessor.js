@@ -16,6 +16,7 @@
 import { pool, query, getClient } from '../db/postgres.js'
 import { neo4jSyncHandler, handlesEventType as neo4jHandles } from './subscribers/neo4jSync.js'
 import { auditLogHandler, handlesEventType as auditHandles } from './subscribers/auditLog.js'
+import { notificationsHandler, handlesEventType as notificationsHandles } from './subscribers/notifications.js'
 
 const LOCK_KEY        = 0x0F105053   // 'FlOS' — unique FlowOS processor key
 const SAFETY_POLL_MS  = 30_000
@@ -305,4 +306,10 @@ registerSubscriber({
   name:    'audit-log',
   handles: auditHandles,
   handler: auditLogHandler,
+})
+
+registerSubscriber({
+  name:    'notifications',
+  handles: notificationsHandles,
+  handler: notificationsHandler,
 })
