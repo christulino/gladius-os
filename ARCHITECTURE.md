@@ -349,3 +349,73 @@ ack/waive. Admin UI at `/admin/events`.
   with the server running.
 - No retention policy yet — events accumulate. Add a cron when volume warrants.
 - Cross-instance nudging uses the 30s safety poll, not PG LISTEN/NOTIFY.
+
+### Session 21 (2026-04-20) — Notifications v1
+Notifications subsystem shipped. Three new runtime tables (migration 012 +
+013-fix): `notifications` (in-app inbox), `notification_deliveries` (outbox
+for email/webhook/agent with retry state), plus three blueprint tables for
+the default matrix, per-user overrides, and per-user channel config.
+`blueprint.users.is_agent` column added.
+
+**Decisions:**
+
+#### [2026-04-20] Hybrid channel config schema
+**What:** `blueprint.user_notification_channels` uses typed columns for
+stable universal fields (`is_enabled`, `digest`, `next_digest_at`) plus
+a `config` JSONB for channel-specific payload.
+**Why:** The agent channel's config shape (system_prompt, context_template,
+tool_use_mode, model, response_handling) is expected to evolve quickly.
+JSONB avoids migrations for every new agent field. Universal fields stay
+typed for index/query clarity.
+**Tradeoffs:** Validation of JSONB shape moves to application layer
+(per-channel validators). Acceptable at current scale.
+
+#### [2026-04-20] Agent as first-class channel, reserved namespace
+**What:** Agents are regular user rows with `is_agent=true`, authenticated
+by API key, and receive notifications via a dedicated `'agent'` channel that
+wraps the payload in a prompt envelope but delivers identically to webhook
+(HTTP + HMAC). The channel name is reserved in the CHECK constraint for v1.
+**Why:** Unlocks FlowOS-as-agent-collaboration-platform later (Claude
+maintaining roadmaps, updating TODOs, executing as work happens) without a
+schema migration. The agent is a first-class participant in the same fanout
+matrix as humans.
+**Tradeoffs:** v1 agent behavior is "webhook + envelope" only — no
+bidirectional protocol, no context fetching beyond the event payload, no
+tool-use policies. Those are scoped to a follow-up `agent-collaboration-v1`
+design spec.
+
+#### [2026-04-20] Event type list hardcoded in the subscriber
+**What:** `runtime/subscribers/notifications.js` holds a static `HANDLED`
+Set of the 11 v1 event types. Adding a new event type requires editing both
+the set and the seed in `blueprint.notification_defaults`.
+**Why:** `handlesEventType()` is sync and called by the processor before
+the handler runs. A DB-lazy-load caused a race where all events were
+silently skipped at startup until the first handler invocation (which
+never happened because the filter returned false). Commit `f8c2579` fixed
+this. Static list is the simplest correct answer and makes the "v1
+supported events" list explicit in code.
+**Tradeoffs:** Minor coupling — the seed SQL and the JS list must stay in
+sync. Caught at integration test time if they drift.
+
+#### [2026-04-20] Webhook ownership challenge as activation gate
+**What:** When a user saves a new webhook or agent URL, the channel is
+marked `is_enabled=false` and FlowOS POSTs a random token; the endpoint
+must echo the token back within 10s for the channel to activate.
+**Why:** Primary defense against the amplifier case — a malicious user
+can't turn FlowOS into a traffic generator against a victim endpoint
+because the victim won't pass the challenge. Combined with per-host rate
+limiter as defense in depth.
+**Tradeoffs:** Users need to build a small verification handler at the
+webhook URL, which is a standard pattern (Stripe, Slack) so acceptable.
+
+#### [2026-04-20] Three-layer rate limiting on out-of-band delivery
+**What:** (1) Per-(user, channel) sliding window computed from the
+deliveries table itself (60/min, 600/hour default); (2) per-destination-host
+in-memory sliding window (30/min); (3) global worker concurrency semaphore
+(10 default). Breach reschedules, never drops.
+**Why:** Low effort, defense in depth. User-level cap bounds any one
+account's contribution; host-level cap prevents amplification; concurrency
+cap prevents one slow endpoint from starving the worker.
+**Tradeoffs:** Per-host limiter is in-memory — cross-instance state lost on
+restart. Accepted because the cap is advisory and a brief restart burst is
+safer than the cross-instance coordination we don't need yet.

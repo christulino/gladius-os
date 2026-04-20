@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-04-16 (Session 20 — Event system shipped)
+> Last updated: 2026-04-20 (Session 21 — Notifications v1 shipped)
 
 ---
 
@@ -58,6 +58,15 @@ tests use the same local PostgreSQL instance.
 - **Event system:** `runtime.events` append-only log + per-subscriber cursor. Emit
   via `emitEvent(client, ...)` inside a transaction. Subscribers in `runtime/subscribers/`.
   Single active processor per deployment (PG advisory lock).
+- **Notifications:** event subscriber fans out to `runtime.notifications` +
+  `runtime.notification_deliveries`. Four channels (`in_app` direct-query,
+  `email`/`webhook`/`agent` via `runtime/deliveryWorker.js` with exponential
+  backoff + rate limits + webhook ownership challenge). Event-type list is
+  **hardcoded** in `runtime/subscribers/notifications.js` (keep in sync with
+  `blueprint.notification_defaults` seed in migration 012).
+- **Admin-ui nav:** tab-based via `NAV` array + `PAGES` map in `App.jsx`.
+  No react-router. The sidebar is inlined in `App.jsx` (not a separate
+  `Sidebar.jsx` file).
 
 ---
 
@@ -77,7 +86,10 @@ tests use the same local PostgreSQL instance.
 | `admin-ui/style/README.md` | **UI style guide — read before any frontend changes** |
 | `core/events.js` | Event emission + post-commit nudge |
 | `runtime/eventProcessor.js` | Advisory lock, drain loop, subscriber registry |
-| `runtime/subscribers/*.js` | Event subscribers (neo4j-sync, audit-log) |
+| `runtime/subscribers/*.js` | Event subscribers (neo4j-sync, audit-log, notifications) |
+| `runtime/deliveryWorker.js` | Notification delivery outbox drain (separate lock) |
+| `runtime/channels/*.js` | Webhook/email/agent dispatch modules |
+| `runtime/notifications/*.js` | Matrix, summaries, mentions, ownership challenge |
 
 ---
 
@@ -158,6 +170,6 @@ For deep architecture details, read these on demand — not every session:
 - **Git:** `christulino/flowos` (private, will go public on release)
 - **Open source release blockers:** Cross-instance service requests, seed-and-go
   experience, README + LICENSE
-- **Current state:** 50+ PG tables, 10 migrations, 70+ API endpoints, 18+ React pages,
-  auth working, intake forms working, exit criteria engine working
+- **Current state:** 55+ PG tables, 13 migrations, 80+ API endpoints, 19+ React pages,
+  auth working, intake forms working, exit criteria engine working, notifications working
 - **See `ARCHITECTURE.md`** for the full "what's built / what's not" breakdown
