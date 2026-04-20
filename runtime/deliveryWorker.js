@@ -170,3 +170,71 @@ function safeHost(url) {
 export const __testables = { BACKOFF_MS, MAX_ATTEMPTS }
 
 export default { startDeliveryWorker, stopDeliveryWorker }
+
+let digestTimer = null
+
+export async function startDigestTick() {
+  if (digestTimer) return
+  digestTimer = setInterval(runDigestTick, 60_000)
+}
+
+export async function stopDigestTick() {
+  if (digestTimer) { clearInterval(digestTimer); digestTimer = null }
+}
+
+async function runDigestTick() {
+  try {
+    const { rows: users } = await query(`
+      SELECT user_id, config
+      FROM blueprint.user_notification_channels
+      WHERE channel = 'email' AND is_enabled = true
+        AND digest IN ('hourly','daily')
+        AND (next_digest_at IS NULL OR next_digest_at <= now())
+    `)
+    for (const u of users) await flushDigestForUser(u)
+  } catch (e) {
+    console.error('[deliveryWorker] digest tick failed:', e)
+  }
+}
+
+async function flushDigestForUser(u) {
+  const c = await getClient()
+  try {
+    await c.query('BEGIN')
+    const { rows: pending } = await c.query(`
+      SELECT d.id, n.summary, n.work_item_id
+      FROM runtime.notification_deliveries d
+      JOIN runtime.notifications n ON n.id = d.notification_id
+      WHERE d.status = 'pending' AND d.channel = 'email' AND n.user_id = $1
+      FOR UPDATE SKIP LOCKED
+    `, [u.user_id])
+    if (!pending.length) {
+      await bumpNextDigest(c, u); await c.query('COMMIT'); return
+    }
+    const { renderDigestBody } = await import('./channels/email.js')
+    const { subject, text, html } = renderDigestBody(pending, process.env.PUBLIC_BASE_URL || '')
+    const res = await deliverEmail({ to: u.config.email_to, subject, text, html })
+    if (res.ok) {
+      await c.query(`UPDATE runtime.notification_deliveries SET status='sent', sent_at=now()
+                     WHERE id = ANY($1)`, [pending.map(p => p.id)])
+    }
+    await bumpNextDigest(c, u)
+    await c.query('COMMIT')
+  } catch (e) {
+    await c.query('ROLLBACK'); throw e
+  } finally { c.release() }
+}
+
+async function bumpNextDigest(c, u) {
+  const { rows } = await c.query(
+    `SELECT digest FROM blueprint.user_notification_channels WHERE user_id=$1 AND channel='email'`,
+    [u.user_id]
+  )
+  const d = rows[0]?.digest || 'realtime'
+  const expr = d === 'hourly' ? `now() + interval '1 hour'`
+             : d === 'daily'  ? `now() + interval '1 day'`
+             : `NULL`
+  await c.query(`UPDATE blueprint.user_notification_channels
+                 SET next_digest_at = ${expr}
+                 WHERE user_id = $1 AND channel = 'email'`, [u.user_id])
+}
