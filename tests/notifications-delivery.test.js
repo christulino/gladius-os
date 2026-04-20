@@ -54,6 +54,7 @@ describe('channels/webhook', () => {
 })
 
 import { renderRealtimeBody, renderDigestBody } from '../runtime/channels/email.js'
+import { buildAgentEnvelope } from '../runtime/channels/agent.js'
 
 describe('channels/email — rendering', () => {
   it('realtime body contains the summary and work item link', () => {
@@ -75,5 +76,24 @@ describe('channels/email — rendering', () => {
     assert.match(subject, /2 updates/)
     assert.match(text, /one/)
     assert.match(text, /two/)
+  })
+})
+
+describe('channels/agent — envelope', () => {
+  it('wraps notification in prompt envelope using channel config', () => {
+    const env = buildAgentEnvelope(
+      {
+        system_prompt: 'You are FlowOS Assistant',
+        context_template: 'Notification for {{ work_item.display_key }}: {{ summary }}',
+      },
+      {
+        summary: 'BUG.1 moved to Done',
+        work_item: { display_key: 'BUG.1' },
+      },
+    )
+    assert.equal(env.system_prompt, 'You are FlowOS Assistant')
+    assert.match(env.instruction, /BUG\.1/)
+    assert.match(env.instruction, /moved to Done/)
+    assert.ok(env.context)
   })
 })
