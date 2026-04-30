@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
+import { WorkItemHistory } from '@/components/WorkItemHistory'
 import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
 
 // ─── Custom Fields Renderer ─────────────────────────────────────────────────
@@ -730,7 +731,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
             {/* Tabs */}
             <div className="flex border-b border-border px-4">
-              {['details', 'comments'].map(t => (
+              {['details', 'activity', 'comments'].map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -738,14 +739,20 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                     tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {t === 'details' ? 'Details' : `Comments (${comments.length})`}
+                  {t === 'details'
+                    ? 'Details'
+                    : t === 'activity'
+                      ? 'Activity'
+                      : `Comments (${comments.length})`}
                 </button>
               ))}
             </div>
 
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto p-4">
-              {tab === 'details' ? (
+              {tab === 'activity' ? (
+                <WorkItemHistory workItemId={workItemId} />
+              ) : tab === 'details' ? (
                 <div className="flex flex-col gap-3">
                   {/* Timers */}
                   <div className="grid grid-cols-2 gap-4">

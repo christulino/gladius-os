@@ -12,6 +12,7 @@ import { query, getClient } from '../db/postgres.js'
 import { getBuffer, sseHandler } from './logger.js'
 import { generateUri } from '../core/uri.js'
 import { createWorkItem, ValidationError } from '../runtime/workItems.js'
+import { getWorkItemHistory } from '../runtime/workItemHistory.js'
 import { emitEvent, nudgeAfterCommit } from '../core/events.js'
 import { writeFile }  from 'fs/promises'
 import { mkdir }      from 'fs/promises'
@@ -2439,6 +2440,21 @@ router.get('/work-items/:id/comments', async (req, res, next) => {
       ORDER BY c.created_at ASC
     `, [req.params.id])
     res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// GET /admin/api/work-items/:id/history — unified audit trail
+router.get('/work-items/:id/history', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id)
+    if (!workItemId) return res.status(400).json({ error: 'invalid work item id' })
+    const { rows: wi } = await query('SELECT id FROM runtime.work_items WHERE id = $1', [workItemId])
+    if (!wi.length) return res.status(404).json({ error: 'Work item not found' })
+    const result = await getWorkItemHistory(workItemId, {
+      limit: req.query.limit,
+      before: req.query.before,
+    })
+    res.json(result)
   } catch (err) { next(err) }
 })
 
