@@ -15,7 +15,7 @@
 | 2 | **Notifications** | Email, in-app, Slack | ~~DONE~~ (Session 21). Four channels (in_app/email/webhook/agent), role×event matrix with user overrides, HMAC webhook signing, ownership challenge, rate limits, retention. Agent-as-first-class-subscriber reserved. | Follow-up: agent collaboration v1 (bidirectional protocol, tool-use policies). |
 | 3 | **Search** | JQL, full-text, filters | Title substring only | Need saved filters, field-based search, full-text. This is how people find work outside the board. |
 | 4 | **Attachments / evidence** | File upload on tickets | Schema exists, no implementation | S3/MinIO storage designed but not built. Common need: screenshots, docs, logs. |
-| 5 | **Audit trail UI** | Activity log on each ticket | History endpoint exists, no per-item UI | WorkItemDetail needs a visible history tab showing all state changes. |
+| 5 | **Audit trail UI** | Activity log on each ticket | ~~DONE~~ (Session 22). Activity tab on WorkItemDetail showing all events from runtime.events with per-field edit expansion, cursor pagination. | v2 candidates: event-type filter, search-within-history, diff viewer, click-through to spawned children. |
 | 6 | **Bulk operations** | Multi-select + transition/assign | Nothing | "Move these 8 items to Done" — daily need for any team. |
 | 7 | **Form-based intake** | ServiceNow catalog forms, Jira create screens | ~~DONE~~ (Session 17). Public intake forms at /intake/:slug, dynamic field rendering, tracking numbers. | Admin toggle per type in Org Center. |
 

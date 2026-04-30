@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-04-20 (Session 21 — Notifications v1 shipped)
+> Last updated: 2026-04-29 (Session 22 — Audit trail v1 shipped)
 
 ---
 
@@ -64,6 +64,11 @@ tests use the same local PostgreSQL instance.
   backoff + rate limits + webhook ownership challenge). Event-type list is
   **hardcoded** in `runtime/subscribers/notifications.js` (keep in sync with
   `blueprint.notification_defaults` seed in migration 012).
+- **Audit trail:** `GET /admin/api/work-items/:id/history` reads
+  `runtime.events` filtered by `entity_id` and expands `work_item.edited`
+  payloads into per-field changes. Logic in `runtime/workItemHistory.js`,
+  rendered as the "Activity" tab in `WorkItemDetail` via `WorkItemHistory.jsx`.
+  Cursor pagination via `id < before` + `next_before` in response.
 - **Admin-ui nav:** tab-based via `NAV` array + `PAGES` map in `App.jsx`.
   No react-router. The sidebar is inlined in `App.jsx` (not a separate
   `Sidebar.jsx` file).
@@ -90,6 +95,7 @@ tests use the same local PostgreSQL instance.
 | `runtime/deliveryWorker.js` | Notification delivery outbox drain (separate lock) |
 | `runtime/channels/*.js` | Webhook/email/agent dispatch modules |
 | `runtime/notifications/*.js` | Matrix, summaries, mentions, ownership challenge |
+| `runtime/workItemHistory.js` | Audit trail query (events + edits + actor enrichment) |
 
 ---
 
@@ -171,5 +177,6 @@ For deep architecture details, read these on demand — not every session:
 - **Open source release blockers:** Cross-instance service requests, seed-and-go
   experience, README + LICENSE
 - **Current state:** 55+ PG tables, 13 migrations, 80+ API endpoints, 19+ React pages,
-  auth working, intake forms working, exit criteria engine working, notifications working
+  auth working, intake forms working, exit criteria engine working, notifications working,
+  per-item audit trail working
 - **See `ARCHITECTURE.md`** for the full "what's built / what's not" breakdown

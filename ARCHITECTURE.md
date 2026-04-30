@@ -419,3 +419,30 @@ cap prevents one slow endpoint from starving the worker.
 **Tradeoffs:** Per-host limiter is in-memory — cross-instance state lost on
 restart. Accepted because the cap is advisory and a brief restart burst is
 safer than the cross-instance coordination we don't need yet.
+
+### Session 22 (2026-04-29) — Audit trail v1
+Per-work-item audit trail shipped on top of the Session 20 event system —
+no schema changes. New module `runtime/workItemHistory.js` reads
+`runtime.events` filtered by `entity_id`, joins `blueprint.users` for
+actor metadata, and runs three batched lookups (stages, users, target
+items) to resolve display labels for transitioned/assigned/linked events.
+Field-level edit detail comes from the event payload's `changes[]` array,
+not the parallel `runtime.work_item_edits` table — both hold the same
+data; payload is one fewer join.
+
+New endpoint `GET /admin/api/work-items/:id/history` paginates
+descending by `id` with cursor `?before=`. Frontend exposes it as the
+"Activity" tab on `WorkItemDetail` via `WorkItemHistory.jsx` (~162
+lines). Edit rows expand inline to show `field: old → new`.
+
+**Decisions:** none — straightforward feature work atop an existing
+substrate.
+
+**Tests:** 7-test integration suite covering 404, single-event,
+multi-field expansion, assignment summary, descending order, limit
+parameter, cursor pagination. All green.
+
+**Out of scope for v1:** event-type filter, search-within-history,
+diff viewer for long text, "revert" actions, click-through to spawned
+children. Manual browser verification of the tab is the only
+unverified piece — flagged for next session.
