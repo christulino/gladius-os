@@ -99,6 +99,13 @@ export const api = {
   workItemComments:  (id) => apiFetch(`/work-items/${id}/comments`),
   addComment:        (id, body, parent_comment_id) => apiFetch(`/work-items/${id}/comments`, { method: 'POST', body: JSON.stringify({ body, parent_comment_id }) }),
 
+  // History (audit trail)
+  workItemHistory:   (id, { limit = 50, before = null } = {}) => {
+    const qs = new URLSearchParams({ limit: String(limit) })
+    if (before) qs.set('before', String(before))
+    return apiFetch(`/work-items/${id}/history?${qs.toString()}`)
+  },
+
   // User Relationships
   workItemRelationships: (id) => apiFetch(`/work-items/${id}/relationships`),
   addRelationship:   (id, user_id, relationship_type) => apiFetch(`/work-items/${id}/relationships`, { method: 'POST', body: JSON.stringify({ user_id, relationship_type }) }),
