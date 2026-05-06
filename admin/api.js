@@ -2127,6 +2127,48 @@ router.delete('/org-wip-limits/:id', async (req, res, next) => {
 // =============================================================================
 
 import { prepareTransition, executeTransition } from '../runtime/transitions.js'
+import { parse as jqlParse, JQLSyntaxError, JQLSemanticError } from '../runtime/search/jql.js'
+import { compile as jqlCompile } from '../runtime/search/jqlCompiler.js'
+import { buildFieldCatalog } from '../runtime/search/fieldCatalog.js'
+import { translate as nlTranslate } from '../runtime/search/translate.js'
+
+// Build the per-request user search context: userId, accessible orgIds, isAdmin.
+// Used by all /search* and /saved-filters* routes.
+async function getUserSearchContext(req) {
+  if (!req.userId) {
+    const err = new Error('not authenticated'); err.status = 401; err.expose = true
+    throw err
+  }
+  const userRes = await query(
+    'SELECT id, email, is_admin, display_name FROM blueprint.users WHERE id = $1',
+    [req.userId]
+  )
+  if (userRes.rowCount === 0) {
+    const err = new Error('user not found'); err.status = 401; err.expose = true
+    throw err
+  }
+  const user = userRes.rows[0]
+  const memb = await query(
+    'SELECT org_id FROM blueprint.org_memberships WHERE user_id = $1 AND is_active = true',
+    [req.userId]
+  )
+  const orgIds = memb.rows.map(r => r.org_id)
+  return { user, userId: user.id, orgIds, isAdmin: !!user.is_admin }
+}
+
+function canEditFilter(filter, ctx) {
+  if (filter.owner_user_id === ctx.userId) return true
+  if (filter.share_scope === 'global' && ctx.isAdmin) return true
+  // Org admin would require role-permission lookup; deferred until role model wired up.
+  return false
+}
+
+function canViewFilter(filter, ctx) {
+  if (filter.owner_user_id === ctx.userId) return true
+  if (filter.share_scope === 'global') return true
+  if (filter.share_scope === 'org' && ctx.orgIds.includes(filter.owner_org_id)) return true
+  return false
+}
 
 // GET /admin/api/work-items/search — search by title or display_key
 router.get('/work-items/search', async (req, res, next) => {
@@ -3988,6 +4030,337 @@ router.get('/events', async (req, res, next) => {
     `, typeLike ? [limit, typeLike] : [limit])
     res.json({ rows, count: rows.length })
   } catch (err) { next(err) }
+})
+
+// =============================================================================
+// SEARCH v1 — JQL + saved filters
+// =============================================================================
+
+router.get('/search/fields', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
+    res.json({
+      translator_available: !!process.env.ANTHROPIC_API_KEY,
+      native: catalog.native,
+      custom: catalog.custom,
+    })
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+router.get('/search', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const q = (req.query.q || '').trim()
+    if (!q) return res.json({ rows: [], next_before: null })
+
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
+    const before = req.query.before ? parseInt(req.query.before, 10) : null
+    const include = (req.query.include || '').split(',').map(s => s.trim()).filter(Boolean)
+    const debug = req.query.debug === '1' && ctx.isAdmin
+
+    const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
+    const compileCtx = {
+      userId:            ctx.userId,
+      orgIds:            ctx.orgIds,
+      isAdmin:           ctx.isAdmin,
+      doneRetentionDays: 90,
+      customFields:      catalog.compilerInput,
+    }
+
+    let ast
+    try { ast = jqlParse(q) }
+    catch (err) {
+      if (err instanceof JQLSyntaxError) {
+        return res.status(400).json({
+          error: 'JQL_SYNTAX_ERROR', message: err.message,
+          position: err.position, snippet: err.snippet,
+        })
+      }
+      throw err
+    }
+
+    let compiled
+    try { compiled = jqlCompile(ast, compileCtx) }
+    catch (err) {
+      if (err instanceof JQLSemanticError) {
+        return res.status(400).json({
+          error: 'JQL_SEMANTIC_ERROR', message: err.message,
+          field: err.field, reason: err.reason, suggestion: err.suggestion,
+        })
+      }
+      throw err
+    }
+
+    let { sql, params } = compiled
+    if (before) {
+      params.push(before)
+      sql = sql.replace(/ORDER BY/, `AND wi.id < $${params.length} ORDER BY`)
+    }
+    params.push(limit + 1)
+    sql += `\n    LIMIT $${params.length}`
+
+    const result = await query(sql, params)
+    let rows = result.rows
+    let nextBefore = null
+    if (rows.length > limit) {
+      rows = rows.slice(0, limit)
+      nextBefore = rows[rows.length - 1].id
+    }
+
+    if (include.includes('snippet') && rows.length > 0) {
+      const textMatch = q.match(/(\w+)\s*~\s*(["'])(.+?)\2/)
+      if (textMatch) {
+        const term = textMatch[3]
+        const ids = rows.map(r => r.id)
+        const headlinesRes = await query(`
+          SELECT wis.work_item_id, ts_headline('english',
+            wis.title_text || ' ' || wis.description_text || ' ' || wis.custom_text || ' ' || wis.comments_text,
+            plainto_tsquery('english', $1),
+            'StartSel=<mark>, StopSel=</mark>, MaxWords=20, MinWords=5'
+          ) AS snippet
+          FROM runtime.work_item_search wis
+          WHERE wis.work_item_id = ANY($2)
+        `, [term, ids])
+        const map = new Map(headlinesRes.rows.map(r => [r.work_item_id, r.snippet]))
+        rows = rows.map(r => ({ ...r, snippet: map.get(r.id) }))
+      }
+    }
+
+    const response = { rows, next_before: nextBefore }
+    if (include.includes('total')) {
+      const countRes = await query(
+        `SELECT COUNT(*) AS c FROM (${compiled.sql.replace(/ORDER BY[\s\S]*$/, '')}) AS sub LIMIT 10001`,
+        compiled.params
+      )
+      response.total = parseInt(countRes.rows[0].c, 10)
+    }
+    if (debug) {
+      response.parsed_jql = { ast, sql: compiled.sql }
+    }
+    res.json(response)
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+router.post('/search/translate', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const { prompt } = req.body || {}
+    if (typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'prompt is required' })
+    }
+    const result = await nlTranslate({
+      prompt,
+      userContext: { userId: ctx.userId, orgIds: ctx.orgIds },
+    })
+    res.json(result)
+  } catch (err) {
+    if (err.code === 'PROMPT_TOO_LONG')        return res.status(400).json({ error: err.code, message: err.message, max_chars: err.max_chars })
+    if (err.code === 'TRANSLATION_FAILED')     return res.status(400).json({ error: err.code, message: err.message, raw_response: req.userId && err.raw_response ? err.raw_response : undefined })
+    if (err.code === 'RATE_LIMITED')           return res.status(429).json({ error: err.code, message: err.message, retry_after_seconds: err.retry_after_seconds })
+    if (err.code === 'TRANSLATOR_UNAVAILABLE') return res.status(501).json({ error: err.code, message: err.message })
+    if (err.code === 'TRANSLATOR_UPSTREAM')    return res.status(503).json({ error: err.code, message: err.message })
+    if (err.code === 'BUDGET_EXHAUSTED')       return res.status(503).json({ error: err.code, message: err.message })
+    if (err.code === 'TRANSLATOR_TIMEOUT')     return res.status(504).json({ error: err.code, message: err.message })
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+// =============================================================================
+// SAVED FILTERS
+// =============================================================================
+
+async function loadSavedFilter(id) {
+  const r = await query('SELECT * FROM blueprint.saved_filters WHERE id = $1', [id])
+  return r.rows[0] || null
+}
+
+router.get('/saved-filters', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const scope = req.query.scope || 'all'
+    const orgIdParam = req.query.org_id ? parseInt(req.query.org_id, 10) : null
+
+    const conditions = []
+    const params = []
+    if (scope === 'mine') {
+      params.push(ctx.userId)
+      conditions.push(`sf.owner_user_id = $${params.length}`)
+    } else if (scope === 'org') {
+      params.push(ctx.orgIds.length ? ctx.orgIds : [-1])
+      conditions.push(`(sf.share_scope = 'org' AND sf.owner_org_id = ANY($${params.length}))`)
+      if (orgIdParam) {
+        params.push(orgIdParam)
+        conditions.push(`sf.owner_org_id = $${params.length}`)
+      }
+    } else if (scope === 'global') {
+      conditions.push(`sf.share_scope = 'global'`)
+    } else {
+      params.push(ctx.userId)
+      params.push(ctx.orgIds.length ? ctx.orgIds : [-1])
+      conditions.push(`(sf.owner_user_id = $${params.length - 1}
+                       OR (sf.share_scope = 'org' AND sf.owner_org_id = ANY($${params.length}))
+                       OR sf.share_scope = 'global')`)
+    }
+
+    const r = await query(`
+      SELECT sf.*, u.email AS owner_email, u.display_name AS owner_name,
+             o.slug AS org_slug, o.name AS org_name
+      FROM blueprint.saved_filters sf
+      JOIN blueprint.users u ON u.id = sf.owner_user_id
+      LEFT JOIN blueprint.organizations o ON o.id = sf.owner_org_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY sf.share_scope, sf.name
+    `, params)
+
+    res.json({
+      rows: r.rows.map(f => ({
+        ...f,
+        is_owner: f.owner_user_id === ctx.userId,
+        can_edit: canEditFilter(f, ctx),
+      }))
+    })
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+router.get('/saved-filters/:id', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const f = await loadSavedFilter(parseInt(req.params.id, 10))
+    if (!f || !canViewFilter(f, ctx)) {
+      return res.status(404).json({ error: 'NOT_FOUND' })
+    }
+    res.json({ ...f, is_owner: f.owner_user_id === ctx.userId, can_edit: canEditFilter(f, ctx) })
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+router.post('/saved-filters', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const { name, jql, share_scope, owner_org_id, sort_spec, column_spec, description } = req.body || {}
+    if (!name || !jql || !share_scope) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'name, jql, share_scope required' })
+    }
+    if (!['private', 'org', 'global'].includes(share_scope)) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'share_scope must be private, org, or global' })
+    }
+    if (share_scope === 'org' && !owner_org_id) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'owner_org_id required for org scope' })
+    }
+    if (share_scope === 'global' && !ctx.isAdmin) {
+      return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS', message: 'global filters require admin' })
+    }
+    if (share_scope === 'org' && !ctx.orgIds.includes(owner_org_id)) {
+      return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS', message: 'must be member of target org' })
+    }
+
+    try {
+      const ast = jqlParse(jql)
+      const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
+      jqlCompile(ast, {
+        userId: ctx.userId, orgIds: ctx.orgIds,
+        isAdmin: ctx.isAdmin, customFields: catalog.compilerInput,
+      })
+    } catch (err) {
+      if (err instanceof JQLSyntaxError)   return res.status(400).json({ error: 'JQL_SYNTAX_ERROR', message: err.message, position: err.position })
+      if (err instanceof JQLSemanticError) return res.status(400).json({ error: 'JQL_SEMANTIC_ERROR', message: err.message, field: err.field })
+      throw err
+    }
+
+    // System slug for private/global; org slug for org-scoped.
+    let uriSlug = 'system'
+    if (share_scope === 'org') {
+      const orgRes = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
+      uriSlug = orgRes.rows[0]?.slug || 'system'
+    }
+    const uri = generateUri(uriSlug, 'saved-filters')
+
+    const r = await query(`
+      INSERT INTO blueprint.saved_filters
+        (uri, name, jql, owner_user_id, share_scope, owner_org_id, sort_spec, column_spec, description)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `, [uri, name, jql, ctx.userId, share_scope, share_scope === 'org' ? owner_org_id : null,
+        sort_spec || {}, column_spec || {}, description || null])
+    res.status(201).json(r.rows[0])
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+router.patch('/saved-filters/:id', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const f = await loadSavedFilter(parseInt(req.params.id, 10))
+    if (!f) return res.status(404).json({ error: 'NOT_FOUND' })
+    if (!canEditFilter(f, ctx)) {
+      return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS' })
+    }
+
+    const fields = ['name','jql','share_scope','owner_org_id','sort_spec','column_spec','description']
+    const sets = []
+    const params = []
+    for (const k of fields) {
+      if (req.body && Object.prototype.hasOwnProperty.call(req.body, k)) {
+        params.push(req.body[k])
+        sets.push(`${k} = $${params.length}`)
+      }
+    }
+    if (sets.length === 0) return res.json(f)
+
+    if (req.body.jql) {
+      try {
+        const ast = jqlParse(req.body.jql)
+        const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
+        jqlCompile(ast, {
+          userId: ctx.userId, orgIds: ctx.orgIds,
+          isAdmin: ctx.isAdmin, customFields: catalog.compilerInput,
+        })
+      } catch (err) {
+        if (err instanceof JQLSyntaxError)   return res.status(400).json({ error: 'JQL_SYNTAX_ERROR', message: err.message })
+        if (err instanceof JQLSemanticError) return res.status(400).json({ error: 'JQL_SEMANTIC_ERROR', message: err.message })
+        throw err
+      }
+    }
+
+    sets.push(`updated_at = NOW()`)
+    params.push(f.id)
+    const r = await query(`UPDATE blueprint.saved_filters SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params)
+    res.json(r.rows[0])
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
+})
+
+router.delete('/saved-filters/:id', async (req, res, next) => {
+  try {
+    const ctx = await getUserSearchContext(req)
+    const f = await loadSavedFilter(parseInt(req.params.id, 10))
+    if (!f) return res.status(404).json({ error: 'NOT_FOUND' })
+    if (!canEditFilter(f, ctx)) {
+      return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS' })
+    }
+    await query('DELETE FROM blueprint.saved_filters WHERE id = $1', [f.id])
+    res.status(204).send()
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message })
+    next(err)
+  }
 })
 
 export default router
