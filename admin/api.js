@@ -4356,7 +4356,7 @@ router.delete('/saved-filters/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS' })
     }
     await query('DELETE FROM blueprint.saved_filters WHERE id = $1', [f.id])
-    res.status(204).send()
+    res.json({ deleted: true, id: f.id })
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
