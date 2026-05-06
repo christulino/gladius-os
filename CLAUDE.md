@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-04-29 (Session 22 — Audit trail v1 shipped)
+> Last updated: 2026-05-06 (Session 23 — Search v1 shipped)
 
 ---
 
@@ -72,6 +72,21 @@ tests use the same local PostgreSQL instance.
 - **Admin-ui nav:** tab-based via `NAV` array + `PAGES` map in `App.jsx`.
   No react-router. The sidebar is inlined in `App.jsx` (not a separate
   `Sidebar.jsx` file).
+- **Search:** JQL grammar (`runtime/search/jql.peggy`, generated to
+  `jql.parser.js` via `npm run build:grammar`) → AST → SQL compiler
+  (`runtime/search/jqlCompiler.js`) with hardcoded org-visibility scope
+  (admin bypass) and 90-day done-retention default. The
+  `runtime.work_item_search` denorm tsvector is maintained by the
+  `search-index` event subscriber on work_item.{created,edited,
+  commented,comment_edited,comment_deleted}. NL→JQL translator
+  (`runtime/search/translate.js`) calls Haiku 4.5 with input cap,
+  per-user/per-instance budgets, output-shape filtering, and
+  one-shot retry; every call is logged to `runtime.translator_usage`.
+  Endpoints: `GET /search`, `GET /search/fields`,
+  `POST /search/translate`, `GET|POST|PATCH|DELETE /saved-filters`.
+  Custom field keys can't collide with the 28 entries in
+  `blueprint.reserved_field_keys` (validated on POST /class-fields,
+  POST /type-fields).
 
 ---
 
@@ -96,6 +111,13 @@ tests use the same local PostgreSQL instance.
 | `runtime/channels/*.js` | Webhook/email/agent dispatch modules |
 | `runtime/notifications/*.js` | Matrix, summaries, mentions, ownership challenge |
 | `runtime/workItemHistory.js` | Audit trail query (events + edits + actor enrichment) |
+| `runtime/search/jql.js` | JQL parser API (parse, JQLSyntaxError, JQLSemanticError) |
+| `runtime/search/jqlCompiler.js` | AST → parameterized SQL with access scope |
+| `runtime/search/fieldCatalog.js` | Native + visible-custom field metadata, 60s cache |
+| `runtime/search/translate.js` | Haiku NL→JQL with budget + abuse hardening |
+| `runtime/subscribers/searchIndex.js` | Maintains runtime.work_item_search tsvector |
+| `scripts/backfillSearchIndex.js` | One-shot backfill of work_item_search |
+| `admin-ui/src/pages/SearchPage.jsx` | Search page shell with JQL editor + saved filters |
 
 ---
 
@@ -176,7 +198,7 @@ For deep architecture details, read these on demand — not every session:
 - **Git:** `christulino/flowos` (private, will go public on release)
 - **Open source release blockers:** Cross-instance service requests, seed-and-go
   experience, README + LICENSE
-- **Current state:** 55+ PG tables, 13 migrations, 80+ API endpoints, 19+ React pages,
+- **Current state:** 60+ PG tables, 14 migrations, 90+ API endpoints, 20+ React pages,
   auth working, intake forms working, exit criteria engine working, notifications working,
-  per-item audit trail working
+  per-item audit trail working, **search v1 (JQL + Haiku translator + saved filters) working**
 - **See `ARCHITECTURE.md`** for the full "what's built / what's not" breakdown
