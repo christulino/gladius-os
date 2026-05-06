@@ -213,7 +213,7 @@ describe('JQL compiler — native fields', () => {
 describe('JQL compiler — done retention', () => {
   it('appends retention filter when no resolved-state predicate is present', () => {
     const { sql } = compile(parse('priority = 1'), ctx([1], 1, { doneRetentionDays: 30 }))
-    assert.match(sql, /resolved_at IS NULL OR resolved_at >/)
+    assert.match(sql, /resolved_at IS NULL OR wi\.resolved_at >/)
   })
 
   it('omits retention filter when query references resolved', () => {
