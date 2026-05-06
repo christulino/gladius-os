@@ -293,8 +293,15 @@ export function compile(ast, userCtx) {
   const userExpr = ast.expr ? emitExpr(ast.expr, ctx, params) : 'TRUE'
   const retention = emitRetention(ast, ctx, params)
 
-  params.push(ctx.orgIds)
-  const accessClause = `wi.owner_org_id = ANY($${params.length})`
+  // Admin bypass: instance admins see everything. Regular users are scoped to
+  // the orgs they're a member of via blueprint.org_memberships.
+  let accessClause
+  if (ctx.isAdmin) {
+    accessClause = 'TRUE'
+  } else {
+    params.push(ctx.orgIds)
+    accessClause = `wi.owner_org_id = ANY($${params.length})`
+  }
 
   const searchJoin = needsSearchDoc(ast)
     ? 'LEFT JOIN runtime.work_item_search wis ON wis.work_item_id = wi.id'
@@ -318,9 +325,9 @@ export function compile(ast, userCtx) {
     JOIN blueprint.organizations o ON o.id = wi.owner_org_id
     JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
     JOIN blueprint.workflows w ON w.id = wi.workflow_id
-    LEFT JOIN runtime.work_item_relationships rel_owns
+    LEFT JOIN runtime.work_item_user_relationships rel_owns
       ON rel_owns.work_item_id = wi.id AND rel_owns.relationship_type = 'owns'
-    LEFT JOIN runtime.work_item_relationships rel_watch
+    LEFT JOIN runtime.work_item_user_relationships rel_watch
       ON rel_watch.work_item_id = wi.id AND rel_watch.relationship_type = 'watching'
     LEFT JOIN blueprint.users u ON u.id = rel_owns.user_id
     ${searchJoin}
