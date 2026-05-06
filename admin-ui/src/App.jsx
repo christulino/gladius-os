@@ -18,6 +18,7 @@ import {
   Database,
   Activity,
   BellRing,
+  Search as SearchIcon,
 } from 'lucide-react'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationsDrawer from '@/components/NotificationsDrawer'
@@ -44,9 +45,11 @@ import Reports       from '@/pages/Reports'
 import Simulation   from '@/pages/Simulation'
 import EventSubscribers from '@/pages/EventSubscribers'
 import SettingsNotifications from '@/pages/SettingsNotifications'
+import SearchPage    from '@/pages/SearchPage'
 
 const NAV = [
   { id: 'board',         label: 'Board',            section: null,       icon: LayoutDashboard },
+  { id: 'search',        label: 'Search',           section: null,       icon: SearchIcon },
 
   { id: 'organizations', label: 'Organizations',    section: 'Catalog',   icon: Building2 },
   { id: 'wittypes',      label: 'Work Item Types',  section: null,       icon: Shapes },
@@ -73,6 +76,7 @@ const NAV = [
 
 const PAGES = {
   board:         Board,
+  search:        SearchPage,
   summary:       Summary,
   orgtypes:      OrgTypes,
   organizations: Organizations,
@@ -98,6 +102,21 @@ export default function App() {
   const [authState, setAuthState] = useState('loading')  // 'loading' | 'setup' | 'login' | 'authenticated'
   const [user, setUser]         = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // '/' keybinding to jump to Search (when not editing).
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target
+      const isEditable = t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable
+      if (isEditable) return
+      if (e.key === '/') {
+        e.preventDefault()
+        setTab('search')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   // Check auth status on mount
   useEffect(() => {
@@ -168,7 +187,16 @@ export default function App() {
       <nav className="w-44 flex-shrink-0 border-l border-border bg-card flex flex-col">
         <div className="px-3 py-3 border-b border-border flex items-center justify-between">
           <span className="text-sm font-semibold text-foreground">Flow OS</span>
-          <NotificationsBell onClick={() => setDrawerOpen(true)} />
+          <div className="flex items-center gap-1">
+            <button
+              className="p-1 rounded hover:bg-black/[0.04] text-muted-foreground hover:text-foreground transition-colors"
+              title="Search (/)"
+              onClick={() => setTab('search')}
+            >
+              <SearchIcon className="h-4 w-4" />
+            </button>
+            <NotificationsBell onClick={() => setDrawerOpen(true)} />
+          </div>
         </div>
         <NotificationsDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
         <div className="py-3 flex-1 overflow-y-auto">
