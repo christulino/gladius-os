@@ -78,7 +78,7 @@ flowos/
 **Boundary rule:** "What are the properties of this thing?" → PostgreSQL.
 "How is this thing connected to other things?" → Neo4j.
 
-### PostgreSQL — Blueprint Schema (~31 tables)
+### PostgreSQL — Blueprint Schema (~33 tables)
 
 Structural definitions. The "how work should flow" schema. Empty of actual work.
 Can be versioned, snapshotted, rolled back independently of runtime.
@@ -92,8 +92,10 @@ Key tables:
 - `work_item_types` — type library with adopt/fork/create model
 - `field_definitions` — per-type field schema with required_at_stage support
 - `service_classes` — name, color, sort_order, cost_of_delay_profile, sla_hours, sla_warning_pct
+- `saved_filters` — first-class JQL filters with private/org/global scope (search v1)
+- `reserved_field_keys` — 28 JQL native identifiers; custom field keys can't collide
 
-### PostgreSQL — Runtime Schema (~16 tables)
+### PostgreSQL — Runtime Schema (~18 tables)
 
 Work item instances and all activity data. The "what is actually happening" schema.
 
@@ -106,6 +108,8 @@ Key tables:
 - `events` — append-only event log (id, event_type, entity_id, entity_uri, actor_id, occurred_at, payload)
 - `event_subscribers` — per-subscriber cursor + health (name PK, last_processed_event_id, is_paused, last_error, failure_count)
 - `work_item_edits` — field-level audit log (Jira changegroup/changeitem analog)
+- `work_item_search` — denorm tsvector + per-source text columns (search v1)
+- `translator_usage` — NL→JQL Haiku call log with token counts and outcome (search v1)
 
 ### Neo4j — Graph Store (not yet seeded)
 
@@ -271,25 +275,31 @@ Connection indicator on cards with relationships.
 7. **Migration 009** — org_wip_limits_by_class (stage-class-level WIP)
 8. **Migration 010** — Auth: password_hash, is_admin, sessions table
 9. **Migration 011** — Event system: events, event_subscribers, work_item_edits. Drops legacy search_index_queue.
+10. **Migration 012** — Notifications: notifications, notification_deliveries, notification_defaults
+11. **Migration 013** — (audit trail support — events shape extended)
+12. **Migration 014** — Search v1: work_item_search (tsvector + per-source text), pg_trgm + trigram indexes on work_items.title/display_key, saved_filters, reserved_field_keys (28 JQL natives), translator_usage. Drops orphan search_index_queue.
 
 ---
 
 ## What Is and Isn't Built
 
 ### Working
-- PostgreSQL schema (blueprint + runtime, ~50 tables, 10 migrations)
+- PostgreSQL schema (blueprint + runtime, ~60 tables, 14 migrations)
 - Docker Compose environment (PostgreSQL + Neo4j)
 - Seed data (enterprise org hierarchy, workflows, types, service classes, roles)
 - Authentication (sessions, setup wizard, login/logout, requireAuth)
-- Express API (70+ endpoints)
+- Express API (~80 endpoints)
 - Public intake forms (field-driven, anonymous submission, tracking numbers)
 - Service catalog with admin CRUD and public form toggle
 - Transition engine with exit criteria (3-tier evaluation, acknowledgment, waiver)
-- React admin UI (18+ pages, cartography theme)
+- React admin UI (20+ pages, cartography theme)
 - Board: 3-level columns, drag-to-pan, skeleton loading, swimlanes, split waiting/active
 - Work item detail drawer, comments, linking, people management
 - Hierarchical WIP limits, class fields, custom field engine, simulation engine
 - Org Center (5 section pills: Settings, Catalog, Policies, Members, Workflows)
+- Event system + per-item audit trail
+- Notifications v1 (in_app, email, webhook, agent channels)
+- **Search v1: JQL parser + AST→SQL compiler with org-scope and admin bypass; tsvector index maintained by event subscriber; Haiku NL→JQL translator with abuse hardening; first-class saved filters (private/org/global); SearchPage UI with `/` keybinding**
 
 ### Open Source Release Blockers
 - Cross-instance service requests (API calls between instances)
@@ -437,6 +447,52 @@ lines). Edit rows expand inline to show `field: old → new`.
 
 **Decisions:** none — straightforward feature work atop an existing
 substrate.
+
+### Session 23 (2026-05-06) — Search v1
+JQL search system shipped end to end: peggy grammar → AST → parameterized
+SQL compiler → tsvector index maintained by an event subscriber → React
+SearchPage. The compiler emits `wi.owner_org_id = ANY($N)` for normal
+users and bypasses (TRUE) for instance admins. Done-retention (90 day
+default) is auto-injected unless the query references resolved/id/key/
+stage_class=done.
+
+`runtime.work_item_search` is a denorm table with the `search_doc`
+tsvector plus the four source text columns (title/description/custom/
+comments) for `ts_headline()` snippet generation. The `search-index`
+event subscriber listens for work_item.{created,edited,commented,
+comment_edited,comment_deleted} and rebuilds the row via UPSERT
+(idempotent, replay-safe). Backfill: 25,237 items in 34.8s.
+
+Haiku 4.5 powers NL→JQL with layered defenses: 2048-char input cap,
+per-user hourly call limit (30) and daily token budget (100k), per-
+instance daily token budget (5M), output-shape filter (rejects prose,
+markdown fences, "I am sorry"), AST-parse with one-shot retry, and
+`<user_request>...</user_request>` prompt-injection wrapping. Every
+call writes a `runtime.translator_usage` row.
+
+Saved filters are first-class with private/org/global scopes;
+permissions enforced server-side (org-scope creation requires
+membership; global requires is_admin). The reserved-key validator
+on POST /class-fields and POST /type-fields blocks custom field
+keys that would collide with the 28 JQL natives.
+
+Endpoints: GET /search, GET /search/fields, POST /search/translate,
+GET|POST|PATCH|DELETE /saved-filters. New nav: sidebar Search entry,
+header search icon, `/` keybinding (skips inputs/textareas).
+
+**Decisions:**
+- [ARCH] Compiler bypasses org-visibility for is_admin — without it,
+  admins with no `org_memberships` rows see no results. Real RBAC
+  blocked on the auth-system buildout.
+- [ARCH] peggy generated as `--format es` (named exports), wrapped in
+  `runtime/search/jql.js` with `import * as parser`. The plan assumed
+  the CommonJS default-export shape — corrected.
+- [SCOPE] Skipped Task 9 (comment_edited/deleted event emissions).
+  Comments are currently immutable in the API; subscriber declares
+  the handlers for when those endpoints land.
+- [SCOPE] Kept legacy `/work-items/search` endpoint — used by
+  WorkItemDetail's link picker. Followup: migrate the picker to
+  the new /search.
 
 **Tests:** 7-test integration suite covering 404, single-event,
 multi-field expansion, assignment summary, descending order, limit

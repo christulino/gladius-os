@@ -38,7 +38,7 @@ tests use the same local PostgreSQL instance.
 ## Tech Stack
 
 - **Runtime:** Node.js (ESM, v24) — all files use `import`/`export`
-- **API:** Express REST (`admin/api.js` — ~70 endpoints at `/admin/api`)
+- **API:** Express REST (`admin/api.js` — ~80 endpoints at `/admin/api`)
 - **Database:** PostgreSQL (source of truth) + Neo4j (graph queries, not yet seeded)
 - **Frontend:** React 18 + Vite + shadcn/ui + Tailwind, served at `/admin/`
 - **Auth:** express-session + connect-pg-simple. Cookie: `flowos.sid`, 24hr, httpOnly
@@ -95,7 +95,7 @@ tests use the same local PostgreSQL instance.
 | File | Purpose |
 |------|---------|
 | `api/server.js` | Entry point, auth middleware, route mounting |
-| `admin/api.js` | ~70 REST endpoints (board, CRUD, transitions, simulation) |
+| `admin/api.js` | ~80 REST endpoints (board, CRUD, transitions, simulation, search, saved filters) |
 | `runtime/transitions.js` | Two-phase transition engine |
 | `runtime/exitCriteria.js` | Exit criteria evaluation (3-tier: manual/codified/api) |
 | `runtime/workItems.js` | Work item CRUD + display key generation |
