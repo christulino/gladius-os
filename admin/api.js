@@ -74,9 +74,21 @@ const ALLOWED_TABLES = {
   'runtime.evidence':                        'runtime',
   'runtime.notifications':                   'runtime',
   'runtime.flow_metrics_snapshots':          'runtime',
-  'runtime.search_index_queue':              'runtime',
   'runtime.transition_action_log':           'runtime',
   'runtime.work_item_links':                'runtime',
+}
+
+// JQL reserved-key validator. Custom field keys must not collide with the
+// 28 native JQL identifiers seeded in blueprint.reserved_field_keys.
+async function assertNotReservedFieldKey(fieldKey) {
+  const r = await query('SELECT 1 FROM blueprint.reserved_field_keys WHERE field_key = $1', [fieldKey])
+  if (r.rowCount > 0) {
+    const err = new Error(`'${fieldKey}' is a reserved JQL identifier and cannot be used as a custom field key`)
+    err.status = 400
+    err.code = 'RESERVED_FIELD_KEY'
+    err.expose = true
+    throw err
+  }
 }
 
 // =============================================================================
@@ -1896,6 +1908,7 @@ router.post('/class-fields', async (req, res, next) => {
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    await assertNotReservedFieldKey(field_key.trim())
     const result = await query(`
       INSERT INTO blueprint.work_item_class_fields
         (class_id, field_key, field_label, field_type, field_options, field_group,
@@ -1910,6 +1923,7 @@ router.post('/class-fields', async (req, res, next) => {
         default_value !== undefined ? JSON.stringify(default_value) : null])
     res.status(201).json(result.rows[0])
   } catch (err) {
+    if (err.code === 'RESERVED_FIELD_KEY') return res.status(400).json({ error: err.message, code: err.code })
     if (err.code === '23505') return res.status(409).json({ error: 'Field key already exists for this class' })
     next(err)
   }
@@ -1985,6 +1999,7 @@ router.post('/type-fields', async (req, res, next) => {
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    await assertNotReservedFieldKey(field_key.trim())
     const result = await query(`
       INSERT INTO blueprint.work_item_type_fields
         (work_item_type_id, field_key, field_label, field_type, field_options, field_group,
@@ -1999,6 +2014,7 @@ router.post('/type-fields', async (req, res, next) => {
         default_value !== undefined ? JSON.stringify(default_value) : null])
     res.status(201).json(result.rows[0])
   } catch (err) {
+    if (err.code === 'RESERVED_FIELD_KEY') return res.status(400).json({ error: err.message, code: err.code })
     if (err.code === '23505') return res.status(409).json({ error: 'Field key already exists for this type' })
     next(err)
   }
