@@ -9,7 +9,7 @@
     "dev": "node --watch api/server.js",
     "seed": "node db/seeds/seed.js",
     "test": "node --test",
-    "build:grammar": "peggy --output runtime/search/jql.parser.js runtime/search/jql.peggy"
+    "build:grammar": "peggy --format es --output runtime/search/jql.parser.js runtime/search/jql.peggy"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
