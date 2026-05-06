@@ -14,7 +14,12 @@ async function apiFetch(path, options = {}) {
     throw err
   }
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const err = new Error(data.error || `${res.status} ${res.statusText}`)
+    err.status = res.status
+    err.body = data
+    throw err
+  }
   return data
 }
 
@@ -286,4 +291,32 @@ async function formsFetch(path, options = {}) {
 export const forms = {
   getForm:  (slug) => formsFetch(`/${slug}`),
   submit:   (slug, data) => formsFetch(`/${slug}`, { method: 'POST', body: JSON.stringify(data) }),
+}
+
+// ─── Search v1 ──────────────────────────────────────────────────────────────
+
+export const searchApi = {
+  query: (q, opts = {}) => {
+    const params = new URLSearchParams({ q })
+    if (opts.before) params.set('before', opts.before)
+    if (opts.limit) params.set('limit', opts.limit)
+    if (opts.include) params.set('include', opts.include.join(','))
+    return apiFetch(`/search?${params.toString()}`)
+  },
+  fields: () => apiFetch('/search/fields'),
+  translate: (prompt) => apiFetch('/search/translate', {
+    method: 'POST', body: JSON.stringify({ prompt })
+  }),
+}
+
+export const savedFiltersApi = {
+  list: (scope = 'all', orgId = null) => {
+    const p = new URLSearchParams({ scope })
+    if (orgId) p.set('org_id', orgId)
+    return apiFetch(`/saved-filters?${p.toString()}`)
+  },
+  get:    (id) => apiFetch(`/saved-filters/${id}`),
+  create: (data) => apiFetch('/saved-filters', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => apiFetch(`/saved-filters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  remove: (id) => apiFetch(`/saved-filters/${id}`, { method: 'DELETE' }),
 }
