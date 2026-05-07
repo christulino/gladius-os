@@ -492,7 +492,7 @@ header search icon, `/` keybinding (skips inputs/textareas).
   the handlers for when those endpoints land.
 - [SCOPE] Kept legacy `/work-items/search` endpoint — used by
   WorkItemDetail's link picker. Followup: migrate the picker to
-  the new /search.
+  the new /search. (Done in Session 24.)
 
 **Tests:** 7-test integration suite covering 404, single-event,
 multi-field expansion, assignment summary, descending order, limit
@@ -502,3 +502,79 @@ parameter, cursor pagination. All green.
 diff viewer for long text, "revert" actions, click-through to spawned
 children. Manual browser verification of the tab is the only
 unverified piece — flagged for next session.
+
+### Session 24 (2026-05-07) — Search v1 polish
+
+Smoke-tested the Haiku translator end to end with `ANTHROPIC_API_KEY`
+set and uncovered a real bug: `runtime/search/translate.js` was passing
+`timeout: 30000` inside the Messages API request body, where it isn't a
+valid field. The Anthropic API rejected with `400: "timeout: Extra
+inputs are not permitted"`; the error message contained "timeout" which
+matched the `/timeout/i` regex on the catch path and got mis-classified
+as `TRANSLATOR_TIMEOUT` 504. Translator was 100% broken whenever a real
+key was set; the test suite stubbed the SDK and never exercised the
+path. Fix: move `timeout` to the SDK's second-arg request options
+(`client.messages.create(body, { timeout })`).
+
+Migrated `WorkItemDetail`'s related-item picker off the retired
+`GET /work-items/search` (substring ILIKE on title/key) onto the new
+`/search`. To preserve typeahead UX without inventing a separate lookup
+endpoint:
+
+- `~` operator semantics changed: was `plainto_tsquery('english', q)`,
+  now `to_tsquery('english', tokens.map(t => t+':*').join(' & '))`.
+  Each whitespace-tokenized term gets a `:*` prefix-suffix so partial
+  typing matches stems forward (typing `auth` matches `authentication`).
+  Empty-string input compiles to `FALSE` (no error). The same shared
+  helper, `buildPrefixTsquery`, is reused by `ts_headline` so snippet
+  highlighting marks prefix matches too.
+
+- `runtime.work_item_search.search_doc` now includes `display_key` text
+  concatenated into the title-weight `setweight()` block. Typing `BUG`
+  matches BUG.42 by key via the same `~` operator; no per-field
+  branching in the picker. `title_text` column is unchanged.
+
+- `searchWorkItems` in `admin-ui/src/lib/api.js` now constructs
+  `text ~ "<escaped-q>" ORDER BY updated DESC` JQL and calls `/search`
+  with `limit=20`. Response shape is preserved (`{rows, count}`) so
+  `WorkItemDetail.jsx` was untouched. JQL-string-escaping defends
+  against `"` injection in user typing.
+
+- `GET /work-items/search` route deleted from `admin/api.js`.
+
+Backfilled `runtime.work_item_search` for 25,239 rows (28.8s) so the
+new `display_key`-aware tsvector replaces the old per-row contents.
+
+**Decisions:**
+- [ARCH] `~` operator: prefix tsquery is now the documented semantics.
+  Tradeoff: marginally weaker token discrimination (any prefix of any
+  stem matches) for usable typeahead. Affects every `~` consumer, not
+  just the picker — saved filters with `text ~ "term"` are slightly
+  broader than before. Considered acceptable; tests updated to assert
+  the new shape.
+- [ARCH] `display_key` co-located in `search_doc` rather than
+  `key ~` adding a separate code path. Single tsvector, single
+  operator, one place to keep current. The english parser splits
+  dotted keys (`BUG.42` → `'42':n 'bug':m`), so prefix typing on the
+  alpha part works; full-key typing still works via exact `key = "X.N"`.
+- [SCOPE] Picker migration kept the existing wrapper-function shape.
+  Alternative was deleting `searchWorkItems` from `lib/api.js` and
+  changing `WorkItemDetail.jsx` to call `searchWorkItems` directly.
+  Wrapper preserves a single chokepoint for picker-specific JQL and
+  response massaging — easier to evolve later.
+
+**Tests:** `tests/search-jql.test.js` updated — `~` now asserts
+`to_tsquery` with `:*` token; added multi-word AND-join and
+empty-input cases. 45/45 pass. search-api/search-translate/
+search-index 49/49 pass. Saved-filters/workflow/comments/history
+43/43 pass.
+
+**Browser-verified:** picker shows live results for `depl`, `BUG`,
+`auth`, `cdn` partials; nonsense input returns 0 rows. Network tab
+confirms `/admin/api/search?q=text+~+"..."` is the only call —
+legacy endpoint never invoked.
+
+**Followups:** test isolation issue between search-* and comments-api
+(comments fail when run after search tests; pass alone) — logged as
+[P2] in BACKLOG. Same shape as the events/notifications baseline
+flake.

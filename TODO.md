@@ -1,33 +1,31 @@
 # FlowOS — TODO
 
-## Flagged Items from Last Session (2026-05-06, Session 23)
+## Flagged Items from Last Session (2026-05-07, Session 24)
 
 Bring up at the start of the next session:
 
-- **Search v1 shipped** (24 commits on `main`, ahead of origin until pushed). New endpoints
-  `GET /search`, `GET /search/fields`, `POST /search/translate`, `GET|POST|PATCH|DELETE /saved-filters`.
-  76/76 unit + integration tests green; smoke verified end-to-end in browser via Playwright.
-- **[P0] Manual Haiku translator smoke against real Anthropic endpoint** — translator never exercised
-  with `ANTHROPIC_API_KEY` set in this session. Set the env var, restart the server, hit
-  `POST /admin/api/search/translate` with `{ "prompt": "show my open P1 items" }`. Verify the JQL parses
-  and budgets are tracked in `runtime.translator_usage`. Cap-breach behavior (rate_limited / budget_exhausted)
-  needs at least one real-traffic exercise.
-- **[P1] Migrate WorkItemDetail's related-item picker** off legacy `/work-items/search` and onto the new
-  `/search` (e.g., JQL like `key ~ "X" OR title ~ "X" ORDER BY updated DESC LIMIT 20`). Then delete the
-  legacy endpoint. Plan called for removal but it's still in use; tech debt.
-- **[P1] Comment edit / delete endpoints + event emissions** — searchIndex subscriber declares
-  `work_item.comment_edited` and `comment_deleted` handlers but the API doesn't expose PATCH/DELETE on
-  comments yet (comments are immutable). When those endpoints land, wire `emitEvent` so the search
-  index refreshes.
-- **[P2] WorkItemDetail Sheet a11y** — Radix logged `DialogContent requires a DialogTitle` during
-  smoke. The existing component is missing a SheetTitle (or a VisuallyHidden wrapper). Not new in this
-  session; surfaced because SearchPage opened the drawer.
-- **[P2] Real RBAC for org-visibility** — compiler currently does a hard `is_admin` bypass; the right
-  long-term shape is access-class permissions checked against `core/access.js`. Blocked on the
+- **Search v1 follow-ups complete.** Translator smoke-tested with real Anthropic key (1 real bug
+  found and fixed: `timeout` was inside the request body instead of SDK request options — every
+  call returned a misclassified 504). WorkItemDetail picker migrated to `/search`; legacy
+  `/work-items/search` deleted. `~` operator now compiles to `to_tsquery` with `:*` prefix tokens
+  so partial typing matches; `display_key` is in the title-weight tsvector. 25,239 rows
+  backfilled. Browser-verified end to end.
+- **[P1] Comment edit / delete endpoints + event emissions** (carried from session 23) —
+  searchIndex subscriber declares `work_item.comment_edited` and `comment_deleted` handlers
+  but the API doesn't expose PATCH/DELETE on comments yet. When those endpoints land, wire
+  `emitEvent` so the search index refreshes.
+- **[P2] Test isolation between search-* and comments-api** — comments-api fails 6 tests when run
+  AFTER search-* in the same `node --test` invocation; passes 10/10 alone. Same shape as the
+  pre-existing events/notifications baseline flake. The test's `before` does
+  `SELECT first work_item from /work-items?limit=1` which gets churned by search test fixtures.
+  Cleaner: have each test file create its own scratch work_item. Not a code regression.
+- **[P2] WorkItemDetail Sheet a11y** (carried) — Radix logs `DialogContent requires a
+  DialogTitle`. Existing component missing SheetTitle (or VisuallyHidden wrapper).
+- **[P2] Real RBAC for org-visibility** (carried) — compiler currently does a hard `is_admin`
+  bypass; long-term shape is access-class permissions in `core/access.js`. Blocked on
   auth-system buildout (see `project_auth_system` memory).
-- **[P2] Bundle size warning** — admin-ui dist now 898 KB (253 KB gzip). Vite suggests dynamic imports
-  / manualChunks. Search added the JQL editor + Anthropic SDK bringing it past the 500 KB warning.
-  Cosmetic until the second-load latency starts mattering.
+- **[P2] Bundle size warning** (carried) — admin-ui dist 898 KB (253 KB gzip). Vite suggests
+  dynamic imports / manualChunks. Cosmetic until second-load latency starts mattering.
 
 ## Carried from Session 22 (still open)
 
@@ -50,6 +48,16 @@ Bring up at the start of the next session:
   policies, response handling. The notifications agent-channel reservation remains forward-compatible.
 - **Schema migration sweep** — project still uses v1 doc layout (TODO/PARKING_LOT). PROJECT_SCHEMA.md
   defines STATE/BACKLOG/DECISIONS/GOALS/RISKS/QUESTIONS. Worth a dedicated session to migrate.
+
+## Done (Session 24)
+
+- [done 2026-05-07] fix(search): Anthropic SDK timeout option moved to request-options arg (translator was 100% broken with real key)
+- [done 2026-05-07] feat(search): `~` operator compiles to to_tsquery with `:*` prefix-suffix
+- [done 2026-05-07] feat(search): display_key concatenated into title-weight search_doc tsvector
+- [done 2026-05-07] feat(search): WorkItemDetail picker migrated to /search; legacy /work-items/search deleted
+- [done 2026-05-07] chore(search): backfill of 25,239 work_item_search rows
+- [done 2026-05-07] build(admin-ui): dist rebuild with prefix-match picker
+- [done 2026-05-07] test(search): updated `~` compile-test, added multi-word and empty-input cases
 
 ## Done (Session 23)
 

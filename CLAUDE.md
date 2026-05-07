@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-05-06 (Session 23 — Search v1 shipped)
+> Last updated: 2026-05-07 (Session 24 — Search v1 polish: prefix matching + picker migration)
 
 ---
 
@@ -78,12 +78,21 @@ tests use the same local PostgreSQL instance.
   (admin bypass) and 90-day done-retention default. The
   `runtime.work_item_search` denorm tsvector is maintained by the
   `search-index` event subscriber on work_item.{created,edited,
-  commented,comment_edited,comment_deleted}. NL→JQL translator
-  (`runtime/search/translate.js`) calls Haiku 4.5 with input cap,
-  per-user/per-instance budgets, output-shape filtering, and
-  one-shot retry; every call is logged to `runtime.translator_usage`.
+  commented,comment_edited,comment_deleted}. The `~` operator compiles
+  to `to_tsquery` with `:*` prefix-suffix on each tokenized term, so
+  partial typing matches (typing `auth` matches `authentication`).
+  Title-weight setweight includes both `wi.title` and `wi.display_key`
+  text, so typing partial keys (`BUG`) hits via the same operator.
+  NL→JQL translator (`runtime/search/translate.js`) calls Haiku 4.5
+  with input cap, per-user/per-instance budgets, output-shape
+  filtering, and one-shot retry; every call is logged to
+  `runtime.translator_usage`. Anthropic SDK `timeout` MUST be passed
+  as the second-arg request option, not in the message body.
   Endpoints: `GET /search`, `GET /search/fields`,
   `POST /search/translate`, `GET|POST|PATCH|DELETE /saved-filters`.
+  Work-item picker (related-item linking in `WorkItemDetail`) calls
+  `/search` via `searchWorkItems` in `admin-ui/src/lib/api.js` —
+  legacy `GET /work-items/search` was retired.
   Custom field keys can't collide with the 28 entries in
   `blueprint.reserved_field_keys` (validated on POST /class-fields,
   POST /type-fields).

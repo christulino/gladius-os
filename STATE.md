@@ -1,20 +1,20 @@
 # STATE — FlowOS
 
 ## Right Now
-- Search v1 fully shipped — 24 commits ahead of `origin/main`, ready to push.
-- All 27 plan tasks complete (`docs/superpowers/plans/2026-05-04-search-v1.md`).
-- 76/76 search tests + 51/51 regression tests green.
+- Search v1 fully landed and polished. All Session 23 follow-ups closed in Session 24.
+- `~` operator now prefix-matches; picker on `/search`; legacy endpoint deleted.
+- 3 commits this session, pushed to `origin/main` (HEAD = `a71808c`).
 
 ## Next Up
-1. Push the 24 commits on `main` to `origin/main`.
-2. Set `ANTHROPIC_API_KEY` in `.env` and manually smoke the Haiku translator
-   (`POST /admin/api/search/translate` with `{"prompt":"show my open P1 items"}`).
-   Verify outcome and budget tracking in `runtime.translator_usage`.
-3. Migrate `WorkItemDetail.jsx`'s related-item picker off the legacy
-   `/work-items/search` endpoint onto the new `/search`, then delete the legacy.
+1. Pick the next roadmap feature. Top contenders per `PRODUCT_PLAN.md`:
+   - **Attachments / evidence storage** — last remaining Tier 1 blocker; introduces S3/MinIO.
+   - **Bulk operations** — multi-select transition/assign; smaller, self-contained.
+   - **SLA tracking** — highest-leverage Phase 3 item; sits on the live event system.
+2. **[P2] Test isolation between search-* and comments-api** — comments-api fails 6 tests
+   when run after search-* (passes alone). Move tests to per-file scratch work_items.
 
 ## Blockers
-- None. Push to origin is gated only on user authorization (branch is `main`).
+- None.
 
 ## Last Updated
-2026-05-06 — by session-close (tier: Full)
+2026-05-07 — by session-close (tier: Full)
