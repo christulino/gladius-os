@@ -218,24 +218,29 @@ function emitIsEmpty(node, ctx) {
     : `(wi.field_values IS NULL OR NOT (wi.field_values ? '${node.field}') OR wi.field_values->>'${node.field}' IS NULL)`
 }
 
+export function buildPrefixTsquery(text) {
+  const tokens = String(text).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  if (tokens.length === 0) return null
+  return tokens.map(t => t + ':*').join(' & ')
+}
+
 function emitTextMatch(node, ctx, params) {
   const resolved = resolveField(node.field, ctx)
-  if (resolved.kind === 'native' && resolved.meta.textIndexed) {
-    params.push(node.value.value)
-    const v = `$${params.length}`
-    const clause = `wis.search_doc @@ plainto_tsquery('english', ${v})`
-    return node.negated ? `NOT (${clause})` : clause
+  const isNativeIndexed = resolved.kind === 'native' && resolved.meta.textIndexed
+  const isCustomText = resolved.kind === 'custom' &&
+    ['text','textarea','url'].includes(resolved.defs[0].field_type)
+  if (!isNativeIndexed && !isCustomText) {
+    throw new JQLSemanticError(
+      `~ not valid on field '${node.field}'`,
+      { field: node.field, reason: 'wrong_operator_for_type' }
+    )
   }
-  if (resolved.kind === 'custom' && ['text','textarea','url'].includes(resolved.defs[0].field_type)) {
-    params.push(node.value.value)
-    const v = `$${params.length}`
-    const clause = `wis.search_doc @@ plainto_tsquery('english', ${v})`
-    return node.negated ? `NOT (${clause})` : clause
-  }
-  throw new JQLSemanticError(
-    `~ not valid on field '${node.field}'`,
-    { field: node.field, reason: 'wrong_operator_for_type' }
-  )
+  const tsquery = buildPrefixTsquery(node.value.value)
+  if (tsquery === null) return node.negated ? 'TRUE' : 'FALSE'
+  params.push(tsquery)
+  const v = `$${params.length}`
+  const clause = `wis.search_doc @@ to_tsquery('english', ${v})`
+  return node.negated ? `NOT (${clause})` : clause
 }
 
 function emitExpr(node, ctx, params) {

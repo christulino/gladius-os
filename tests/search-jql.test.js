@@ -174,9 +174,20 @@ describe('JQL compiler — native fields', () => {
     assert.match(sql, /= ANY\(wi\.tags\)/)
   })
 
-  it('compiles text ~ "foo" as plainto_tsquery', () => {
-    const { sql } = compile(parse('text ~ "foo"'), ctx())
-    assert.match(sql, /search_doc @@ plainto_tsquery/)
+  it('compiles text ~ "foo" as prefix tsquery', () => {
+    const { sql, params } = compile(parse('text ~ "foo"'), ctx())
+    assert.match(sql, /search_doc @@ to_tsquery/)
+    assert.ok(params.includes('foo:*'))
+  })
+
+  it('compiles multi-word text match with AND-joined prefix tokens', () => {
+    const { params } = compile(parse('text ~ "saml login"'), ctx())
+    assert.ok(params.includes('saml:* & login:*'))
+  })
+
+  it('compiles text ~ "" as FALSE (no match)', () => {
+    const { sql } = compile(parse('text ~ ""'), ctx())
+    assert.match(sql, /\bFALSE\b/)
   })
 
   it('compiles ORDER BY', () => {
