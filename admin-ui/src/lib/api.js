@@ -117,7 +117,12 @@ export const api = {
   removeRelationship: (id) => apiFetch(`/work-item-relationships/${id}`, { method: 'DELETE' }),
 
   // Work Item Search + Linking
-  searchWorkItems:   (q) => apiFetch(`/work-items/search?q=${encodeURIComponent(q)}`),
+  searchWorkItems:   async (q) => {
+    const escaped = String(q).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const jql = `text ~ "${escaped}" ORDER BY updated DESC`
+    const res = await apiFetch(`/search?q=${encodeURIComponent(jql)}&limit=20`)
+    return { rows: res.rows || [], count: (res.rows || []).length }
+  },
   addWorkItemLink:   (id, target_work_item_id, link_type) => apiFetch(`/work-items/${id}/links`, { method: 'POST', body: JSON.stringify({ target_work_item_id, link_type }) }),
   workItemLinks:     (id) => apiFetch(`/work-items/${id}/links`),
 

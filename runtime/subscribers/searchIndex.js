@@ -24,7 +24,7 @@ export async function searchIndexHandler(event) {
   if (!workItemId) return
 
   const wiRes = await query(`
-    SELECT id, title, description, field_values
+    SELECT id, display_key, title, description, field_values
     FROM runtime.work_items
     WHERE id = $1
   `, [workItemId])
@@ -59,13 +59,14 @@ export async function searchIndexHandler(event) {
 
   const titleText = wi.title || ''
   const descriptionText = wi.description || ''
+  const displayKey = wi.display_key || ''
 
   await query(`
     INSERT INTO runtime.work_item_search
       (work_item_id, search_doc, title_text, description_text, custom_text, comments_text, refreshed_at)
     VALUES (
       $1,
-      setweight(to_tsvector('english', $2), 'A') ||
+      setweight(to_tsvector('english', $2 || ' ' || $6), 'A') ||
       setweight(to_tsvector('english', $3), 'B') ||
       setweight(to_tsvector('english', $4), 'C') ||
       setweight(to_tsvector('english', $5), 'D'),
@@ -78,5 +79,5 @@ export async function searchIndexHandler(event) {
       custom_text = EXCLUDED.custom_text,
       comments_text = EXCLUDED.comments_text,
       refreshed_at = NOW()
-  `, [workItemId, titleText, descriptionText, customText.trim(), commentsText])
+  `, [workItemId, titleText, descriptionText, customText.trim(), commentsText, displayKey])
 }

@@ -2128,7 +2128,7 @@ router.delete('/org-wip-limits/:id', async (req, res, next) => {
 
 import { prepareTransition, executeTransition } from '../runtime/transitions.js'
 import { parse as jqlParse, JQLSyntaxError, JQLSemanticError } from '../runtime/search/jql.js'
-import { compile as jqlCompile } from '../runtime/search/jqlCompiler.js'
+import { compile as jqlCompile, buildPrefixTsquery } from '../runtime/search/jqlCompiler.js'
 import { buildFieldCatalog } from '../runtime/search/fieldCatalog.js'
 import { translate as nlTranslate } from '../runtime/search/translate.js'
 
@@ -2169,24 +2169,6 @@ function canViewFilter(filter, ctx) {
   if (filter.share_scope === 'org' && ctx.orgIds.includes(filter.owner_org_id)) return true
   return false
 }
-
-// GET /admin/api/work-items/search — search by title or display_key
-router.get('/work-items/search', async (req, res, next) => {
-  try {
-    const q = (req.query.q || '').trim()
-    if (!q) return res.json({ rows: [], count: 0 })
-    const result = await query(`
-      SELECT wi.id, wi.display_key, wi.title, s.name AS current_stage_name, o.name AS org_name
-      FROM runtime.work_items wi
-      JOIN blueprint.stages s ON s.id = wi.current_stage_id
-      JOIN blueprint.organizations o ON o.id = wi.owner_org_id
-      WHERE wi.title ILIKE $1 OR wi.display_key ILIKE $1
-      ORDER BY wi.id DESC
-      LIMIT 20
-    `, [`%${q}%`])
-    res.json({ rows: result.rows, count: result.rowCount })
-  } catch (err) { next(err) }
-})
 
 // GET /admin/api/work-items/:id — full detail
 router.get('/work-items/:id', async (req, res, next) => {
@@ -4113,18 +4095,18 @@ router.get('/search', async (req, res, next) => {
 
     if (include.includes('snippet') && rows.length > 0) {
       const textMatch = q.match(/(\w+)\s*~\s*(["'])(.+?)\2/)
-      if (textMatch) {
-        const term = textMatch[3]
+      const tsquery = textMatch ? buildPrefixTsquery(textMatch[3]) : null
+      if (tsquery) {
         const ids = rows.map(r => r.id)
         const headlinesRes = await query(`
           SELECT wis.work_item_id, ts_headline('english',
             wis.title_text || ' ' || wis.description_text || ' ' || wis.custom_text || ' ' || wis.comments_text,
-            plainto_tsquery('english', $1),
+            to_tsquery('english', $1),
             'StartSel=<mark>, StopSel=</mark>, MaxWords=20, MinWords=5'
           ) AS snippet
           FROM runtime.work_item_search wis
           WHERE wis.work_item_id = ANY($2)
-        `, [term, ids])
+        `, [tsquery, ids])
         const map = new Map(headlinesRes.rows.map(r => [r.work_item_id, r.snippet]))
         rows = rows.map(r => ({ ...r, snippet: map.get(r.id) }))
       }
