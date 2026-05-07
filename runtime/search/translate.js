@@ -117,10 +117,9 @@ async function callHaiku(client, system, userMsg) {
   return client.messages.create({
     model: MODEL,
     max_tokens: MAX_OUTPUT_TOKENS,
-    timeout: TIMEOUT_MS,
     system,
     messages: [{ role: 'user', content: userMsg }],
-  })
+  }, { timeout: TIMEOUT_MS })
 }
 
 function extractText(response) {
