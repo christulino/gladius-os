@@ -5,7 +5,7 @@
  */
 
 import crypto from 'node:crypto'
-import { pool } from '../db/postgres.js'
+import { pool, getClient } from '../db/postgres.js'
 import { generateUri } from '../core/uri.js'
 import { emitEvent, nudgeAfterCommit } from '../core/events.js'
 import { getStorage, buildStorageKey } from '../core/storage/index.js'
@@ -43,7 +43,7 @@ export async function createFileAttachment({ workItemId, fileName, mimeType, buf
   // the file on disk — accept that for v1; a janitor task can sweep later.
   await storage.put(storageKey, buffer)
 
-  const client = await pool.connect()
+  const client = await getClient()
   try {
     await client.query('BEGIN')
     const uri = generateUri('system', 'attachments')
@@ -82,7 +82,7 @@ export async function createFileAttachment({ workItemId, fileName, mimeType, buf
 }
 
 export async function createLinkAttachment({ workItemId, url, title, userId }) {
-  const client = await pool.connect()
+  const client = await getClient()
   try {
     await client.query('BEGIN')
     const uri = generateUri('system', 'attachments')
@@ -118,14 +118,32 @@ export async function createLinkAttachment({ workItemId, url, title, userId }) {
 }
 
 export async function deleteAttachment({ attachmentId, userId }) {
-  const att = await getAttachment(attachmentId)
-  if (!att) return { deleted: false, reason: 'not_found' }
-
   const storage = getStorage()
-  const client = await pool.connect()
+  const client = await getClient()
+  let att = null
   try {
     await client.query('BEGIN')
-    await client.query(`DELETE FROM runtime.attachments WHERE id = $1`, [attachmentId])
+
+    const lookup = await client.query(
+      `SELECT * FROM runtime.attachments WHERE id = $1`,
+      [attachmentId]
+    )
+    if (lookup.rowCount === 0) {
+      await client.query('ROLLBACK')
+      return { deleted: false, reason: 'not_found' }
+    }
+    att = lookup.rows[0]
+
+    const del = await client.query(
+      `DELETE FROM runtime.attachments WHERE id = $1`,
+      [attachmentId]
+    )
+    if (del.rowCount === 0) {
+      // Lost a race; row was already deleted between SELECT and DELETE.
+      await client.query('ROLLBACK')
+      return { deleted: false, reason: 'not_found' }
+    }
+
     await emitEvent(client, {
       eventType: 'work_item.attachment_removed',
       entityId: att.work_item_id,
@@ -135,6 +153,7 @@ export async function deleteAttachment({ attachmentId, userId }) {
         kind: att.kind,
         file_name: att.file_name || null,
         url: att.url || null,
+        url_title: att.url_title || null,
       },
     })
     await client.query('COMMIT')
@@ -146,7 +165,7 @@ export async function deleteAttachment({ attachmentId, userId }) {
     client.release()
   }
 
-  if (att.kind === 'file' && att.storage_key) {
+  if (att && att.kind === 'file' && att.storage_key) {
     await storage.delete(att.storage_key).catch(() => {})
   }
   return { deleted: true, attachment: att }
