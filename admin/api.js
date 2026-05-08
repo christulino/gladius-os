@@ -2642,11 +2642,15 @@ router.get('/work-items/:id/attachments/:attId/download', async (req, res, next)
     res.setHeader('Content-Type', att.mime_type || 'application/octet-stream')
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${att.file_name.replace(/"/g, '')}"`
+      `attachment; filename="${att.file_name.replace(/[\x00-\x1f\x7f"]/g, '')}"`
     )
     if (att.file_size_bytes) res.setHeader('Content-Length', att.file_size_bytes)
     const stream = storage.getReadStream(att.storage_key)
-    stream.on('error', next)
+    stream.on('error', (err) => {
+      if (!res.headersSent) return next(err)
+      // Headers already flushed; destroy the socket so the client sees the failure.
+      res.destroy(err)
+    })
     stream.pipe(res)
   } catch (err) { next(err) }
 })
@@ -2661,6 +2665,8 @@ router.delete('/work-items/:id/attachments/:attId', async (req, res, next) => {
     const userId = req.userId
 
     const att = await getAttachment(attachmentId)
+    // 404 before the permission check is intentional for v1; the enumeration
+    // risk on attachment IDs is acceptable on an admin-authed API.
     if (!att || att.work_item_id !== workItemId) {
       return res.status(404).json({ error: 'attachment not found' })
     }
@@ -2676,7 +2682,10 @@ router.delete('/work-items/:id/attachments/:attId', async (req, res, next) => {
       return res.status(403).json({ error: 'only the uploader or an admin can delete this attachment' })
     }
 
-    await deleteAttachment({ attachmentId, userId })
+    const result = await deleteAttachment({ attachmentId, userId })
+    if (!result.deleted) {
+      return res.status(404).json({ error: 'attachment not found' })
+    }
     res.json({ deleted: true, id: attachmentId })
   } catch (err) { next(err) }
 })
