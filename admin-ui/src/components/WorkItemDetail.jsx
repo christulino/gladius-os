@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, notificationsApi, listAttachments } from '@/lib/api'
+import { api, auth, notificationsApi, listAttachments } from '@/lib/api'
 import { formatElapsed, formatRelative } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
@@ -324,7 +324,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   useEffect(() => { loadAttachments() }, [loadAttachments])
 
   useEffect(() => {
-    api.me().then(setMe).catch(() => setMe(null))
+    auth.me().then(setMe).catch(() => setMe(null))
   }, [])
 
   const loadData = useCallback(async () => {
