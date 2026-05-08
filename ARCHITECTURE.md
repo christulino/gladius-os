@@ -40,7 +40,11 @@ flowos/
 │   ├── access.js           # Visibility rules engine (STUBBED — always returns true)
 │   ├── auth.js             # Session middleware, requireAuth, password hashing (bcrypt)
 │   ├── calendar.js         # Business calendar utilities (STUBBED)
+│   ├── events.js           # emitEvent / nudgeAfterCommit
 │   ├── inheritance.js      # Org policy inheritance (STUBBED)
+│   ├── storage/            # Pluggable attachment storage adapter
+│   │   ├── index.js        # Factory + buildStorageKey + MAX_ATTACHMENT_BYTES
+│   │   └── localStorage.js # Local filesystem adapter (S3 deferred)
 │   └── uri.js              # Work item URI generation (WORKING)
 ├── db/
 │   ├── postgres.js         # PG connection pool
@@ -48,7 +52,7 @@ flowos/
 │   ├── init/
 │   │   ├── blueprint_schema.sql   # v1.2
 │   │   └── runtime_schema.sql     # v0.4
-│   ├── migrations/         # 001 through 010 (append-only, idempotent)
+│   ├── migrations/         # 001 through 015 (append-only, idempotent)
 │   └── seeds/
 │       ├── seed.js
 │       └── seed_test_data.js
@@ -61,7 +65,13 @@ flowos/
 ├── runtime/
 │   ├── transitions.js      # Transition engine
 │   ├── exitCriteria.js     # Exit criteria evaluation
-│   └── workItems.js        # Work item runtime operations
+│   ├── workItems.js        # Work item runtime operations
+│   ├── workItemHistory.js  # Audit trail query + per-event rendering
+│   ├── attachments.js      # Attachment CRUD + event emission
+│   ├── eventProcessor.js   # Advisory lock, drain loop, subscriber registry
+│   ├── deliveryWorker.js   # Notification delivery outbox drain (separate lock)
+│   ├── search/             # JQL parser/compiler + NL→JQL translator
+│   └── subscribers/        # neo4j-sync, audit-log, notifications, search-index
 ├── simulation/             # Simulation engine for generating test flow data
 │   └── engine.js
 ├── admin/                  # Admin API routes (mounted at /admin/api)
@@ -110,6 +120,8 @@ Key tables:
 - `work_item_edits` — field-level audit log (Jira changegroup/changeitem analog)
 - `work_item_search` — denorm tsvector + per-source text columns (search v1)
 - `translator_usage` — NL→JQL Haiku call log with token counts and outcome (search v1)
+- `attachments` — work-item-scoped files & links; `kind`, `storage_key`, `file_name`,
+  `file_size_bytes`, `mime_type`, `url`, `url_title`, `uploaded_by_user_id` (attachments v1, migration 015)
 
 ### Neo4j — Graph Store (not yet seeded)
 

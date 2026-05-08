@@ -1,16 +1,42 @@
 # FlowOS — TODO
 
-## Flagged Items from Last Session (2026-05-07, Session 24)
+## Flagged Items from Last Session (2026-05-08, Session 25)
 
 Bring up at the start of the next session:
 
-- **Search v1 follow-ups complete.** Translator smoke-tested with real Anthropic key (1 real bug
-  found and fixed: `timeout` was inside the request body instead of SDK request options — every
-  call returned a misclassified 504). WorkItemDetail picker migrated to `/search`; legacy
-  `/work-items/search` deleted. `~` operator now compiles to `to_tsquery` with `:*` prefix tokens
-  so partial typing matches; `display_key` is in the title-weight tsvector. 25,239 rows
-  backfilled. Browser-verified end to end.
-- **[P1] Comment edit / delete endpoints + event emissions** (carried from session 23) —
+- **Attachments v1 shipped end-to-end.** Migration 015, pluggable storage adapter
+  (local fs default, 25 MB cap), 5 REST endpoints, multer for multipart, search-index
+  + audit-trail integration, UI in WorkItemDetail with file/camera/link upload. 24
+  commits merged to `main` and pushed. 7/7 integration tests green; browser-verified
+  end-to-end. Two follow-up plans queued in the feature plan's "Follow-up plan
+  triggers" section: stage-evidence requirements (named slots) and S3/MinIO adapter.
+- **[P1] Stage-evidence requirements** — the second half of the original "evidence"
+  mental model. Per-stage named slots ("Permit to Operate", "Copy of CDL") with
+  accepted MIME types, fulfilled by binding existing or newly-uploaded attachments.
+  Gates stage transition. Design: `blueprint.stage_evidence_requirements` +
+  `runtime.evidence_fulfillments` join. Brainstorm before plan.
+- **[P1] S3/MinIO storage adapter** — `core/storage/s3Storage.js` against the existing
+  `getStorage()` interface. Single new file + an `else if (TYPE === 's3')` in the
+  factory. Worth doing whenever a self-hoster asks, or before public release.
+- **[P2] Attachment-event janitor** — files written to `./uploads` before the DB tx
+  commits are orphaned if the process crashes between `storage.put()` and `BEGIN`.
+  Best-effort catch-block cleanup handles tx failure but not crash. Janitor task to
+  scan for orphan files (file on disk with no matching `runtime.attachments.storage_key`)
+  and remove them.
+- **[P2] Notifications subscriber for attachment events** — `runtime/subscribers/notifications.js`
+  has a hardcoded HANDLED set that doesn't include `work_item.attachment_added` /
+  `attachment_removed`. Watchers on busy work items get no notification when attachments
+  land. Reasonable v1 scope but worth wiring when notifications v2 lands.
+- **[P2] `auth.me()` stale within session** — admin-status display in WorkItemDetail
+  is fetched once on mount and cached. Server enforces permissions either way; this is
+  cosmetic only.
+- **[P2] Non-ASCII filename `filename*=UTF-8''…` form** — already implemented per
+  RFC 6266, but worth a manual test with CJK / emoji filenames in a real browser
+  before fully trusting it.
+
+## Carried from Session 24 (still open)
+
+- **[P1] Comment edit / delete endpoints + event emissions** —
   searchIndex subscriber declares `work_item.comment_edited` and `comment_deleted` handlers
   but the API doesn't expose PATCH/DELETE on comments yet. When those endpoints land, wire
   `emitEvent` so the search index refreshes.
@@ -19,12 +45,14 @@ Bring up at the start of the next session:
   pre-existing events/notifications baseline flake. The test's `before` does
   `SELECT first work_item from /work-items?limit=1` which gets churned by search test fixtures.
   Cleaner: have each test file create its own scratch work_item. Not a code regression.
+  **(Worse than recorded — full `npm test` now hangs `node --test` workers; killed manually
+  during attachments session 25. P2 priority is probably under-graded; may want a P1 sweep.)**
 - **[P2] WorkItemDetail Sheet a11y** (carried) — Radix logs `DialogContent requires a
   DialogTitle`. Existing component missing SheetTitle (or VisuallyHidden wrapper).
 - **[P2] Real RBAC for org-visibility** (carried) — compiler currently does a hard `is_admin`
   bypass; long-term shape is access-class permissions in `core/access.js`. Blocked on
   auth-system buildout (see `project_auth_system` memory).
-- **[P2] Bundle size warning** (carried) — admin-ui dist 898 KB (253 KB gzip). Vite suggests
+- **[P2] Bundle size warning** (carried) — admin-ui dist 906 KB (255 KB gzip). Vite suggests
   dynamic imports / manualChunks. Cosmetic until second-load latency starts mattering.
 
 ## Carried from Session 22 (still open)
@@ -37,7 +65,7 @@ Bring up at the start of the next session:
 ## Carried from Session 21 (still open)
 
 - Manual smoke tests of all 3 outbound notification channels (webhook, SMTP, agent-channel against real LLM).
-- Orphan `runtime.notification_preferences` table — cleanup migration (call it 015).
+- Orphan `runtime.notification_preferences` table — cleanup migration (call it 016, since 015 is now used).
 - Missing ESLint config — every subagent flags it; add a config or remove the rule from CLAUDE.md.
 
 ## Cross-cutting
@@ -49,6 +77,23 @@ Bring up at the start of the next session:
 - **Schema migration sweep** — project still uses v1 doc layout (TODO/PARKING_LOT). PROJECT_SCHEMA.md
   defines STATE/BACKLOG/DECISIONS/GOALS/RISKS/QUESTIONS. Worth a dedicated session to migrate.
 
+## Done (Session 25)
+
+- [done 2026-05-08] feat(attachments): migration 015 — runtime.attachments table (file + link kinds; ON DELETE CASCADE; idx_ index naming)
+- [done 2026-05-08] feat(attachments): pluggable storage adapter (`core/storage/`) with local fs implementation; path-traversal guard; env-var validation at module load
+- [done 2026-05-08] feat(attachments): runtime CRUD with event emission (`work_item.attachment_added` / `removed`); race-aware delete with in-tx work-item ownership check; `getClient` pattern parity with rest of runtime
+- [done 2026-05-08] feat(attachments): GET list + POST (multipart=file, JSON=link) endpoints; multer with `MAX_ATTACHMENT_BYTES` limit; URL scheme guard against `javascript:`
+- [done 2026-05-08] feat(attachments): GET download (RFC 6266 dual-form filename, CTL strip, mid-stream error guard) and DELETE (uploader-or-admin permission folded into runtime helper)
+- [done 2026-05-08] feat(attachments): search-index subscriber concatenates filenames + link titles + URLs into D-weight `custom_text`
+- [done 2026-05-08] feat(attachments): audit trail rendering — `attached X` / `removed attachment X` summaries on Activity tab
+- [done 2026-05-08] feat(admin-ui): API client functions (`listAttachments`, `uploadAttachment` with XHR progress, `addLinkAttachment`, `attachmentDownloadUrl`, `deleteAttachment`); `auth.me()` import (not `api.me`)
+- [done 2026-05-08] feat(admin-ui): AttachmentsList component (icons, file/link rendering, download, delete with error handling)
+- [done 2026-05-08] feat(admin-ui): AttachmentUpload component (Add file / Take photo / Add link with `accept="image/*" capture="environment"` for mobile camera)
+- [done 2026-05-08] feat(admin-ui): integrate Attachments section into WorkItemDetail Details tab (between People and URI)
+- [done 2026-05-08] test(attachments): 7 integration tests for upload/list/download/delete + edge cases; all green
+- [done 2026-05-08] build: multer dep added; `.env.example` created; `uploads/` gitignored; admin-ui dist rebuilt
+- [done 2026-05-08] docs: feature plan (`feature_plans/attachments-v1.md`); CLAUDE.md Key Patterns + Key Files; PRODUCT_PLAN.md Tier 1 row 4 marked DONE; ARCHITECTURE.md Repository Structure + runtime tables updated
+
 ## Done (Session 24)
 
 - [done 2026-05-07] fix(search): Anthropic SDK timeout option moved to request-options arg (translator was 100% broken with real key)
@@ -58,19 +103,3 @@ Bring up at the start of the next session:
 - [done 2026-05-07] chore(search): backfill of 25,239 work_item_search rows
 - [done 2026-05-07] build(admin-ui): dist rebuild with prefix-match picker
 - [done 2026-05-07] test(search): updated `~` compile-test, added multi-word and empty-input cases
-
-## Done (Session 23)
-
-- [done 2026-05-06] feat(search): migration 014 — work_item_search, saved_filters, reserved_field_keys, translator_usage
-- [done 2026-05-06] feat(search): peggy JQL grammar + parser + JQLSyntaxError/JQLSemanticError
-- [done 2026-05-06] feat(search): JQL compiler — parameterized SQL, org-scope (admin bypass), done-retention
-- [done 2026-05-06] feat(search): per-user field catalog (60s cache)
-- [done 2026-05-06] feat(search): search-index event subscriber + 25,237-item backfill
-- [done 2026-05-06] feat(search): Haiku NL→JQL translator with abuse hardening (input cap, budgets, output filter, retry)
-- [done 2026-05-06] feat(search): reserved-key validator on POST /class-fields and POST /type-fields
-- [done 2026-05-06] feat(search): API endpoints — /search, /search/fields, /search/translate, /saved-filters CRUD
-- [done 2026-05-06] feat(search): admin-ui SearchPage with JQLEditor, SavedFiltersList, SearchResultRow
-- [done 2026-05-06] feat(search): sidebar Search nav, header search icon, '/' keybinding
-- [done 2026-05-06] test(search): 63 unit tests + 13 integration tests, all passing
-- [done 2026-05-06] fix(search): work_item_user_relationships table name; admin org bypass
-- [done 2026-05-06] chore(build): @anthropic-ai/sdk + peggy added; admin-ui dist rebuilt

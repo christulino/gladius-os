@@ -14,7 +14,7 @@
 | 1 | **Authentication & authorization** | Login, SSO, RBAC | ~~DONE~~ (Session 17). Server-side sessions, bcrypt, setup wizard, requireAuth. | RBAC/SSO still needed for enterprise. |
 | 2 | **Notifications** | Email, in-app, Slack | ~~DONE~~ (Session 21). Four channels (in_app/email/webhook/agent), role×event matrix with user overrides, HMAC webhook signing, ownership challenge, rate limits, retention. Agent-as-first-class-subscriber reserved. | Follow-up: agent collaboration v1 (bidirectional protocol, tool-use policies). |
 | 3 | **Search** | JQL, full-text, filters | Title substring only | Need saved filters, field-based search, full-text. This is how people find work outside the board. |
-| 4 | **Attachments / evidence** | File upload on tickets | Schema exists, no implementation | S3/MinIO storage designed but not built. Common need: screenshots, docs, logs. |
+| 4 | **Attachments / evidence** | File upload on tickets | ~~DONE~~ (Session 25, attachments v1). `runtime.attachments` table; pluggable storage adapter (local fs default; 25 MB cap); 5 REST endpoints; search-index + audit-trail integration; UI in WorkItemDetail with file/camera/link upload. | Stage-evidence requirements (named slots, exit-criteria gating) and S3/MinIO adapter deferred to follow-up plans. |
 | 5 | **Audit trail UI** | Activity log on each ticket | ~~DONE~~ (Session 22). Activity tab on WorkItemDetail showing all events from runtime.events with per-field edit expansion, cursor pagination. | v2 candidates: event-type filter, search-within-history, diff viewer, click-through to spawned children. |
 | 6 | **Bulk operations** | Multi-select + transition/assign | Nothing | "Move these 8 items to Done" — daily need for any team. |
 | 7 | **Form-based intake** | ServiceNow catalog forms, Jira create screens | ~~DONE~~ (Session 17). Public intake forms at /intake/:slug, dynamic field rendering, tracking numbers. | Admin toggle per type in Org Center. |
@@ -110,7 +110,7 @@ These items remain actionable:
 4. Search & saved filters
 5. ~~Notifications (built on event system)~~ — DONE (Session 21). Four channels, rate-limited delivery worker, ownership challenge, agent-channel reserved.
 6. ~~Form-based intake (built on custom fields)~~ — DONE (Session 17). Public intake forms.
-7. Attachments / evidence storage
+7. ~~Attachments / evidence storage~~ — DONE (Session 25). Generic file/link attachments shipped; stage-evidence + S3 adapter deferred.
 8. Audit trail UI per work item
 
 ### Phase 3: Differentiation
