@@ -31,3 +31,6 @@ search-with-detail-drawer.png
 # Claude Code — commit settings.json (shared), ignore local overrides + runtime state
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Local file uploads (attachments storage)
+uploads/
