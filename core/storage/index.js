@@ -39,4 +39,5 @@ if (!Number.isFinite(_maxMb) || _maxMb <= 0) {
     `FLOWOS_MAX_ATTACHMENT_MB must be a positive integer; got: ${JSON.stringify(process.env.FLOWOS_MAX_ATTACHMENT_MB)}`
   )
 }
+export const MAX_ATTACHMENT_MB = _maxMb
 export const MAX_ATTACHMENT_BYTES = _maxMb * 1024 * 1024

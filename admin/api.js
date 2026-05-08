@@ -27,7 +27,7 @@ import {
   deleteAttachment,
   getAttachment,
 } from '../runtime/attachments.js'
-import { getStorage, MAX_ATTACHMENT_BYTES } from '../core/storage/index.js'
+import { getStorage, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_MB } from '../core/storage/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -2579,7 +2579,7 @@ router.post('/work-items/:id/attachments',
     if (ct.startsWith('multipart/form-data')) {
       attachmentUpload.single('file')(req, res, (err) => {
         if (err && err.code === 'LIMIT_FILE_SIZE') {
-          return res.status(413).json({ error: `file exceeds ${MAX_ATTACHMENT_BYTES} bytes` })
+          return res.status(413).json({ error: `file exceeds ${MAX_ATTACHMENT_MB} MB limit` })
         }
         if (err) return next(err)
         next()
@@ -2615,6 +2615,9 @@ router.post('/work-items/:id/attachments',
       if (!url || typeof url !== 'string') {
         return res.status(400).json({ error: 'url required for link attachment' })
       }
+      if (!/^https?:\/\//i.test(url)) {
+        return res.status(400).json({ error: 'url must start with http:// or https://' })
+      }
       const row = await createLinkAttachment({
         workItemId,
         url,
@@ -2640,9 +2643,11 @@ router.get('/work-items/:id/attachments/:attId/download', async (req, res, next)
     }
     const storage = getStorage()
     res.setHeader('Content-Type', att.mime_type || 'application/octet-stream')
+    const safeAscii = att.file_name.replace(/[\x00-\x1f\x7f"\\]/g, '_').replace(/[^\x20-\x7e]/g, '_')
+    const utf8Encoded = encodeURIComponent(att.file_name).replace(/['()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${att.file_name.replace(/[\x00-\x1f\x7f"]/g, '')}"`
+      `attachment; filename="${safeAscii}"; filename*=UTF-8''${utf8Encoded}`
     )
     if (att.file_size_bytes) res.setHeader('Content-Length', att.file_size_bytes)
     const stream = storage.getReadStream(att.storage_key)
@@ -2664,26 +2669,23 @@ router.delete('/work-items/:id/attachments/:attId', async (req, res, next) => {
     }
     const userId = req.userId
 
-    const att = await getAttachment(attachmentId)
     // 404 before the permission check is intentional for v1; the enumeration
     // risk on attachment IDs is acceptable on an admin-authed API.
-    if (!att || att.work_item_id !== workItemId) {
-      return res.status(404).json({ error: 'attachment not found' })
-    }
-
-    // Permission: uploader OR admin can delete.
-    const isUploader = att.uploaded_by_user_id === userId
     const adminRes = await query(
       `SELECT is_admin FROM blueprint.users WHERE id = $1`,
       [userId]
     )
-    const isAdmin = adminRes.rows[0]?.is_admin === true
-    if (!isUploader && !isAdmin) {
+    const actorIsAdmin = adminRes.rows[0]?.is_admin === true
+
+    const result = await deleteAttachment({ attachmentId, userId, actorIsAdmin })
+    if (result.reason === 'not_found') {
+      return res.status(404).json({ error: 'attachment not found' })
+    }
+    if (result.reason === 'forbidden') {
       return res.status(403).json({ error: 'only the uploader or an admin can delete this attachment' })
     }
-
-    const result = await deleteAttachment({ attachmentId, userId })
-    if (!result.deleted) {
+    // Cross-org / cross-work-item check still wants verification.
+    if (result.attachment.work_item_id !== workItemId) {
       return res.status(404).json({ error: 'attachment not found' })
     }
     res.json({ deleted: true, id: attachmentId })
