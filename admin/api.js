@@ -2593,8 +2593,7 @@ router.post('/work-items/:id/attachments',
       const workItemId = Number(req.params.id)
       if (!Number.isInteger(workItemId)) return res.status(400).json({ error: 'invalid work item id' })
 
-      const userId = req.session?.userId
-      if (!userId) return res.status(401).json({ error: 'auth required' })
+      const userId = req.userId
 
       // Verify work item exists.
       const wi = await query(`SELECT id FROM runtime.work_items WHERE id = $1`, [workItemId])
