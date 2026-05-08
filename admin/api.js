@@ -2677,16 +2677,12 @@ router.delete('/work-items/:id/attachments/:attId', async (req, res, next) => {
     )
     const actorIsAdmin = adminRes.rows[0]?.is_admin === true
 
-    const result = await deleteAttachment({ attachmentId, userId, actorIsAdmin })
+    const result = await deleteAttachment({ attachmentId, workItemId, userId, actorIsAdmin })
     if (result.reason === 'not_found') {
       return res.status(404).json({ error: 'attachment not found' })
     }
     if (result.reason === 'forbidden') {
       return res.status(403).json({ error: 'only the uploader or an admin can delete this attachment' })
-    }
-    // Cross-org / cross-work-item check still wants verification.
-    if (result.attachment.work_item_id !== workItemId) {
-      return res.status(404).json({ error: 'attachment not found' })
     }
     res.json({ deleted: true, id: attachmentId })
   } catch (err) { next(err) }
