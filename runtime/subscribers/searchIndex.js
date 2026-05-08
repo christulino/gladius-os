@@ -13,6 +13,8 @@ const HANDLED = new Set([
   'work_item.commented',
   'work_item.comment_edited',
   'work_item.comment_deleted',
+  'work_item.attachment_added',
+  'work_item.attachment_removed',
 ])
 
 export function handlesEventType(eventType) {
@@ -57,6 +59,13 @@ export async function searchIndexHandler(event) {
   `, [workItemId])
   const commentsText = commentsRes.rows.map(r => r.body).join(' ')
 
+  const attachmentsRes = await query(`
+    SELECT file_name, url_title, url FROM runtime.attachments WHERE work_item_id = $1
+  `, [workItemId])
+  const attachmentsText = attachmentsRes.rows
+    .map(r => [r.file_name, r.url_title, r.url].filter(Boolean).join(' '))
+    .join(' ')
+
   const titleText = wi.title || ''
   const descriptionText = wi.description || ''
   const displayKey = wi.display_key || ''
@@ -79,5 +88,5 @@ export async function searchIndexHandler(event) {
       custom_text = EXCLUDED.custom_text,
       comments_text = EXCLUDED.comments_text,
       refreshed_at = NOW()
-  `, [workItemId, titleText, descriptionText, customText.trim(), commentsText, displayKey])
+  `, [workItemId, titleText, descriptionText, (customText.trim() + ' ' + attachmentsText).trim(), commentsText, displayKey])
 }
