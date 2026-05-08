@@ -17,6 +17,8 @@ const HISTORY_EVENT_TYPES = [
   'work_item.commented',
   'work_item.linked',
   'work_item.unlinked',
+  'work_item.attachment_added',
+  'work_item.attachment_removed',
   'exit_criteria.acknowledged',
   'exit_criteria.unacknowledged',
   'exit_criteria.waived',
@@ -155,6 +157,20 @@ function formatEvent(e, enrich) {
       const tgt = enrich.targets.get(p.target_id)
       const label = tgt ? tgt.display_key : 'another item'
       return { ...base, summary: `unlinked ${label}`, details: null }
+    }
+
+    case 'work_item.attachment_added': {
+      const what = p.kind === 'file'
+        ? (p.file_name || 'a file')
+        : (p.url_title || p.url || 'a link')
+      return { ...base, summary: `attached ${what}`, details: null }
+    }
+
+    case 'work_item.attachment_removed': {
+      const what = p.kind === 'file'
+        ? (p.file_name || 'a file')
+        : (p.url_title || p.url || 'a link')
+      return { ...base, summary: `removed attachment ${what}`, details: null }
     }
 
     case 'exit_criteria.acknowledged':
