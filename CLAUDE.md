@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-05-07 (Session 24 — Search v1 polish: prefix matching + picker migration)
+> Last updated: 2026-05-08 (Session 25 — Attachments v1 shipped)
 
 ---
 
@@ -96,6 +96,23 @@ tests use the same local PostgreSQL instance.
   Custom field keys can't collide with the 28 entries in
   `blueprint.reserved_field_keys` (validated on POST /class-fields,
   POST /type-fields).
+- **Attachments:** `runtime.attachments` (migration 015) holds files (`kind='file'`,
+  bytes via pluggable storage adapter — local fs in v1, S3 designed not built)
+  and links (`kind='link'`). Per-file size limit from
+  `FLOWOS_MAX_ATTACHMENT_MB` env var (default 25). Endpoints under
+  `/admin/api/work-items/:id/attachments`: `GET` (list), `POST`
+  (multipart=file, JSON body=link), `GET .../:attId/download` (streams
+  with Content-Disposition; CTL chars stripped from filename), `DELETE
+  .../:attId` (uploader OR admin only; reacts to `deleteAttachment`
+  helper's race-aware return). Two events
+  `work_item.attachment_added` / `work_item.attachment_removed` flow
+  through the existing event pipes: search-index subscriber concatenates
+  filenames + link titles + URLs into the D-weight `custom_text`;
+  audit-trail (`workItemHistory.js`) renders `attached X` / `removed
+  attachment X` summaries. Storage path layout: `<rootDir>/<aa>/<uuid>`
+  (2-char shard). **Stage-evidence requirements are NOT built yet** —
+  that's a follow-up plan; attachments today have no exit-criteria
+  semantics.
 
 ---
 
@@ -127,6 +144,11 @@ tests use the same local PostgreSQL instance.
 | `runtime/subscribers/searchIndex.js` | Maintains runtime.work_item_search tsvector |
 | `scripts/backfillSearchIndex.js` | One-shot backfill of work_item_search |
 | `admin-ui/src/pages/SearchPage.jsx` | Search page shell with JQL editor + saved filters |
+| `runtime/attachments.js` | Attachment CRUD + event emission |
+| `core/storage/index.js` | Storage adapter factory; size limit constant |
+| `core/storage/localStorage.js` | Local filesystem storage adapter |
+| `admin-ui/src/components/AttachmentsList.jsx` | Attachments list rendering |
+| `admin-ui/src/components/AttachmentUpload.jsx` | File / camera / link upload UI |
 
 ---
 
