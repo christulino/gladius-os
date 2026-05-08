@@ -41,6 +41,7 @@ const ENTITY_TYPES = new Set([
   'visibility-rules',
   'business-calendars',
   'saved-filters',
+  'attachments',
 ])
 
 // System-level entities not scoped to an org use this slug
