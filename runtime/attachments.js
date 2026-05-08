@@ -117,7 +117,7 @@ export async function createLinkAttachment({ workItemId, url, title, userId }) {
   }
 }
 
-export async function deleteAttachment({ attachmentId, userId, actorIsAdmin }) {
+export async function deleteAttachment({ attachmentId, workItemId, userId, actorIsAdmin }) {
   const storage = getStorage()
   const client = await getClient()
   let att = null
@@ -133,6 +133,12 @@ export async function deleteAttachment({ attachmentId, userId, actorIsAdmin }) {
       return { deleted: false, reason: 'not_found' }
     }
     att = lookup.rows[0]
+
+    // Verify the attachment belongs to the URL-stated work item.
+    if (workItemId != null && att.work_item_id !== workItemId) {
+      await client.query('ROLLBACK')
+      return { deleted: false, reason: 'not_found' }
+    }
 
     const isUploader = att.uploaded_by_user_id === userId
     if (!isUploader && !actorIsAdmin) {
