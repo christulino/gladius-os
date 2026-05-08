@@ -2626,6 +2626,61 @@ router.post('/work-items/:id/attachments',
   }
 )
 
+router.get('/work-items/:id/attachments/:attId/download', async (req, res, next) => {
+  try {
+    const attachmentId = Number(req.params.attId)
+    if (!Number.isInteger(attachmentId)) return res.status(400).json({ error: 'invalid attachment id' })
+    const att = await getAttachment(attachmentId)
+    if (!att) return res.status(404).json({ error: 'attachment not found' })
+    if (att.work_item_id !== Number(req.params.id)) {
+      return res.status(404).json({ error: 'attachment not found' })
+    }
+    if (att.kind !== 'file') {
+      return res.status(400).json({ error: 'only file attachments can be downloaded' })
+    }
+    const storage = getStorage()
+    res.setHeader('Content-Type', att.mime_type || 'application/octet-stream')
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${att.file_name.replace(/"/g, '')}"`
+    )
+    if (att.file_size_bytes) res.setHeader('Content-Length', att.file_size_bytes)
+    const stream = storage.getReadStream(att.storage_key)
+    stream.on('error', next)
+    stream.pipe(res)
+  } catch (err) { next(err) }
+})
+
+router.delete('/work-items/:id/attachments/:attId', async (req, res, next) => {
+  try {
+    const attachmentId = Number(req.params.attId)
+    const workItemId = Number(req.params.id)
+    if (!Number.isInteger(attachmentId) || !Number.isInteger(workItemId)) {
+      return res.status(400).json({ error: 'invalid id' })
+    }
+    const userId = req.userId
+
+    const att = await getAttachment(attachmentId)
+    if (!att || att.work_item_id !== workItemId) {
+      return res.status(404).json({ error: 'attachment not found' })
+    }
+
+    // Permission: uploader OR admin can delete.
+    const isUploader = att.uploaded_by_user_id === userId
+    const adminRes = await query(
+      `SELECT is_admin FROM blueprint.users WHERE id = $1`,
+      [userId]
+    )
+    const isAdmin = adminRes.rows[0]?.is_admin === true
+    if (!isUploader && !isAdmin) {
+      return res.status(403).json({ error: 'only the uploader or an admin can delete this attachment' })
+    }
+
+    await deleteAttachment({ attachmentId, userId })
+    res.json({ deleted: true, id: attachmentId })
+  } catch (err) { next(err) }
+})
+
 // =============================================================================
 // USER RELATIONSHIPS
 // =============================================================================
