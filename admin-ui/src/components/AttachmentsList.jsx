@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Trash2, FileText, Image as ImageIcon, Link as LinkIcon, Download } from 'lucide-react'
 import { attachmentDownloadUrl, deleteAttachment } from '../lib/api'
 import { Button } from './ui/button'
@@ -16,17 +17,25 @@ function iconFor(att) {
 }
 
 export default function AttachmentsList({ workItemId, attachments, currentUserId, isAdmin, onChanged }) {
+  const [error, setError] = useState(null)
+
+  async function handleDelete(att) {
+    setError(null)
+    if (!confirm(`Remove ${att.file_name || att.url_title || att.url}?`)) return
+    try {
+      await deleteAttachment(workItemId, att.id)
+      onChanged?.()
+    } catch (e) {
+      setError(e.message || 'Failed to remove attachment')
+    }
+  }
+
   if (!attachments?.length) {
     return <div className="text-xs text-muted-foreground">No attachments yet.</div>
   }
 
-  async function handleDelete(att) {
-    if (!confirm(`Remove ${att.file_name || att.url_title || att.url}?`)) return
-    await deleteAttachment(workItemId, att.id)
-    onChanged?.()
-  }
-
   return (
+    <>
     <ul className="divide-y divide-black/5">
       {attachments.map(att => {
         const Icon = iconFor(att)
@@ -85,5 +94,7 @@ export default function AttachmentsList({ workItemId, attachments, currentUserId
         )
       })}
     </ul>
+    {error && <div className="text-xs text-destructive mt-1">{error}</div>}
+    </>
   )
 }
