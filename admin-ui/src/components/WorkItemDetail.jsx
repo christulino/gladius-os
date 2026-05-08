@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api, notificationsApi } from '@/lib/api'
+import { api, notificationsApi, listAttachments } from '@/lib/api'
 import { formatElapsed, formatRelative } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet'
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
 import { WorkItemHistory } from '@/components/WorkItemHistory'
+import AttachmentsList from '@/components/AttachmentsList'
+import AttachmentUpload from '@/components/AttachmentUpload'
 import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
 
 // ─── Custom Fields Renderer ─────────────────────────────────────────────────
@@ -301,12 +303,29 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   const [childCreateOpen, setChildCreateOpen] = useState(false)
   const [libraryTypes, setLibraryTypes] = useState([])
 
+  // Attachments
+  const [attachments, setAttachments] = useState([])
+  const [me, setMe] = useState(null)
+
   // Sync when parent changes the ID
   useEffect(() => {
     setActiveId(initialWorkItemId)
   }, [initialWorkItemId])
 
   const workItemId = activeId
+
+  const loadAttachments = useCallback(async () => {
+    if (!workItemId) return
+    try {
+      setAttachments(await listAttachments(workItemId))
+    } catch { /* ignore */ }
+  }, [workItemId])
+
+  useEffect(() => { loadAttachments() }, [loadAttachments])
+
+  useEffect(() => {
+    api.me().then(setMe).catch(() => setMe(null))
+  }, [])
 
   const loadData = useCallback(async () => {
     if (!workItemId) return
@@ -1284,6 +1303,21 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                       </div>
                     )}
                   </div>
+
+                  {/* Attachments */}
+                  <section className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Attachments
+                    </div>
+                    <AttachmentUpload workItemId={workItemId} onUploaded={loadAttachments} />
+                    <AttachmentsList
+                      workItemId={workItemId}
+                      attachments={attachments}
+                      currentUserId={me?.id}
+                      isAdmin={me?.is_admin === true}
+                      onChanged={loadAttachments}
+                    />
+                  </section>
 
                   {/* URI */}
                   <div className="flex flex-col gap-1 pt-3 mt-1 border-t border-border">
