@@ -17,7 +17,12 @@ export function createLocalStorage(rootDir) {
     if (key.includes('..') || path.isAbsolute(key)) {
       throw new Error('invalid storage key')
     }
-    return path.join(rootDir, key)
+    const root = path.resolve(rootDir)
+    const resolved = path.resolve(root, key)
+    if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+      throw new Error('invalid storage key')
+    }
+    return resolved
   }
 
   return {
