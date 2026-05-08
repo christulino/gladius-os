@@ -19,8 +19,22 @@ import { mkdir }      from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { fileURLToPath } from 'url'
 import { dirname, join, extname } from 'path'
+import multer from 'multer'
+import {
+  listAttachments,
+  createFileAttachment,
+  createLinkAttachment,
+  deleteAttachment,
+  getAttachment,
+} from '../runtime/attachments.js'
+import { getStorage, MAX_ATTACHMENT_BYTES } from '../core/storage/index.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+const attachmentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTACHMENT_BYTES },
+})
 
 const router = Router()
 
@@ -2544,6 +2558,74 @@ router.post('/work-items/:id/comments', async (req, res, next) => {
     client.release()
   }
 })
+
+// =============================================================================
+// ATTACHMENTS
+// =============================================================================
+
+router.get('/work-items/:id/attachments', async (req, res, next) => {
+  try {
+    const workItemId = Number(req.params.id)
+    if (!Number.isInteger(workItemId)) return res.status(400).json({ error: 'invalid work item id' })
+    const rows = await listAttachments(workItemId)
+    res.json({ attachments: rows })
+  } catch (err) { next(err) }
+})
+
+router.post('/work-items/:id/attachments',
+  (req, res, next) => {
+    // Route by Content-Type: multipart = file, json = link.
+    const ct = req.headers['content-type'] || ''
+    if (ct.startsWith('multipart/form-data')) {
+      attachmentUpload.single('file')(req, res, (err) => {
+        if (err && err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(413).json({ error: `file exceeds ${MAX_ATTACHMENT_BYTES} bytes` })
+        }
+        if (err) return next(err)
+        next()
+      })
+    } else {
+      next()
+    }
+  },
+  async (req, res, next) => {
+    try {
+      const workItemId = Number(req.params.id)
+      if (!Number.isInteger(workItemId)) return res.status(400).json({ error: 'invalid work item id' })
+
+      const userId = req.session?.userId
+      if (!userId) return res.status(401).json({ error: 'auth required' })
+
+      // Verify work item exists.
+      const wi = await query(`SELECT id FROM runtime.work_items WHERE id = $1`, [workItemId])
+      if (wi.rowCount === 0) return res.status(404).json({ error: 'work item not found' })
+
+      if (req.file) {
+        const row = await createFileAttachment({
+          workItemId,
+          fileName: req.file.originalname,
+          mimeType: req.file.mimetype,
+          buffer: req.file.buffer,
+          userId,
+        })
+        return res.status(201).json({ attachment: row })
+      }
+
+      // Link path
+      const { url, title } = req.body || {}
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: 'url required for link attachment' })
+      }
+      const row = await createLinkAttachment({
+        workItemId,
+        url,
+        title: title || null,
+        userId,
+      })
+      return res.status(201).json({ attachment: row })
+    } catch (err) { next(err) }
+  }
+)
 
 // =============================================================================
 // USER RELATIONSHIPS
