@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS runtime.attachments (
     url                  TEXT,
     url_title            TEXT,
 
-    uploaded_by_user_id  INTEGER NOT NULL REFERENCES blueprint.users(id),
+    uploaded_by_user_id  INTEGER NOT NULL REFERENCES blueprint.users(id) ON DELETE CASCADE,
     uploaded_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
     CONSTRAINT attachments_kind_fields CHECK (
@@ -27,5 +27,5 @@ CREATE TABLE IF NOT EXISTS runtime.attachments (
     )
 );
 
-CREATE INDEX IF NOT EXISTS attachments_work_item_idx ON runtime.attachments(work_item_id);
-CREATE INDEX IF NOT EXISTS attachments_uploader_idx  ON runtime.attachments(uploaded_by_user_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_work_item ON runtime.attachments(work_item_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_uploader  ON runtime.attachments(uploaded_by_user_id);
