@@ -31,7 +31,7 @@ function formatDueDate(iso) {
   return { label, overdue, urgent }
 }
 
-export function WorkItemCard({ item, onClick, onPull, isSelected }) {
+export function WorkItemCard({ item, onClick, onPull, isSelected, isChecked, selectMode }) {
   const [stageTime, setStageTime] = useState(() => formatElapsed(item.entered_current_stage_at))
   const [totalTime, setTotalTime] = useState(() => formatElapsed(item.created_at))
 
@@ -53,27 +53,44 @@ export function WorkItemCard({ item, onClick, onPull, isSelected }) {
   const due = formatDueDate(item.due_date)
   const showPull = onPull && isWaiting
 
+  const checkedBorder = isChecked ? '2px solid hsl(var(--primary))' : null
+  const selectedBorder = isSelected ? '2px solid hsl(var(--primary))' : null
+  const blockedBorder = isBlocked ? '2px solid hsl(var(--destructive) / 0.4)' : null
+  const activeBorder = checkedBorder ?? selectedBorder ?? blockedBorder ?? '1px solid #D4D4D4'
+  const hasFatBorder = isChecked || isSelected || isBlocked
+
   return (
     <button
       data-item-id={item.id}
       onClick={() => onClick(item)}
       className={`group relative w-full text-left p-2 flex flex-col gap-0.5 transition-colors ${cornerRadius}`}
       style={{
-        backgroundColor: isSelected ? 'hsl(var(--primary) / 0.06)' : '#FFFFFF',
-        border: isSelected ? '2px solid hsl(var(--primary))' : isBlocked ? '2px solid hsl(var(--destructive) / 0.4)' : '1px solid #D4D4D4',
-        padding: (isSelected || isBlocked) ? '7px' : undefined,
+        backgroundColor: (isChecked || isSelected) ? 'hsl(var(--primary) / 0.06)' : '#FFFFFF',
+        border: activeBorder,
+        padding: hasFatBorder ? '7px' : undefined,
       }}
     >
+      {/* Checkbox indicator in select mode */}
+      {selectMode && (
+        <span
+          className={`absolute top-1 right-1 w-4 h-4 rounded border flex items-center justify-center text-xs ${
+            isChecked ? 'bg-primary border-primary text-primary-foreground' : 'border-border bg-background'
+          }`}
+        >
+          {isChecked && '✓'}
+        </span>
+      )}
+
       {/* Unread notification dot */}
-      {!showPull && item.unread_count > 0 && (
+      {!selectMode && !showPull && item.unread_count > 0 && (
         <span
           className="absolute top-1 right-1 h-2 w-2 rounded-full bg-[hsl(var(--primary))]"
           title={`${item.unread_count} unread notification${item.unread_count === 1 ? '' : 's'}`}
         />
       )}
 
-      {/* Pull arrow button (waiting items only) */}
-      {showPull && (
+      {/* Pull arrow button (waiting items only, not in select mode) */}
+      {showPull && !selectMode && (
         <span
           onClick={e => { e.stopPropagation(); onPull() }}
           className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center text-xs bg-primary/10 text-primary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20 cursor-pointer"

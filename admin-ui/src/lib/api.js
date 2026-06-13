@@ -99,10 +99,14 @@ export const api = {
   workItemTransitions: (id) => apiFetch(`/work-items/${id}/transitions`),
   prepareTransition:   (id, to_stage_id) => apiFetch(`/work-items/${id}/transition/prepare?to_stage_id=${to_stage_id}`),
   transitionWorkItem:  (id, to_stage_id, reason) => apiFetch(`/work-items/${id}/transition`, { method: 'POST', body: JSON.stringify({ to_stage_id, reason }) }),
+  bulkTransition:      (work_item_ids, to_stage_id, reason) => apiFetch('/work-items/bulk/transition', { method: 'POST', body: JSON.stringify({ work_item_ids, to_stage_id, reason }) }),
+  bulkAssign:          (work_item_ids, user_id, relationship_type) => apiFetch('/work-items/bulk/assign', { method: 'POST', body: JSON.stringify({ work_item_ids, user_id, relationship_type }) }),
 
   // Comments
   workItemComments:  (id) => apiFetch(`/work-items/${id}/comments`),
   addComment:        (id, body, parent_comment_id) => apiFetch(`/work-items/${id}/comments`, { method: 'POST', body: JSON.stringify({ body, parent_comment_id }) }),
+  editComment:       (workItemId, commentId, body) => apiFetch(`/work-items/${workItemId}/comments/${commentId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
+  deleteComment:     (workItemId, commentId) => apiFetch(`/work-items/${workItemId}/comments/${commentId}`, { method: 'DELETE' }),
 
   // History (audit trail)
   workItemHistory:   (id, { limit = 50, before = null } = {}) => {
