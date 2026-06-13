@@ -296,22 +296,24 @@ Connection indicator on cards with relationships.
 ## What Is and Isn't Built
 
 ### Working
-- PostgreSQL schema (blueprint + runtime, ~60 tables, 14 migrations)
+- PostgreSQL schema (blueprint + runtime, ~60 tables, 16 migrations)
 - Docker Compose environment (PostgreSQL + Neo4j)
 - Seed data (enterprise org hierarchy, workflows, types, service classes, roles)
 - Authentication (sessions, setup wizard, login/logout, requireAuth)
-- Express API (~80 endpoints)
+- Express API (~140 endpoints)
 - Public intake forms (field-driven, anonymous submission, tracking numbers)
 - Service catalog with admin CRUD and public form toggle
 - Transition engine with exit criteria (3-tier evaluation, acknowledgment, waiver)
 - React admin UI (20+ pages, cartography theme)
-- Board: 3-level columns, drag-to-pan, skeleton loading, swimlanes, split waiting/active
-- Work item detail drawer, comments, linking, people management
+- Board: 3-level columns, drag-to-pan, skeleton loading, swimlanes, split waiting/active; **multi-select mode + BulkActionBar** (transition/assign N items, per-item partial-success)
+- Work item detail drawer, comments (edit/delete with is_edited flag), linking, people management
 - Hierarchical WIP limits, class fields, custom field engine, simulation engine
 - Org Center (5 section pills: Settings, Catalog, Policies, Members, Workflows)
-- Event system + per-item audit trail
+- Event system + per-item audit trail (comment_edited/comment_deleted wired)
 - Notifications v1 (in_app, email, webhook, agent channels)
-- **Search v1: JQL parser + AST→SQL compiler with org-scope and admin bypass; tsvector index maintained by event subscriber; Haiku NL→JQL translator with abuse hardening; first-class saved filters (private/org/global); SearchPage UI with `/` keybinding**
+- Search v1: JQL parser + AST→SQL compiler with org-scope and admin bypass; tsvector index maintained by event subscriber; Haiku NL→JQL translator with abuse hardening; first-class saved filters (private/org/global); SearchPage UI with `/` keybinding
+- **Attachments v1:** `runtime.attachments` (file + link kinds); pluggable storage adapter (local fs, 25 MB cap); 5 REST endpoints; search-index + audit-trail integration; WorkItemDetail UI
+- **All 7 Tier-1 go-live blockers DONE** (auth, notifications, search, attachments, audit trail, intake forms, bulk ops)
 
 ### Open Source Release Blockers
 - Cross-instance service requests (API calls between instances)
@@ -590,3 +592,62 @@ legacy endpoint never invoked.
 (comments fail when run after search tests; pass alone) — logged as
 [P2] in BACKLOG. Same shape as the events/notifications baseline
 flake.
+
+### Session 25 (2026-05-08) — Attachments v1
+
+Added `runtime.attachments` table (migration 015) for file and link
+attachments on work items. Pluggable storage adapter pattern:
+`core/storage/index.js` factory dispatches to `localStorage.js`
+(local fs) by default; S3 adapter designed but not built. Per-file
+size cap via `FLOWOS_MAX_ATTACHMENT_MB` env var (default 25 MB).
+
+Five REST endpoints under `/work-items/:id/attachments`: GET (list),
+POST (multipart=file, JSON=link), GET `/:attId/download` (streams
+with RFC 6266 Content-Disposition), DELETE (uploader-or-admin,
+race-aware, same-tx permission + delete + emit pattern as bulk assign).
+
+Two new events (`work_item.attachment_added` / `removed`) flow through
+existing pipes: search-index subscriber concatenates filenames + link
+titles into D-weight `custom_text`; workItemHistory renders `attached
+X` / `removed attachment X` summaries.
+
+WorkItemDetail Detail tab: AttachmentsList + AttachmentUpload (file,
+camera via `capture="environment"`, link) components.
+
+**Tier-1 blocker #4 (Attachments/evidence) closed.**
+
+### Session 26 (2026-06-13) — Bulk ops + comment edit/delete
+
+**All 7 Tier-1 "cannot go live without" blockers closed.**
+
+**ESLint + test hang fix:** Added `.eslintrc.json`; fixed `npm test`
+hang caused by Neo4j driver keepalive holding the node process open
+after tests completed. Test isolation also improved: ON CONFLICT DO
+NOTHING + SELECT pattern for fixture user insertion; advisory-lock
+skip guards in events-processor tests.
+
+**Bulk operations (Tier-1 #6):**
+- `POST /work-items/bulk/transition { work_item_ids, to_stage_id }` —
+  routes each item through the existing two-phase transition engine;
+  partial success reported per-item.
+- `POST /work-items/bulk/assign { work_item_ids, user_id, relationship_type }`.
+- Board multi-select: `selectMode` state in `Board.jsx`; card
+  checkboxes in `WorkItemCard.jsx`; `BulkActionBar.jsx` floats at
+  bottom of board viewport with stage/user dropdowns and per-item
+  result display.
+
+**Comment edit/delete:**
+- `PATCH /work-items/:id/comments/:commentId` — updates body, sets
+  `is_edited=true`, author-or-admin permission; emits
+  `work_item.comment_edited` in-tx.
+- `DELETE /work-items/:id/comments/:commentId` — cascade-deletes
+  replies first (self-referential FK, no ON DELETE CASCADE on schema),
+  then parent; emits `work_item.comment_deleted` in-tx.
+- Migration 016: `is_edited BOOLEAN` on `runtime.work_item_comments`;
+  `notification_defaults` rows for both new event types.
+- GET comments now returns `author_user_id` for client-side `canEdit`.
+- Inline edit UI in WorkItemDetail with `(edited)` badge; `auth.me()`
+  response unwrapped (`d?.user ?? d`) so `me?.id` resolves correctly.
+
+**Deferred:** bulk-ops integration tests (`tests/bulk-ops.test.js`)
+not yet written.

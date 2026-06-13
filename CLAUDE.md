@@ -38,7 +38,7 @@ tests use the same local PostgreSQL instance.
 ## Tech Stack
 
 - **Runtime:** Node.js (ESM, v24) — all files use `import`/`export`
-- **API:** Express REST (`admin/api.js` — ~80 endpoints at `/admin/api`)
+- **API:** Express REST (`admin/api.js` — ~140 endpoints at `/admin/api`)
 - **Database:** PostgreSQL (source of truth) + Neo4j (graph queries, not yet seeded)
 - **Frontend:** React 18 + Vite + shadcn/ui + Tailwind, served at `/admin/`
 - **Auth:** express-session + connect-pg-simple. Cookie: `flowos.sid`, 24hr, httpOnly

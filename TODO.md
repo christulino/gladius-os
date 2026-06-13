@@ -11,6 +11,7 @@ Bring up at the start of the next session:
 - **[P2] Notifications subscriber for attachment events** — `work_item.attachment_added` / `attachment_removed` not yet in the HANDLED set.
 - **[P2] Attachment-event janitor** — orphan files if process crashes between `storage.put()` and DB tx commit.
 - **[P2] Non-ASCII filename `filename*=UTF-8''…`** — implemented per RFC 6266 but not manually tested with CJK/emoji.
+- **[P3] Smoke-test screenshots** — 12 PNG files in root (`board-*.png`, `bulk-select.png`, etc.) are Playwright smoke-test artifacts; delete or add to `.gitignore`.
 
 ## Flagged Items from Last Session (2026-05-08, Session 25)
 
