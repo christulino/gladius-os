@@ -5,17 +5,28 @@ import { createAuthApi, getSessionCookie } from './helpers/auth.js'
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const api = createAuthApi()
 
-async function pickWorkItem() {
-  const { data } = await api('/work-items?limit=1')
-  assert.ok(data.rows?.length, 'expected at least one work item to test against')
-  return data.rows[0].id
+async function createWorkItem() {
+  const { data: orgs } = await api('/organizations')
+  const { data: types } = await api('/work-item-types')
+  assert.ok(orgs.rows?.length, 'Need at least one org')
+  assert.ok(types.rows?.length, 'Need at least one work item type')
+  const { data: wi } = await api('/work-items', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: 'Attachment Test Item ' + Date.now(),
+      work_item_type_id: types.rows[0].id,
+      owner_org_id: orgs.rows[0].id,
+    }),
+  })
+  assert.ok(wi.id, 'Should create work item for attachments test')
+  return wi.id
 }
 
 describe('Attachments API', () => {
   let workItemId
 
   before(async () => {
-    workItemId = await pickWorkItem()
+    workItemId = await createWorkItem()
   })
 
   it('lists attachments (initially possibly empty, always an array)', async () => {

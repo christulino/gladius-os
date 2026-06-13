@@ -1,6 +1,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { query, getClient } from '../db/postgres.js'
+import { close as closeNeo4j } from '../db/neo4j.js'
 import { loadMatrix, isEnabled } from '../runtime/notifications/matrix.js'
 import { renderSummary } from '../runtime/notifications/summaries.js'
 import { extractMentions } from '../runtime/notifications/mentions.js'
@@ -10,11 +11,12 @@ import { notificationsHandler, handlesEventType as notifHandles } from '../runti
 describe('notifications/matrix', () => {
   let testUserId
   before(async () => {
-    const { rows } = await query(
+    await query(
       `INSERT INTO blueprint.users (uri, email, password_hash, display_name, is_active)
        VALUES ('flowos://system/users/matrix-test', 'matrix-test@flowos.local', 'x', 'Matrix Test', true)
-       RETURNING id`
+       ON CONFLICT (uri) DO NOTHING`
     )
+    const { rows } = await query(`SELECT id FROM blueprint.users WHERE uri = 'flowos://system/users/matrix-test'`)
     testUserId = rows[0].id
   })
   after(async () => {
@@ -110,17 +112,42 @@ describe('subscribers/notifications — fanout', () => {
   let ownerId, watcherId, actorId, workItemId
 
   before(async () => {
-    const { rows: users } = await query(`
+    // Use ON CONFLICT DO NOTHING + SELECT so re-runs after a killed test don't fail on duplicate URIs
+    await query(`
       INSERT INTO blueprint.users (uri, email, password_hash, display_name, is_active)
       VALUES
         ('flowos://system/users/fanout-owner',   'fanout-owner@x',   'x', 'Owner',   true),
         ('flowos://system/users/fanout-watcher', 'fanout-watcher@x', 'x', 'Watcher', true),
         ('flowos://system/users/fanout-actor',   'fanout-actor@x',   'x', 'Actor',   true)
+      ON CONFLICT (uri) DO NOTHING
+    `)
+    const { rows: users } = await query(`
+      SELECT id FROM blueprint.users WHERE uri = ANY($1) ORDER BY uri
+    `, [['flowos://system/users/fanout-actor', 'flowos://system/users/fanout-owner', 'flowos://system/users/fanout-watcher']])
+    ;[actorId, ownerId, watcherId] = users.map(u => u.id)
+
+    // Create a fresh work item so we control exactly which relationships exist.
+    // Grabbing an existing item risks picking up orphaned relationships from prior test runs
+    // that will cause FK violations when notificationsHandler tries to insert for those users.
+    const { rows: wi } = await query(`
+      INSERT INTO runtime.work_items (
+        uri, work_item_type_id, workflow_id, owner_org_id, title,
+        current_stage_id, spawn_state, field_values, tags, estimate_unit, origin,
+        entered_current_stage_at, created_at, updated_at
+      )
+      SELECT
+        'flowos://test/work-items/fanout-test', t.id, wtw.workflow_id, o.id,
+        'Fanout Test Item', s.id, 'active', '{}', '{}', 'points', 'manual',
+        now(), now(), now()
+      FROM blueprint.work_item_types t
+      JOIN blueprint.work_item_type_workflows wtw ON wtw.work_item_type_id = t.id AND wtw.is_current = true
+      CROSS JOIN (SELECT id FROM blueprint.organizations LIMIT 1) o
+      JOIN blueprint.stages s ON s.workflow_id = wtw.workflow_id
+      ORDER BY t.id ASC, s.display_order ASC
+      LIMIT 1
+      ON CONFLICT (uri) DO UPDATE SET updated_at = now()
       RETURNING id
     `)
-    ;[ownerId, watcherId, actorId] = users.map(u => u.id)
-
-    const { rows: wi } = await query(`SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1`)
     workItemId = wi[0].id
 
     await query(`
@@ -131,11 +158,14 @@ describe('subscribers/notifications — fanout', () => {
   })
 
   after(async () => {
-    // Clear requester_id if we set it in test 2 (avoids FK violation on user delete)
-    await query(`UPDATE runtime.work_items SET requester_id = NULL WHERE requester_id = ANY($1)`, [[ownerId, watcherId, actorId]])
-    await query(`DELETE FROM runtime.notifications WHERE user_id = ANY($1)`, [[ownerId, watcherId, actorId]])
-    await query(`DELETE FROM runtime.work_item_user_relationships WHERE user_id = ANY($1)`, [[ownerId, watcherId, actorId]])
+    // Delete relationships first (no CASCADE on work_item_id FK), then work item
+    // (CASCADE removes notifications). Users last — work item already gone so no FK conflict.
+    await query(`DELETE FROM runtime.work_item_user_relationships WHERE work_item_id = $1`, [workItemId])
+    await query(`DELETE FROM runtime.work_items WHERE id = $1`, [workItemId])
     await query(`DELETE FROM blueprint.users WHERE id = ANY($1)`, [[ownerId, watcherId, actorId]])
+    // emitEvent → eventProcessor → neo4jSync → db/neo4j creates a driver at module load.
+    // Close it here (in the last describe's after) so the worker exits cleanly.
+    await closeNeo4j()
   })
 
   it('writes one notifications row per eligible recipient, excluding actor', async () => {
@@ -199,3 +229,4 @@ describe('subscribers/notifications — fanout', () => {
     assert.equal(notifHandles('test.random'), false)
   })
 })
+

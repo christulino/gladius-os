@@ -181,7 +181,7 @@ describe('notifications — end-to-end', () => {
        RETURNING id`,
       [authenticatedUserId, spareEventId2, TARGET_WORK_ITEM_ID]
     )
-    const targetNotifId = ins1[0].id
+    const _targetNotifId = ins1[0].id
 
     // Insert another notification for a DIFFERENT work item — should NOT be marked.
     // work_item_id can be NULL (the column is nullable); using NULL avoids FK issues.
