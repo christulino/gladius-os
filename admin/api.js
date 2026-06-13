@@ -2577,7 +2577,7 @@ router.get('/work-items/:id/comments', async (req, res, next) => {
   try {
     const result = await query(`
       SELECT c.id, c.body, c.parent_comment_id, c.is_system_generated, c.is_edited,
-             c.created_at, c.updated_at,
+             c.created_at, c.updated_at, c.author_user_id,
              u.display_name AS author_name, u.avatar_url AS author_avatar
       FROM runtime.work_item_comments c
       LEFT JOIN blueprint.users u ON u.id = c.author_user_id
@@ -2648,6 +2648,84 @@ router.post('/work-items/:id/comments', async (req, res, next) => {
   } finally {
     client.release()
   }
+})
+
+// PATCH /admin/api/work-items/:id/comments/:commentId — edit a comment
+router.patch('/work-items/:id/comments/:commentId', async (req, res, next) => {
+  const workItemId  = parseInt(req.params.id)
+  const commentId   = parseInt(req.params.commentId)
+  const { body } = req.body
+  if (!body?.trim()) return res.status(400).json({ error: 'body is required' })
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    if (!wi.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Work item not found' }) }
+
+    const { rows: existing } = await client.query(
+      'SELECT id, author_user_id, body FROM runtime.work_item_comments WHERE id = $1 AND work_item_id = $2',
+      [commentId, workItemId]
+    )
+    if (!existing.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Comment not found' }) }
+    if (existing[0].author_user_id !== req.userId && !req.isAdmin)
+      { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only the author or an admin can edit this comment' }) }
+
+    const { rows: updated } = await client.query(
+      `UPDATE runtime.work_item_comments SET body = $1, is_edited = true, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [body.trim(), commentId]
+    )
+    await emitEvent(client, {
+      eventType: 'work_item.comment_edited',
+      entityId:  workItemId,
+      entityUri: wi[0].uri,
+      actorId:   req.userId ?? null,
+      payload: { comment_id: commentId, new_body: body.trim(), old_body: existing[0].body },
+    })
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.json(updated[0])
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally { client.release() }
+})
+
+// DELETE /admin/api/work-items/:id/comments/:commentId — delete a comment
+router.delete('/work-items/:id/comments/:commentId', async (req, res, next) => {
+  const workItemId  = parseInt(req.params.id)
+  const commentId   = parseInt(req.params.commentId)
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [workItemId])
+    if (!wi.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Work item not found' }) }
+
+    const { rows: existing } = await client.query(
+      'SELECT id, author_user_id, body FROM runtime.work_item_comments WHERE id = $1 AND work_item_id = $2',
+      [commentId, workItemId]
+    )
+    if (!existing.length) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Comment not found' }) }
+    if (existing[0].author_user_id !== req.userId && !req.isAdmin)
+      { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Only the author or an admin can delete this comment' }) }
+
+    await client.query('DELETE FROM runtime.work_item_comments WHERE parent_comment_id = $1', [commentId])
+    await client.query('DELETE FROM runtime.work_item_comments WHERE id = $1', [commentId])
+    await emitEvent(client, {
+      eventType: 'work_item.comment_deleted',
+      entityId:  workItemId,
+      entityUri: wi[0].uri,
+      actorId:   req.userId ?? null,
+      payload: { comment_id: commentId, body: existing[0].body },
+    })
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.json({ deleted: true, id: commentId })
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally { client.release() }
 })
 
 // =============================================================================
