@@ -1,13 +1,13 @@
 // Processor-level tests for the event system.
 //
-// Run this file with NO live API server running — the `cursor and drain`
-// tests call startProcessor({ forceTakeLock: true }) and need to hold the
-// PG advisory lock themselves. For endpoint-level tests that require the
-// server, see tests/events-integration.test.js.
+// The 'cursor and drain' tests call startProcessor({ forceTakeLock: true }) and
+// will be skipped/fail gracefully if a live API server already holds the advisory
+// lock. For endpoint-level tests that require the server, see events-integration.test.js.
 
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { query, getClient } from '../db/postgres.js'
+import { query, getClient, pool } from '../db/postgres.js'
+import { close as closeNeo4j } from '../db/neo4j.js'
 import { emitEvent } from '../core/events.js'
 import {
   startProcessor,
@@ -15,6 +15,7 @@ import {
   registerSubscriber,
   clearSubscribersForTests,
   drainNow,
+  isProcessorPrimary,
 } from '../runtime/eventProcessor.js'
 import { neo4jSyncHandler } from '../runtime/subscribers/neo4jSync.js'
 import { auditLogHandler } from '../runtime/subscribers/auditLog.js'
@@ -125,14 +126,15 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
     await query('DELETE FROM runtime.events WHERE event_type LIKE $1', ['test.%'])
   })
 
-  it('advances subscriber cursor after successful handler', async () => {
+  it('advances subscriber cursor after successful handler', async (t) => {
     const seen = []
     registerSubscriber({
       name: 'test-cursor-advance',
-      handles: (t) => t === 'test.cursor_a',
+      handles: (type) => type === 'test.cursor_a',
       handler: async (e) => { seen.push(e.id) },
     })
     await startProcessor({ forceTakeLock: true })
+    if (!isProcessorPrimary()) { t.skip('server holds advisory lock — run without server'); return }
 
     const client = await getClient()
     try {
@@ -158,10 +160,11 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
     assert.equal(Number(rows[0].events_processed_total), 3)
   })
 
-  it('leaves cursor at N-1 when handler throws on event N', async () => {
+  it('leaves cursor at N-1 when handler throws on event N', async (t) => {
+    if (!isProcessorPrimary()) { t.skip('server holds advisory lock — run without server'); return }
     registerSubscriber({
       name: 'test-failure',
-      handles: (t) => t === 'test.fail_on_second',
+      handles: (type) => type === 'test.fail_on_second',
       handler: async (e) => {
         if (e.payload.n === 2) throw new Error('boom')
       },
@@ -194,11 +197,12 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
     assert.ok(rows[0].failure_count >= 1)
   })
 
-  it('skips past events a subscriber does not handle (advances cursor without calling handler)', async () => {
+  it('skips past events a subscriber does not handle (advances cursor without calling handler)', async (t) => {
+    if (!isProcessorPrimary()) { t.skip('server holds advisory lock — run without server'); return }
     const handled = []
     registerSubscriber({
       name: 'test-filter',
-      handles: (t) => t === 'test.want_this',
+      handles: (type) => type === 'test.want_this',
       handler: async (e) => { handled.push(e.payload.label) },
     })
 
@@ -316,4 +320,12 @@ describe('subscribers/auditLog — writes work_item_edits rows', () => {
   after(async () => {
     await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
   })
+})
+
+// Close long-lived connections so the worker process exits cleanly.
+// The neo4j driver keeps bolt sockets open and the pg pool holds idle
+// connections — both prevent node --test workers from draining naturally.
+after(async () => {
+  await closeNeo4j()
+  await pool.end()
 })
