@@ -13,7 +13,7 @@
  * subscribers continue independently.
  */
 
-import { pool, query, getClient } from '../db/postgres.js'
+import { pool, query } from '../db/postgres.js'
 import { neo4jSyncHandler, handlesEventType as neo4jHandles } from './subscribers/neo4jSync.js'
 import { auditLogHandler, handlesEventType as auditHandles } from './subscribers/auditLog.js'
 import { notificationsHandler, handlesEventType as notificationsHandles } from './subscribers/notifications.js'
@@ -283,6 +283,8 @@ async function recordFailure(name, eventId, err) {
     WHERE name = $1
   `, [name, `event ${eventId}: ${err.message}`])
 }
+
+export function isProcessorPrimary() { return isPrimary }
 
 export default {
   registerSubscriber,

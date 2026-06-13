@@ -9,7 +9,6 @@
 
 import { Router } from 'express'
 import { query }  from '../../db/postgres.js'
-import { canAccess } from '../../core/access.js'
 
 const router = Router()
 

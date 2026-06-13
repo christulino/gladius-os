@@ -13,7 +13,7 @@
  */
 
 import 'dotenv/config'
-import { query, getClient } from '../../db/postgres.js'
+import { getClient } from '../../db/postgres.js'
 import { generateSystemUri, generateUri } from '../../core/uri.js'
 
 // Base data
