@@ -265,6 +265,8 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   const [commentBody, setCommentBody] = useState('')
   const [replyTo, setReplyTo] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState(null)
+  const [editCommentBody, setEditCommentBody] = useState('')
 
   // Transition
   const [transitionOpen, setTransitionOpen] = useState(false)
@@ -324,7 +326,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   useEffect(() => { loadAttachments() }, [loadAttachments])
 
   useEffect(() => {
-    auth.me().then(setMe).catch(() => setMe(null))
+    auth.me().then(d => setMe(d?.user ?? d)).catch(() => setMe(null))
   }, [])
 
   const loadData = useCallback(async () => {
@@ -535,6 +537,27 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
       await api.addComment(workItemId, commentBody.trim(), replyTo)
       setCommentBody('')
       setReplyTo(null)
+      const cmts = await api.workItemComments(workItemId)
+      setComments(cmts.rows || [])
+    } finally { setSaving(false) }
+  }
+
+  async function submitEditComment(commentId) {
+    if (!editCommentBody.trim()) return
+    setSaving(true)
+    try {
+      await api.editComment(workItemId, commentId, editCommentBody.trim())
+      setEditingCommentId(null)
+      setEditCommentBody('')
+      const cmts = await api.workItemComments(workItemId)
+      setComments(cmts.rows || [])
+    } finally { setSaving(false) }
+  }
+
+  async function handleDeleteComment(commentId) {
+    setSaving(true)
+    try {
+      await api.deleteComment(workItemId, commentId)
       const cmts = await api.workItemComments(workItemId)
       setComments(cmts.rows || [])
     } finally { setSaving(false) }
@@ -1331,30 +1354,74 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                   {comments.length === 0 ? (
                     <span className="text-xs text-muted-foreground">No comments yet.</span>
                   ) : (
-                    comments.map(c => (
-                      <div
-                        key={c.id}
-                        className={`flex flex-col gap-1 ${c.parent_comment_id ? 'ml-6 pl-3 border-l-2 border-border' : ''}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className={`text-xs font-medium ${c.is_system_generated ? 'italic text-muted-foreground' : 'text-foreground'}`}>
-                            {c.author_name || 'System'}
-                          </span>
-                          <span className="text-xs text-muted-foreground">{formatRelative(c.created_at)}</span>
+                    comments.map(c => {
+                      const canEdit = !c.is_system_generated && (c.author_user_id === me?.id || me?.is_admin)
+                      const isEditing = editingCommentId === c.id
+                      return (
+                        <div
+                          key={c.id}
+                          className={`flex flex-col gap-1 ${c.parent_comment_id ? 'ml-6 pl-3 border-l-2 border-border' : ''}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-medium ${c.is_system_generated ? 'italic text-muted-foreground' : 'text-foreground'}`}>
+                              {c.author_name || 'System'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">{formatRelative(c.created_at)}</span>
+                            {c.is_edited && !isEditing && (
+                              <span className="text-xs text-muted-foreground/50">(edited)</span>
+                            )}
+                          </div>
+                          {isEditing ? (
+                            <div className="flex flex-col gap-1.5">
+                              <textarea
+                                value={editCommentBody}
+                                onChange={e => setEditCommentBody(e.target.value)}
+                                rows={3}
+                                className="text-xs bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary resize-y"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => submitEditComment(c.id)}
+                                  disabled={saving || !editCommentBody.trim()}
+                                  className="text-xs text-primary hover:underline disabled:opacity-40"
+                                >save</button>
+                                <button
+                                  onClick={() => { setEditingCommentId(null); setEditCommentBody('') }}
+                                  className="text-xs text-muted-foreground hover:text-foreground"
+                                >cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className={`text-xs leading-relaxed whitespace-pre-wrap ${c.is_system_generated ? 'italic text-muted-foreground' : 'text-foreground/80'}`}>
+                              {c.body}
+                            </p>
+                          )}
+                          {!isEditing && (
+                            <div className="flex gap-3">
+                              {!c.parent_comment_id && (
+                                <button
+                                  onClick={() => setReplyTo(replyTo === c.id ? null : c.id)}
+                                  className="text-xs text-muted-foreground hover:text-primary"
+                                >reply</button>
+                              )}
+                              {canEdit && (
+                                <>
+                                  <button
+                                    onClick={() => { setEditingCommentId(c.id); setEditCommentBody(c.body) }}
+                                    className="text-xs text-muted-foreground hover:text-primary"
+                                  >edit</button>
+                                  <button
+                                    onClick={() => handleDeleteComment(c.id)}
+                                    disabled={saving}
+                                    className="text-xs text-muted-foreground hover:text-destructive disabled:opacity-40"
+                                  >delete</button>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <p className={`text-xs leading-relaxed whitespace-pre-wrap ${c.is_system_generated ? 'italic text-muted-foreground' : 'text-foreground/80'}`}>
-                          {c.body}
-                        </p>
-                        {!c.parent_comment_id && (
-                          <button
-                            onClick={() => setReplyTo(replyTo === c.id ? null : c.id)}
-                            className="text-xs text-muted-foreground hover:text-primary self-start"
-                          >
-                            reply
-                          </button>
-                        )}
-                      </div>
-                    ))
+                      )
+                    })
                   )}
 
                   {/* Comment input */}
