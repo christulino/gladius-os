@@ -1,5 +1,17 @@
 # FlowOS — TODO
 
+## Flagged Items from Last Session (2026-06-13, Session 26)
+
+Bring up at the start of the next session:
+
+- **All 7 Tier-1 go-live blockers are DONE.** Bulk operations and comment edit/delete both shipped, browser-smoke-tested, tests green.
+- **[P1] Bulk ops integration tests** — write `tests/bulk-ops.test.js` covering happy path (transition N items, assign N items) and a blocked-by-exit-criteria item (partial success).
+- **[P1] Stage-evidence requirements** — natural follow-up to attachments; named per-stage slots ("Permit to Operate") with accepted MIME types, fulfilled by binding existing attachments. Gates stage transition. Design: `blueprint.stage_evidence_requirements` + `runtime.evidence_fulfillments`. Brainstorm before planning.
+- **[P2] `work_item.unlinked` event** — still deferred; needs DELETE /links endpoint before wiring.
+- **[P2] Notifications subscriber for attachment events** — `work_item.attachment_added` / `attachment_removed` not yet in the HANDLED set.
+- **[P2] Attachment-event janitor** — orphan files if process crashes between `storage.put()` and DB tx commit.
+- **[P2] Non-ASCII filename `filename*=UTF-8''…`** — implemented per RFC 6266 but not manually tested with CJK/emoji.
+
 ## Flagged Items from Last Session (2026-05-08, Session 25)
 
 Bring up at the start of the next session:
@@ -36,17 +48,7 @@ Bring up at the start of the next session:
 
 ## Carried from Session 24 (still open)
 
-- **[P1] Comment edit / delete endpoints + event emissions** —
-  searchIndex subscriber declares `work_item.comment_edited` and `comment_deleted` handlers
-  but the API doesn't expose PATCH/DELETE on comments yet. When those endpoints land, wire
-  `emitEvent` so the search index refreshes.
-- **[P2] Test isolation between search-* and comments-api** — comments-api fails 6 tests when run
-  AFTER search-* in the same `node --test` invocation; passes 10/10 alone. Same shape as the
-  pre-existing events/notifications baseline flake. The test's `before` does
-  `SELECT first work_item from /work-items?limit=1` which gets churned by search test fixtures.
-  Cleaner: have each test file create its own scratch work_item. Not a code regression.
-  **(Worse than recorded — full `npm test` now hangs `node --test` workers; killed manually
-  during attachments session 25. P2 priority is probably under-graded; may want a P1 sweep.)**
+- **[P2] WorkItemDetail Sheet a11y** (carried) — Radix logs `DialogContent requires a DialogTitle`. Existing component missing SheetTitle (or VisuallyHidden wrapper).
 - **[P2] WorkItemDetail Sheet a11y** (carried) — Radix logs `DialogContent requires a
   DialogTitle`. Existing component missing SheetTitle (or VisuallyHidden wrapper).
 - **[P2] Real RBAC for org-visibility** (carried) — compiler currently does a hard `is_admin`
@@ -76,6 +78,20 @@ Bring up at the start of the next session:
   policies, response handling. The notifications agent-channel reservation remains forward-compatible.
 - **Schema migration sweep** — project still uses v1 doc layout (TODO/PARKING_LOT). PROJECT_SCHEMA.md
   defines STATE/BACKLOG/DECISIONS/GOALS/RISKS/QUESTIONS. Worth a dedicated session to migrate.
+
+## Done (Session 26)
+
+- [done 2026-06-13] chore(eslint): added `.eslintrc.json` (ESM, Node globals, React/hooks plugin for admin-ui/src, ignores dist/generated parser)
+- [done 2026-06-13] fix(tests): Neo4j driver keepalive no longer wedges `node --test` workers; all test files create scratch work-items instead of grabbing arbitrary existing ones
+- [done 2026-06-13] feat(bulk-ops): `POST /admin/api/work-items/bulk/transition` and `/bulk/assign` — per-item results, partial success, two-phase engine respected
+- [done 2026-06-13] feat(admin-ui): multi-select mode on Board (Select button, card checkboxes, BulkActionBar with stage/user dropdowns and per-item results)
+- [done 2026-06-13] feat(comments): `PATCH /work-items/:id/comments/:commentId` + `DELETE` — author-or-admin permission, `is_edited` flag, cascade-delete replies
+- [done 2026-06-13] feat(events): `work_item.comment_edited` + `work_item.comment_deleted` emitted in PATCH/DELETE handlers, added to HANDLED set and notification_defaults
+- [done 2026-06-13] feat(admin-ui): inline comment edit UI (textarea, save/cancel, `(edited)` badge); delete button; `canEdit` uses unwrapped `auth.me()` user object
+- [done 2026-06-13] db: migration 016 — `is_edited` column on `runtime.work_item_comments`; `notification_defaults` rows for comment_edited/deleted
+- [**deferred**] test(bulk-ops): integration tests for bulk transition + assign — not yet written; add `tests/bulk-ops.test.js` next session
+- [done 2026-06-13] test(comments): 8 new tests — PATCH body, is_edited flag, 400/404 guards, DELETE cascade, 404 guard
+- [done 2026-06-13] docs: STATE.md, PRODUCT_PLAN.md Tier 1 #6 DONE, PARKING_LOT.md ESLint closed, TODO.md, CLAUDE.md Key Patterns/Files
 
 ## Done (Session 25)
 

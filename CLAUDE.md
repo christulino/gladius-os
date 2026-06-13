@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-05-08 (Session 25 — Attachments v1 shipped)
+> Last updated: 2026-06-13 (Session 26 — Bulk ops + comment edit/delete shipped; all Tier-1 blockers done)
 
 ---
 
@@ -96,6 +96,15 @@ tests use the same local PostgreSQL instance.
   Custom field keys can't collide with the 28 entries in
   `blueprint.reserved_field_keys` (validated on POST /class-fields,
   POST /type-fields).
+- **Bulk operations:** `POST /admin/api/work-items/bulk/transition` and `/bulk/assign` accept
+  `{ ids: [...], ... }` and return `{ results: [{id, success, error?}, ...] }`. Each item
+  routes through the existing two-phase transition engine — exits criteria still gate each
+  transition; partial success is correct. Board multi-select uses a `selectMode` state toggle
+  in `Board.jsx`; `BulkActionBar.jsx` renders at bottom of board viewport.
+- **Comment edit/delete:** `PATCH /work-items/:id/comments/:commentId` (body, author-or-admin,
+  sets `is_edited=true`) and `DELETE` (cascade-deletes replies first). Both emit
+  `work_item.comment_edited` / `work_item.comment_deleted` in-tx. `author_user_id` is included
+  in the GET comments response so the UI can gate the edit/delete affordance client-side.
 - **Attachments:** `runtime.attachments` (migration 015) holds files (`kind='file'`,
   bytes via pluggable storage adapter — local fs in v1, S3 designed not built)
   and links (`kind='link'`). Per-file size limit from
@@ -149,6 +158,7 @@ tests use the same local PostgreSQL instance.
 | `core/storage/localStorage.js` | Local filesystem storage adapter |
 | `admin-ui/src/components/AttachmentsList.jsx` | Attachments list rendering |
 | `admin-ui/src/components/AttachmentUpload.jsx` | File / camera / link upload UI |
+| `admin-ui/src/components/BulkActionBar.jsx` | Bulk action toolbar (transition/assign N items) |
 
 ---
 
@@ -229,7 +239,8 @@ For deep architecture details, read these on demand — not every session:
 - **Git:** `christulino/flowos` (private, will go public on release)
 - **Open source release blockers:** Cross-instance service requests, seed-and-go
   experience, README + LICENSE
-- **Current state:** 60+ PG tables, 14 migrations, 90+ API endpoints, 20+ React pages,
+- **Current state:** 60+ PG tables, 16 migrations, 90+ API endpoints, 20+ React pages,
   auth working, intake forms working, exit criteria engine working, notifications working,
-  per-item audit trail working, **search v1 (JQL + Haiku translator + saved filters) working**
+  per-item audit trail working, search v1 (JQL + Haiku translator + saved filters) working,
+  attachments v1 working, **bulk operations working, comment edit/delete working — all 7 Tier-1 go-live blockers DONE**
 - **See `ARCHITECTURE.md`** for the full "what's built / what's not" breakdown

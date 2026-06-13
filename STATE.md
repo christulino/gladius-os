@@ -1,19 +1,18 @@
 # STATE — FlowOS
 
 ## Right Now
-- Attachments v1 fully shipped end-to-end. Migration applied, 24 commits merged + pushed to `origin/main` (HEAD = `b99d3e8`).
-- Tier 1 parity feature #4 closed. PRODUCT_PLAN updated. Browser-smoke-tested.
+- Session 26 complete. All 7 Tier-1 go-live blockers are now **DONE**.
+- Bulk operations (Tier 1 #6) shipped: multi-select on board → bulk transition/assign with per-item results.
+- Comment edit/delete shipped: PATCH/DELETE endpoints, `is_edited` flag, event wiring, notification fanout, UI.
+- ESLint config added (`.eslintrc.json`), `npm test` hang fixed (Neo4j driver / test isolation).
 
 ## Next Up
-1. Pick the next feature. Top contenders per `PRODUCT_PLAN.md`:
-   - **Stage-evidence requirements** — natural follow-up to attachments; named per-stage slots that gate transitions (the second half of the original "evidence" mental model).
-   - **Bulk operations** — Tier 1 #6, smaller and self-contained; multi-select transition/assign.
-   - **SLA tracking** — Tier 2 #9, highest-leverage Phase 3 item; sits on the live event system.
-2. **[P1] Comment edit/delete endpoints + event emissions** — searchIndex subscriber declares handlers but API doesn't expose PATCH/DELETE.
-3. **[P1] Test isolation flake** — full `npm test` now hangs `node --test` workers (worse than recorded). Was P2; consider promoting.
+1. **Stage-evidence requirements** — natural follow-up to attachments; per-stage named slots ("Permit to Operate") that gate transitions. Design: `blueprint.stage_evidence_requirements` + `runtime.evidence_fulfillments`.
+2. **SLA tracking & alerts** — Tier 2 #9; `sla_hours` exists on service_classes, needs countdown display + breach alerts.
+3. **Open-source release prep** — README, LICENSE, seed-and-go (`docker-compose up` → working board), cross-instance service requests.
 
 ## Blockers
 - None.
 
 ## Last Updated
-2026-05-08 — by session-close (tier: Full)
+2026-06-13 — by session-close (tier: Full)

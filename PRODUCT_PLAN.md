@@ -16,7 +16,7 @@
 | 3 | **Search** | JQL, full-text, filters | Title substring only | Need saved filters, field-based search, full-text. This is how people find work outside the board. |
 | 4 | **Attachments / evidence** | File upload on tickets | ~~DONE~~ (Session 25, attachments v1). `runtime.attachments` table; pluggable storage adapter (local fs default; 25 MB cap); 5 REST endpoints; search-index + audit-trail integration; UI in WorkItemDetail with file/camera/link upload. | Stage-evidence requirements (named slots, exit-criteria gating) and S3/MinIO adapter deferred to follow-up plans. |
 | 5 | **Audit trail UI** | Activity log on each ticket | ~~DONE~~ (Session 22). Activity tab on WorkItemDetail showing all events from runtime.events with per-field edit expansion, cursor pagination. | v2 candidates: event-type filter, search-within-history, diff viewer, click-through to spawned children. |
-| 6 | **Bulk operations** | Multi-select + transition/assign | Nothing | "Move these 8 items to Done" — daily need for any team. |
+| 6 | **Bulk operations** | Multi-select + transition/assign | ~~DONE~~ (Session 26). Multi-select on board → bulk transition/assign with per-item results (partial success reported). BulkActionBar component. | Follow-up: bulk label/CoS change, keyboard shortcuts for selection. |
 | 7 | **Form-based intake** | ServiceNow catalog forms, Jira create screens | ~~DONE~~ (Session 17). Public intake forms at /intake/:slug, dynamic field rendering, tracking numbers. | Admin toggle per type in Org Center. |
 
 ---
