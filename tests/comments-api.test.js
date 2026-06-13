@@ -8,26 +8,20 @@ describe('Comments API', () => {
   let workItemId
 
   before(async () => {
-    // Find or create a work item to comment on
-    const { data } = await api('/work-items?limit=1')
-    if (data.rows?.length > 0) {
-      workItemId = data.rows[0].id
-    } else {
-      // Create one — need org + type
-      const { data: orgs } = await api('/organizations')
-      const { data: types } = await api('/work-item-types')
-      assert.ok(orgs.rows.length > 0, 'Need at least one org')
-      assert.ok(types.rows.length > 0, 'Need at least one work item type')
-      const { data: wi } = await api('/work-items', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: 'Comment Test Item ' + Date.now(),
-          work_item_type_id: types.rows[0].id,
-          owner_org_id: orgs.rows[0].id,
-        }),
-      })
-      workItemId = wi.id
-    }
+    // Always create a dedicated work item so this test is isolated from other fixtures
+    const { data: orgs } = await api('/organizations')
+    const { data: types } = await api('/work-item-types')
+    assert.ok(orgs.rows.length > 0, 'Need at least one org')
+    assert.ok(types.rows.length > 0, 'Need at least one work item type')
+    const { data: wi } = await api('/work-items', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'Comment Test Item ' + Date.now(),
+        work_item_type_id: types.rows[0].id,
+        owner_org_id: orgs.rows[0].id,
+      }),
+    })
+    workItemId = wi.id
     assert.ok(workItemId, 'Should have a work item to test with')
   })
 
@@ -128,6 +122,67 @@ describe('Comments API', () => {
       const curr = new Date(data.rows[i].created_at)
       assert.ok(curr >= prev, 'Comments should be in chronological order')
     }
+  })
+
+  // ── Edit comment ──
+
+  it('should edit a comment body via PATCH', async () => {
+    const newBody = 'Edited body ' + Date.now()
+    const { status, data } = await api(`/work-items/${workItemId}/comments/${firstCommentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body: newBody }),
+    })
+    assert.equal(status, 200)
+    assert.equal(data.body, newBody)
+    assert.equal(data.is_edited, true)
+  })
+
+  it('should show edited flag and new body in list after PATCH', async () => {
+    const { data } = await api(`/work-items/${workItemId}/comments`)
+    const c = data.rows.find(r => r.id === firstCommentId)
+    assert.ok(c, 'Comment should still be in list')
+    assert.ok(c.body.startsWith('Edited body'), 'Body should reflect edit')
+    assert.equal(c.is_edited, true)
+  })
+
+  it('should reject PATCH with empty body', async () => {
+    const { status } = await api(`/work-items/${workItemId}/comments/${firstCommentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body: '' }),
+    })
+    assert.ok(status >= 400)
+  })
+
+  it('should return 404 for PATCH on non-existent comment', async () => {
+    const { status } = await api(`/work-items/${workItemId}/comments/999999999`, {
+      method: 'PATCH',
+      body: JSON.stringify({ body: 'x' }),
+    })
+    assert.equal(status, 404)
+  })
+
+  // ── Delete comment ──
+
+  it('should delete a comment via DELETE', async () => {
+    const { status, data } = await api(`/work-items/${workItemId}/comments/${firstCommentId}`, {
+      method: 'DELETE',
+    })
+    assert.equal(status, 200)
+    assert.equal(data.deleted, true)
+    assert.equal(data.id, firstCommentId)
+  })
+
+  it('should no longer appear in list after DELETE', async () => {
+    const { data } = await api(`/work-items/${workItemId}/comments`)
+    const gone = data.rows.find(r => r.id === firstCommentId)
+    assert.equal(gone, undefined, 'Deleted comment should not be in list')
+  })
+
+  it('should return 404 for DELETE on non-existent comment', async () => {
+    const { status } = await api(`/work-items/${workItemId}/comments/999999999`, {
+      method: 'DELETE',
+    })
+    assert.equal(status, 404)
   })
 
   // ── Work item updated_at ──
