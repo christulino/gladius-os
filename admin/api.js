@@ -2411,6 +2411,97 @@ router.post('/work-items/:id/transition', async (req, res, next) => {
 })
 
 // =============================================================================
+// BULK OPERATIONS
+// =============================================================================
+
+// POST /admin/api/work-items/bulk/transition
+// Body: { work_item_ids: number[], to_stage_id: number, reason?: string }
+// Processes items sequentially so WIP limits are evaluated correctly after each commit.
+router.post('/work-items/bulk/transition', async (req, res, next) => {
+  try {
+    const { work_item_ids, to_stage_id, reason } = req.body
+    if (!Array.isArray(work_item_ids) || work_item_ids.length === 0)
+      return res.status(400).json({ error: 'work_item_ids array is required' })
+    if (!to_stage_id)
+      return res.status(400).json({ error: 'to_stage_id is required' })
+
+    const results = []
+    for (const id of work_item_ids) {
+      try {
+        const result = await executeTransition(parseInt(id), parseInt(to_stage_id), req.userId, { reason })
+        if (result.success) {
+          results.push({ id, success: true })
+          nudgeAfterCommit()
+        } else {
+          results.push({ id, success: false, error: result.error })
+        }
+      } catch (err) {
+        results.push({ id, success: false, error: err.message || 'Unexpected error' })
+      }
+    }
+    res.json({
+      results,
+      succeeded_count: results.filter(r => r.success).length,
+      failed_count:    results.filter(r => !r.success).length,
+    })
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/bulk/assign
+// Body: { work_item_ids: number[], user_id: number, relationship_type: string }
+router.post('/work-items/bulk/assign', async (req, res, next) => {
+  try {
+    const { work_item_ids, user_id, relationship_type } = req.body
+    if (!Array.isArray(work_item_ids) || work_item_ids.length === 0)
+      return res.status(400).json({ error: 'work_item_ids array is required' })
+    if (!user_id)           return res.status(400).json({ error: 'user_id is required' })
+    if (!relationship_type) return res.status(400).json({ error: 'relationship_type is required' })
+
+    const { rows: userRow } = await query('SELECT uri FROM blueprint.users WHERE id = $1', [user_id])
+    if (!userRow.length) return res.status(404).json({ error: 'User not found' })
+
+    const results = []
+    for (const id of work_item_ids) {
+      const client = await getClient()
+      try {
+        await client.query('BEGIN')
+        const { rows: wi } = await client.query('SELECT uri FROM runtime.work_items WHERE id = $1', [parseInt(id)])
+        if (!wi.length) {
+          await client.query('ROLLBACK')
+          results.push({ id, success: false, error: 'Work item not found' })
+          continue
+        }
+        await client.query(`
+          INSERT INTO runtime.work_item_user_relationships (work_item_id, user_id, relationship_type, assigned_at, is_active)
+          VALUES ($1, $2, $3, NOW(), true)
+          ON CONFLICT (work_item_id, user_id, relationship_type) DO NOTHING
+        `, [parseInt(id), user_id, relationship_type])
+        await emitEvent(client, {
+          eventType: 'work_item.assigned',
+          entityId:  parseInt(id),
+          entityUri: wi[0].uri,
+          actorId:   req.userId ?? null,
+          payload:   { user_id, user_uri: userRow[0].uri, work_item_uri: wi[0].uri, relationship_type },
+        })
+        await client.query('COMMIT')
+        nudgeAfterCommit()
+        results.push({ id, success: true })
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => {})
+        results.push({ id, success: false, error: err.message || 'Unexpected error' })
+      } finally {
+        client.release()
+      }
+    }
+    res.json({
+      results,
+      succeeded_count: results.filter(r => r.success).length,
+      failed_count:    results.filter(r => !r.success).length,
+    })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
 // EXIT CRITERIA — RUNTIME STATUS
 // =============================================================================
 

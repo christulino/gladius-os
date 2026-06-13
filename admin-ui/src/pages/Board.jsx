@@ -6,6 +6,7 @@ import { WorkItemDetail } from '@/components/WorkItemDetail'
 import { ServiceLibrary } from '@/components/ServiceLibrary'
 import { FormDrawer } from '@/components/FormDrawer'
 import { OrgSelector } from '@/components/OrgSelector'
+import { BulkActionBar } from '@/components/BulkActionBar'
 import { Button } from '@/components/ui/button'
 
 // ─── Service Class Swimlane Config ──────────────────────────────────────────
@@ -116,6 +117,8 @@ export default function Board({ setTab }) {
   const [classFilter,  setClassFilter]    = useState('')
   const [myItemsOnly,  setMyItemsOnly]   = useState(false)
   const [scrollToItemId, setScrollToItemId] = useState(null)
+  const [selectMode,     setSelectMode]    = useState(false)
+  const [selectedItemIds, setSelectedItemIds] = useState(new Set())
 
   const { data: orgsData } = useApi(() => api.organizations(), [])
 
@@ -142,10 +145,12 @@ export default function Board({ setTab }) {
     () => selectedOrgId ? api.serviceLibrary(selectedOrgId) : Promise.resolve({ rows: [] }),
     [selectedOrgId]
   )
+  const { data: usersData } = useApi(() => api.users(), [])
 
   const columns = boardData?.columns ?? []
   const allItems = boardData?.items ?? []
   const wipLimits = boardData?.wip_limits ?? {}
+
 
   // Filter by WIT type name and "My Items"
   const filteredItems = useMemo(() => {
@@ -184,6 +189,17 @@ export default function Board({ setTab }) {
     }
     return flat
   }, [columns, activeWorkflowIds])
+
+  // Flat unique-name stage list for BulkActionBar (use first stage_id per merged column)
+  const allStages = useMemo(() => {
+    const seen = new Set()
+    return flatColumns.flatMap(col => {
+      const id = col.stage_ids?.[0]
+      if (!id || seen.has(col.name)) return []
+      seen.add(col.name)
+      return [{ id, name: col.name }]
+    })
+  }, [flatColumns])
 
   // Build a lookup: stage_id → column key
   const stageIdToKey = useMemo(() => {
@@ -284,6 +300,31 @@ export default function Board({ setTab }) {
     } catch (err) {
       console.error('Failed to pull item:', err)
     }
+  }
+
+  function toggleSelectMode() {
+    setSelectMode(v => !v)
+    setSelectedItemIds(new Set())
+  }
+
+  function handleCardClick(item) {
+    if (selectMode) {
+      setSelectedItemIds(prev => {
+        const next = new Set(prev)
+        if (next.has(item.id)) next.delete(item.id)
+        else next.add(item.id)
+        return next
+      })
+    } else {
+      setDetailItemId(item.id)
+      setDetailOpen(true)
+    }
+  }
+
+  function handleBulkDone() {
+    setSelectedItemIds(new Set())
+    setSelectMode(false)
+    reloadBoard()
   }
 
   const witTypeNames = useMemo(() => {
@@ -442,6 +483,17 @@ export default function Board({ setTab }) {
           }`}
         >
           My Items
+        </button>
+
+        <button
+          onClick={toggleSelectMode}
+          className={`px-2 py-1.5 text-xs rounded border transition-colors ${
+            selectMode
+              ? 'bg-primary/10 border-primary/30 text-primary'
+              : 'bg-card border-border text-muted-foreground hover:border-primary/50'
+          }`}
+        >
+          {selectMode ? `Select (${selectedItemIds.size})` : 'Select'}
         </button>
 
         {!boardLoading && boardData && (
@@ -611,8 +663,10 @@ export default function Board({ setTab }) {
                                 <WorkItemCard
                                   key={item.id}
                                   item={item}
-                                  isSelected={detailOpen && detailItemId === item.id}
-                                  onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                                  isSelected={!selectMode && detailOpen && detailItemId === item.id}
+                                  isChecked={selectMode && selectedItemIds.has(item.id)}
+                                  selectMode={selectMode}
+                                  onClick={handleCardClick}
                                   onPull={() => handlePull(item.id)}
                                 />
                               ))}
@@ -625,8 +679,10 @@ export default function Board({ setTab }) {
                                 <WorkItemCard
                                   key={item.id}
                                   item={item}
-                                  isSelected={detailOpen && detailItemId === item.id}
-                                  onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                                  isSelected={!selectMode && detailOpen && detailItemId === item.id}
+                                  isChecked={selectMode && selectedItemIds.has(item.id)}
+                                  selectMode={selectMode}
+                                  onClick={handleCardClick}
                                 />
                               ))}
                             </div>
@@ -644,8 +700,10 @@ export default function Board({ setTab }) {
                             <WorkItemCard
                               key={item.id}
                               item={item}
-                              isSelected={detailOpen && detailItemId === item.id}
-                              onClick={i => { setDetailItemId(i.id); setDetailOpen(true) }}
+                              isSelected={!selectMode && detailOpen && detailItemId === item.id}
+                              isChecked={selectMode && selectedItemIds.has(item.id)}
+                              selectMode={selectMode}
+                              onClick={handleCardClick}
                             />
                           ))}
                         </div>
@@ -714,6 +772,17 @@ export default function Board({ setTab }) {
         onOpenChange={setDetailOpen}
         onChanged={() => { setScrollToItemId(detailItemId); reloadBoard() }}
       />
+
+      {/* Bulk Action Bar — shown when items are selected */}
+      {selectedItemIds.size > 0 && (
+        <BulkActionBar
+          selectedIds={selectedItemIds}
+          stages={allStages}
+          users={usersData?.rows ?? []}
+          onDone={handleBulkDone}
+          onClear={() => { setSelectedItemIds(new Set()); setSelectMode(false) }}
+        />
+      )}
     </div>
   )
 }
