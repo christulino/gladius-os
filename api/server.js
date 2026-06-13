@@ -10,7 +10,6 @@
  */
 
 import express      from 'express'
-import { readFile } from 'fs/promises'
 import { mkdir }    from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'

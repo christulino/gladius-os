@@ -39,7 +39,7 @@ import { query }                 from '../db/postgres.js'
 export async function getBoardData({
   orgUri,
   workflowId = null,
-  userId,
+  userId: _userId,
   filters = {},
   includeDescendants = true,
 }) {
