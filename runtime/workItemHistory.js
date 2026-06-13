@@ -15,6 +15,8 @@ const HISTORY_EVENT_TYPES = [
   'work_item.assigned',
   'work_item.unassigned',
   'work_item.commented',
+  'work_item.comment_edited',
+  'work_item.comment_deleted',
   'work_item.linked',
   'work_item.unlinked',
   'work_item.attachment_added',
@@ -145,6 +147,18 @@ function formatEvent(e, enrich) {
       const body = typeof p.body === 'string' ? p.body : ''
       const preview = body.length > 120 ? body.slice(0, 119) + '…' : body
       return { ...base, summary: `commented`, details: { preview } }
+    }
+
+    case 'work_item.comment_edited': {
+      const preview = typeof p.new_body === 'string' && p.new_body.length > 120
+        ? p.new_body.slice(0, 119) + '…' : (p.new_body || '')
+      return { ...base, summary: `edited a comment`, details: { preview } }
+    }
+
+    case 'work_item.comment_deleted': {
+      const preview = typeof p.body === 'string' && p.body.length > 120
+        ? p.body.slice(0, 119) + '…' : (p.body || '')
+      return { ...base, summary: `deleted a comment`, details: { preview } }
     }
 
     case 'work_item.linked': {

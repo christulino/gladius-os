@@ -16,6 +16,8 @@ const HANDLED = new Set([
   'work_item.substate_changed',
   'work_item.assigned',
   'work_item.commented',
+  'work_item.comment_edited',
+  'work_item.comment_deleted',
   'work_item.spawned',
   'work_item.linked',
   'exit_criteria.acknowledged',
