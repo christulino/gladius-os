@@ -4678,9 +4678,12 @@ router.get('/work-items/:id/context-entries', async (req, res, next) => {
 
 router.post('/work-items/:id/context-entries', async (req, res, next) => {
   try {
+    const workItemId = parseInt(req.params.id, 10)
+    const { rows: wiRows } = await query('SELECT id FROM runtime.work_items WHERE id = $1', [workItemId])
+    if (!wiRows.length) return res.status(404).json({ error: 'Work item not found' })
     const { type, title, content, visibility, tags } = req.body
     if (!type || !content) return res.status(400).json({ error: 'type and content required' })
-    const entry = await createContextEntry(parseInt(req.params.id, 10), {
+    const entry = await createContextEntry(workItemId, {
       type, title, content, visibility, tags,
       authorId: req.session?.userId,
     })
@@ -4794,6 +4797,8 @@ router.get('/organizations/:orgId/ai-models', async (req, res, next) => {
 })
 router.post('/organizations/:orgId/ai-models', async (req, res, next) => {
   try {
+    const { rows: userRows } = await query('SELECT is_admin FROM blueprint.users WHERE id = $1', [req.userId])
+    if (!userRows[0]?.is_admin) return res.status(403).json({ error: 'admin-only' })
     const { name, provider, model, apiKey } = req.body
     if (!name || !model) return res.status(400).json({ error: 'name and model required' })
     const row = await createOrgAiModel(parseInt(req.params.orgId), { name, provider, model, apiKey })
@@ -4802,6 +4807,8 @@ router.post('/organizations/:orgId/ai-models', async (req, res, next) => {
 })
 router.patch('/organizations/:orgId/ai-models/:id', async (req, res, next) => {
   try {
+    const { rows: userRows } = await query('SELECT is_admin FROM blueprint.users WHERE id = $1', [req.userId])
+    if (!userRows[0]?.is_admin) return res.status(403).json({ error: 'admin-only' })
     const { name, provider, model, apiKey, isActive } = req.body
     const row = await updateOrgAiModel(parseInt(req.params.id), parseInt(req.params.orgId), { name, provider, model, apiKey, isActive })
     if (!row) return res.status(404).json({ error: 'Not found' })
@@ -4810,6 +4817,8 @@ router.patch('/organizations/:orgId/ai-models/:id', async (req, res, next) => {
 })
 router.delete('/organizations/:orgId/ai-models/:id', async (req, res, next) => {
   try {
+    const { rows: userRows } = await query('SELECT is_admin FROM blueprint.users WHERE id = $1', [req.userId])
+    if (!userRows[0]?.is_admin) return res.status(403).json({ error: 'admin-only' })
     const deleted = await deleteOrgAiModel(parseInt(req.params.id), parseInt(req.params.orgId))
     if (!deleted) return res.status(404).json({ error: 'Not found' })
     res.json({ deleted: true, id: parseInt(req.params.id) })
