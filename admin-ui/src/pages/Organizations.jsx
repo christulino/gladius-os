@@ -8,6 +8,8 @@ import { FormDrawer } from '@/components/FormDrawer'
 import { WorkflowPicker } from '@/components/WorkflowPicker'
 import { LoadingState, ErrorState } from '@/components/Panel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import OrgContextLibrary from './OrgContextLibrary'
+import OrgAiModels from './OrgAiModels'
 
 // Org type → dot color (hex)
 const ORG_TYPE_DOT = {
@@ -104,6 +106,8 @@ const SECTIONS = [
   { id: 'policies',  label: 'Policies' },
   { id: 'members',   label: 'Members' },
   { id: 'workflows', label: 'Workflows' },
+  { id: 'context',   label: 'Context' },
+  { id: 'aimodels',  label: 'AI Models' },
 ]
 
 function SectionPills({ active, onChange }) {
@@ -1626,6 +1630,8 @@ function OrgDetail({ org, section, setSection, onSaved, setTab }) {
           {section === 'policies'  && <PoliciesSection orgId={org.id} org={org} onSaved={onSaved} />}
           {section === 'members'   && <MembersSection orgId={org.id} />}
           {section === 'workflows' && <WorkflowsSection orgId={org.id} setTab={setTab} />}
+          {section === 'context'   && <OrgContextLibrary orgId={org.id} />}
+          {section === 'aimodels'  && <OrgAiModels orgId={org.id} />}
         </div>
       </div>
     </div>
