@@ -68,6 +68,22 @@ describe('Context Entries API', () => {
     assert.ok(data.content.includes('Updated'))
   })
 
+  it('should reject PATCH via wrong work item (IDOR)', async () => {
+    // Create a fresh entry to test against
+    const { data: e } = await api(`/work-items/${workItemId}/context-entries`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'note', content: 'IDOR test entry' }),
+    })
+    // Attempt to PATCH it via a different (non-existent) work item ID
+    const { status } = await api(
+      `/work-items/999999/context-entries/${e.id}`,
+      { method: 'PATCH', body: JSON.stringify({ content: 'Hijacked.' }) }
+    )
+    assert.equal(status, 404)
+    // Clean up
+    await api(`/work-items/${workItemId}/context-entries/${e.id}`, { method: 'DELETE' })
+  })
+
   it('should delete a context entry', async () => {
     const { status, data } = await api(
       `/work-items/${workItemId}/context-entries/${entryId}`,

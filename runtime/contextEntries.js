@@ -83,13 +83,15 @@ export async function createContextEntry(workItemId, {
 }
 
 /**
- * Update a context entry's mutable fields. Sets is_edited=true and updated_at=now().
+ * Update a context entry's mutable fields. Scopes to work_item_id to prevent IDOR.
+ * Sets is_edited=true and updated_at=now().
  *
  * @param {number}  entryId
- * @param {Object}  fields - any subset of { content, title, tags, visibility }
- * @returns {Promise<Object|null>} updated row, or null if not found
+ * @param {number}  workItemId  - must match the entry's work_item_id
+ * @param {Object}  fields      - any subset of { content, title, tags, visibility }
+ * @returns {Promise<Object|null>} updated row, or null if not found / wrong work item
  */
-export async function updateContextEntry(entryId, { content, title, tags, visibility }) {
+export async function updateContextEntry(entryId, workItemId, { content, title, tags, visibility }) {
   const sets = []
   const params = []
 
@@ -101,25 +103,26 @@ export async function updateContextEntry(entryId, { content, title, tags, visibi
   if (sets.length === 0) throw new Error('Nothing to update')
 
   sets.push('is_edited=true', 'updated_at=now()')
-  params.push(entryId)
+  params.push(entryId, workItemId)
 
   const r = await pool.query(
-    `UPDATE runtime.context_entries SET ${sets.join(', ')} WHERE id=$${params.length} RETURNING *`,
+    `UPDATE runtime.context_entries SET ${sets.join(', ')} WHERE id=$${params.length - 1} AND work_item_id=$${params.length} RETURNING *`,
     params,
   )
   return r.rows[0] || null
 }
 
 /**
- * Delete a context entry by id.
+ * Delete a context entry by id. Scopes to work_item_id to prevent IDOR.
  *
  * @param {number}  entryId
- * @returns {Promise<boolean>} true if a row was deleted, false if not found
+ * @param {number}  workItemId  - must match the entry's work_item_id
+ * @returns {Promise<Object|null>} the deleted row, or null if not found / wrong work item
  */
-export async function deleteContextEntry(entryId) {
+export async function deleteContextEntry(entryId, workItemId) {
   const r = await pool.query(
-    `DELETE FROM runtime.context_entries WHERE id=$1 RETURNING id`,
-    [entryId],
+    `DELETE FROM runtime.context_entries WHERE id=$1 AND work_item_id=$2 RETURNING id, author_id`,
+    [entryId, workItemId],
   )
-  return r.rowCount > 0
+  return r.rows[0] || null
 }

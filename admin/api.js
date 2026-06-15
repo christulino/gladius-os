@@ -4687,7 +4687,17 @@ router.post('/work-items/:id/context-entries', async (req, res, next) => {
 
 router.patch('/work-items/:id/context-entries/:entryId', async (req, res, next) => {
   try {
-    const entry = await updateContextEntry(parseInt(req.params.entryId, 10), req.body)
+    const workItemId = parseInt(req.params.id, 10)
+    const entryId   = parseInt(req.params.entryId, 10)
+    // Fetch existing entry scoped to this work item first (authz + existence check)
+    const { rows: existing } = await query(
+      'SELECT id, author_id FROM runtime.context_entries WHERE id = $1 AND work_item_id = $2',
+      [entryId, workItemId],
+    )
+    if (!existing.length) return res.status(404).json({ error: 'Not found' })
+    if (existing[0].author_id !== req.userId && !req.isAdmin)
+      return res.status(403).json({ error: 'Only the author or an admin can edit this entry' })
+    const entry = await updateContextEntry(entryId, workItemId, req.body)
     if (!entry) return res.status(404).json({ error: 'Not found' })
     res.json(entry)
   } catch (err) { next(err) }
@@ -4695,9 +4705,19 @@ router.patch('/work-items/:id/context-entries/:entryId', async (req, res, next) 
 
 router.delete('/work-items/:id/context-entries/:entryId', async (req, res, next) => {
   try {
-    const deleted = await deleteContextEntry(parseInt(req.params.entryId, 10))
+    const workItemId = parseInt(req.params.id, 10)
+    const entryId   = parseInt(req.params.entryId, 10)
+    // Fetch existing entry scoped to this work item first (authz + existence check)
+    const { rows: existing } = await query(
+      'SELECT id, author_id FROM runtime.context_entries WHERE id = $1 AND work_item_id = $2',
+      [entryId, workItemId],
+    )
+    if (!existing.length) return res.status(404).json({ error: 'Not found' })
+    if (existing[0].author_id !== req.userId && !req.isAdmin)
+      return res.status(403).json({ error: 'Only the author or an admin can delete this entry' })
+    const deleted = await deleteContextEntry(entryId, workItemId)
     if (!deleted) return res.status(404).json({ error: 'Not found' })
-    res.json({ deleted: true, id: parseInt(req.params.entryId, 10) })
+    res.json({ deleted: true, id: entryId })
   } catch (err) { next(err) }
 })
 
