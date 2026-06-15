@@ -4770,17 +4770,17 @@ router.post('/stages/:stageId/playbook', async (req, res, next) => {
     res.status(201).json(row)
   } catch (err) { next(err) }
 })
-router.patch('/playbooks/:id', async (req, res, next) => {
+router.patch('/organizations/:orgId/playbooks/:id', async (req, res, next) => {
   try {
     const { name, content, isActive } = req.body
-    const row = await updatePlaybook(parseInt(req.params.id), { name, content, isActive })
+    const row = await updatePlaybook(parseInt(req.params.id), parseInt(req.params.orgId), { name, content, isActive })
     if (!row) return res.status(404).json({ error: 'Not found' })
     res.json(row)
   } catch (err) { next(err) }
 })
-router.delete('/playbooks/:id', async (req, res, next) => {
+router.delete('/organizations/:orgId/playbooks/:id', async (req, res, next) => {
   try {
-    const deleted = await deletePlaybook(parseInt(req.params.id))
+    const deleted = await deletePlaybook(parseInt(req.params.id), parseInt(req.params.orgId))
     if (!deleted) return res.status(404).json({ error: 'Not found' })
     res.json({ deleted: true, id: parseInt(req.params.id) })
   } catch (err) { next(err) }
