@@ -28,6 +28,12 @@ import {
   getAttachment,
 } from '../runtime/attachments.js'
 import { getStorage, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_MB } from '../core/storage/index.js'
+import {
+  listContextEntries,
+  createContextEntry,
+  updateContextEntry,
+  deleteContextEntry,
+} from '../runtime/contextEntries.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -4655,6 +4661,44 @@ router.delete('/saved-filters/:id', async (req, res, next) => {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
   }
+})
+
+// ─── Context Entries ─────────────────────────────────────────────────────────
+
+router.get('/work-items/:id/context-entries', async (req, res, next) => {
+  try {
+    const types = req.query.types ? req.query.types.split(',') : undefined
+    const rows  = await listContextEntries(parseInt(req.params.id, 10), { types })
+    res.json({ rows, count: rows.length })
+  } catch (err) { next(err) }
+})
+
+router.post('/work-items/:id/context-entries', async (req, res, next) => {
+  try {
+    const { type, title, content, visibility, tags } = req.body
+    if (!type || !content) return res.status(400).json({ error: 'type and content required' })
+    const entry = await createContextEntry(parseInt(req.params.id, 10), {
+      type, title, content, visibility, tags,
+      authorId: req.session?.userId,
+    })
+    res.status(201).json(entry)
+  } catch (err) { next(err) }
+})
+
+router.patch('/work-items/:id/context-entries/:entryId', async (req, res, next) => {
+  try {
+    const entry = await updateContextEntry(parseInt(req.params.entryId, 10), req.body)
+    if (!entry) return res.status(404).json({ error: 'Not found' })
+    res.json(entry)
+  } catch (err) { next(err) }
+})
+
+router.delete('/work-items/:id/context-entries/:entryId', async (req, res, next) => {
+  try {
+    const deleted = await deleteContextEntry(parseInt(req.params.entryId, 10))
+    if (!deleted) return res.status(404).json({ error: 'Not found' })
+    res.json({ deleted: true, id: parseInt(req.params.entryId, 10) })
+  } catch (err) { next(err) }
 })
 
 export default router
