@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import PlaybookAiAssistant from './PlaybookAiAssistant'
 
 const PLACEHOLDER = `---
 trigger: on_enter
@@ -25,12 +26,6 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
   const [saving,       setSaving]       = useState(false)
   const [deleting,     setDeleting]     = useState(false)
   const [saveError,    setSaveError]    = useState(null)
-
-  const [aiOpen,       setAiOpen]       = useState(false)
-  const [aiMessage,    setAiMessage]    = useState('')
-  const [aiLoading,    setAiLoading]    = useState(false)
-  const [aiReply,      setAiReply]      = useState('')
-  const [aiError,      setAiError]      = useState(null)
 
   const textareaRef = useRef(null)
 
@@ -95,30 +90,9 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
     }
   }
 
-  async function handleAiGenerate() {
-    if (!aiMessage.trim()) return
-    setAiLoading(true)
-    setAiError(null)
-    setAiReply('')
-    try {
-      const data = await api.aiAssistPlaybook(orgId, {
-        playbookContent: content || null,
-        message: `Stage: "${stageName}"\n\n${aiMessage}`,
-      })
-      setAiReply(data.reply ?? '')
-    } catch (e) {
-      setAiError(e.message || 'AI request failed')
-    } finally {
-      setAiLoading(false)
-    }
-  }
-
-  function handleInsert() {
-    if (!aiReply) return
+  function handleInsert(text) {
     const sep = content && !content.endsWith('\n') ? '\n\n' : content ? '\n' : ''
-    setContent(prev => prev + sep + aiReply)
-    setAiReply('')
-    setAiMessage('')
+    setContent(prev => prev + sep + text)
     textareaRef.current?.focus()
   }
 
@@ -199,64 +173,12 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
         )}
       </div>
 
-      {/* AI Assistant panel */}
-      <div className="border-t border-border/60 pt-3 mt-1">
-        <button
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
-          onClick={() => setAiOpen(v => !v)}
-        >
-          <Sparkles className="h-3 w-3 flex-shrink-0" />
-          <span>AI Assistant</span>
-          {aiOpen
-            ? <ChevronUp className="h-3 w-3 ml-auto" />
-            : <ChevronDown className="h-3 w-3 ml-auto" />
-          }
-        </button>
-
-        {aiOpen && (
-          <div className="flex flex-col gap-2 mt-2">
-            <textarea
-              value={aiMessage}
-              onChange={e => setAiMessage(e.target.value)}
-              placeholder={`E.g. "Write a discovery playbook that pulls acceptance criteria and writes a decision entry"`}
-              rows={3}
-              className="w-full bg-background border border-border rounded text-xs text-foreground px-2 py-1.5 resize-none focus:outline-none focus:border-primary"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-xs self-start"
-              onClick={handleAiGenerate}
-              disabled={aiLoading || !aiMessage.trim()}
-            >
-              {aiLoading
-                ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Generating…</>
-                : 'Generate'
-              }
-            </Button>
-
-            {aiError && (
-              <span className="text-xs text-destructive">{aiError}</span>
-            )}
-
-            {aiReply && (
-              <div className="flex flex-col gap-2">
-                <pre className="text-xs bg-muted/40 border border-border rounded px-2 py-2 whitespace-pre-wrap break-words leading-relaxed max-h-48 overflow-y-auto">
-                  {aiReply}
-                </pre>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="text-xs self-start"
-                  onClick={handleInsert}
-                >
-                  Insert into playbook
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <PlaybookAiAssistant
+        orgId={orgId}
+        stageName={stageName}
+        playbookContent={content}
+        onInsert={handleInsert}
+      />
     </div>
   )
 }
