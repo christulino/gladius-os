@@ -32,6 +32,7 @@ import { query, getClient }        from '../db/postgres.js'
 import { emitEvent, nudgeAfterCommit } from '../core/events.js'
 import { evaluateExitCriteria, populateExitCriteriaStatus } from './exitCriteria.js'
 import { resolveOrgCalendar, calculateWorkingTime } from '../core/calendar.js'
+import { executePlaybookForStageEntry } from './playbookExecutor.js'
 
 // =============================================================================
 // PHASE 1 — PREPARE
@@ -295,6 +296,10 @@ export async function executeTransition(workItemId, toStageId, userId, options =
 
   // Nudge the event processor so subscribers (neo4j-sync, audit-log) drain now
   nudgeAfterCommit()
+
+  // Fire playbook executor — non-blocking side effect, never rolls back the transition
+  executePlaybookForStageEntry(workItemId, toStageId, workItem.owner_org_id, workItem.work_item_type_id)
+    .catch(() => {})
 
   // Fire api_call actions — truly fire and forget.
   // Each action logs its own runtime.transition_action_log row AND emits
