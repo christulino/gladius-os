@@ -265,6 +265,12 @@ export const api = {
   createCatalogItem:  (data) => apiFetch('/catalog-items', { method: 'POST', body: JSON.stringify(data) }),
   updateCatalogItem:  (id, data) => apiFetch(`/catalog-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteCatalogItem:  (id) => apiFetch(`/catalog-items/${id}`, { method: 'DELETE' }),
+
+  // Context Entries
+  contextEntries:     (workItemId, types) => apiFetch(`/work-items/${workItemId}/context-entries${types ? '?types='+types : ''}`),
+  createContextEntry: (workItemId, data)  => apiFetch(`/work-items/${workItemId}/context-entries`, { method: 'POST', body: JSON.stringify(data) }),
+  updateContextEntry: (workItemId, id, data) => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteContextEntry: (workItemId, id)    => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Notifications API ──────────────────────────────────────────────────────

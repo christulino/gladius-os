@@ -9,6 +9,7 @@ import { FormDrawer } from '@/components/FormDrawer'
 import { WorkItemHistory } from '@/components/WorkItemHistory'
 import AttachmentsList from '@/components/AttachmentsList'
 import AttachmentUpload from '@/components/AttachmentUpload'
+import { JournalTab } from '@/components/JournalTab'
 import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
 
 // ─── Custom Fields Renderer ─────────────────────────────────────────────────
@@ -773,7 +774,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
             {/* Tabs */}
             <div className="flex border-b border-border px-4">
-              {['details', 'activity', 'comments'].map(t => (
+              {['details', 'journal', 'activity', 'comments'].map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -783,9 +784,11 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                 >
                   {t === 'details'
                     ? 'Details'
-                    : t === 'activity'
-                      ? 'Activity'
-                      : `Comments (${comments.length})`}
+                    : t === 'journal'
+                      ? 'Journal'
+                      : t === 'activity'
+                        ? 'Activity'
+                        : `Comments (${comments.length})`}
                 </button>
               ))}
             </div>
@@ -794,6 +797,8 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
             <div className="flex-1 overflow-y-auto p-4">
               {tab === 'activity' ? (
                 <WorkItemHistory workItemId={workItemId} />
+              ) : tab === 'journal' ? (
+                <JournalTab workItemId={workItemId} />
               ) : tab === 'details' ? (
                 <div className="flex flex-col gap-3">
                   {/* Timers */}
