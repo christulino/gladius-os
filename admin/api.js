@@ -34,6 +34,9 @@ import {
   updateContextEntry,
   deleteContextEntry,
 } from '../runtime/contextEntries.js'
+import { listOrgContext, createOrgContext, updateOrgContext, deleteOrgContext } from '../runtime/orgContext.js'
+import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook } from '../runtime/stagePlaybooks.js'
+import { listOrgAiModels, createOrgAiModel, updateOrgAiModel, deleteOrgAiModel, resolveModelConfig } from '../runtime/orgAiModels.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -4718,6 +4721,138 @@ router.delete('/work-items/:id/context-entries/:entryId', async (req, res, next)
     const deleted = await deleteContextEntry(entryId, workItemId)
     if (!deleted) return res.status(404).json({ error: 'Not found' })
     res.json({ deleted: true, id: entryId })
+  } catch (err) { next(err) }
+})
+
+// Org Context Library
+router.get('/organizations/:orgId/context', async (req, res, next) => {
+  try {
+    const types = req.query.types ? req.query.types.split(',') : undefined
+    const rows = await listOrgContext(parseInt(req.params.orgId), { types })
+    res.json({ rows, count: rows.length })
+  } catch (err) { next(err) }
+})
+router.post('/organizations/:orgId/context', async (req, res, next) => {
+  try {
+    const { type, title, content, tags } = req.body
+    if (!type || !title || !content) return res.status(400).json({ error: 'type, title, content required' })
+    const row = await createOrgContext(parseInt(req.params.orgId), { type, title, content, tags, authorId: req.session?.userId })
+    res.status(201).json(row)
+  } catch (err) { next(err) }
+})
+router.patch('/organizations/:orgId/context/:id', async (req, res, next) => {
+  try {
+    const row = await updateOrgContext(parseInt(req.params.id), parseInt(req.params.orgId), req.body)
+    if (!row) return res.status(404).json({ error: 'Not found' })
+    res.json(row)
+  } catch (err) { next(err) }
+})
+router.delete('/organizations/:orgId/context/:id', async (req, res, next) => {
+  try {
+    const deleted = await deleteOrgContext(parseInt(req.params.id), parseInt(req.params.orgId))
+    if (!deleted) return res.status(404).json({ error: 'Not found' })
+    res.json({ deleted: true, id: parseInt(req.params.id) })
+  } catch (err) { next(err) }
+})
+
+// Stage Playbooks
+router.get('/stages/:stageId/playbook', async (req, res, next) => {
+  try {
+    const rows = await listPlaybooks({ stageId: parseInt(req.params.stageId) })
+    res.json({ rows })
+  } catch (err) { next(err) }
+})
+router.post('/stages/:stageId/playbook', async (req, res, next) => {
+  try {
+    const { name, content } = req.body
+    if (!name || !content) return res.status(400).json({ error: 'name and content required' })
+    const row = await createPlaybook({ stageId: parseInt(req.params.stageId), name, content })
+    res.status(201).json(row)
+  } catch (err) { next(err) }
+})
+router.patch('/playbooks/:id', async (req, res, next) => {
+  try {
+    const { name, content, isActive } = req.body
+    const row = await updatePlaybook(parseInt(req.params.id), { name, content, isActive })
+    if (!row) return res.status(404).json({ error: 'Not found' })
+    res.json(row)
+  } catch (err) { next(err) }
+})
+router.delete('/playbooks/:id', async (req, res, next) => {
+  try {
+    const deleted = await deletePlaybook(parseInt(req.params.id))
+    if (!deleted) return res.status(404).json({ error: 'Not found' })
+    res.json({ deleted: true, id: parseInt(req.params.id) })
+  } catch (err) { next(err) }
+})
+
+// Org AI Models
+router.get('/organizations/:orgId/ai-models', async (req, res, next) => {
+  try {
+    res.json({ rows: await listOrgAiModels(parseInt(req.params.orgId)) })
+  } catch (err) { next(err) }
+})
+router.post('/organizations/:orgId/ai-models', async (req, res, next) => {
+  try {
+    const { name, provider, model, apiKey } = req.body
+    if (!name || !model) return res.status(400).json({ error: 'name and model required' })
+    const row = await createOrgAiModel(parseInt(req.params.orgId), { name, provider, model, apiKey })
+    res.status(201).json(row)
+  } catch (err) { next(err) }
+})
+router.patch('/organizations/:orgId/ai-models/:id', async (req, res, next) => {
+  try {
+    const { name, provider, model, apiKey, isActive } = req.body
+    const row = await updateOrgAiModel(parseInt(req.params.id), parseInt(req.params.orgId), { name, provider, model, apiKey, isActive })
+    if (!row) return res.status(404).json({ error: 'Not found' })
+    res.json(row)
+  } catch (err) { next(err) }
+})
+router.delete('/organizations/:orgId/ai-models/:id', async (req, res, next) => {
+  try {
+    const deleted = await deleteOrgAiModel(parseInt(req.params.id), parseInt(req.params.orgId))
+    if (!deleted) return res.status(404).json({ error: 'Not found' })
+    res.json({ deleted: true, id: parseInt(req.params.id) })
+  } catch (err) { next(err) }
+})
+
+// Playbook AI Assistant
+router.post('/organizations/:orgId/playbooks/ai-assist', async (req, res, next) => {
+  try {
+    const { playbookContent, message } = req.body
+    const orgId = parseInt(req.params.orgId)
+    if (!orgId || !message) return res.status(400).json({ error: 'orgId and message required' })
+
+    const cfg = await resolveModelConfig(orgId, 'default')
+    if (!cfg || !cfg.apiKey) return res.status(400).json({ error: 'No default AI model configured for this org' })
+
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const client = new Anthropic({ apiKey: cfg.apiKey })
+
+    const systemPrompt = `You are an expert at writing FlowOS stage playbooks.
+A playbook is a markdown file with YAML frontmatter that tells a stage's AI agent what context to pull and what to write back.
+
+Frontmatter fields:
+- trigger: on_enter | on_exit | manual
+- model: name from org_ai_models (e.g. "fast", "default")
+- context.pull: list of {type, traverse} — pull context entries by type, optionally traversing ancestors
+- context.org: list of org context types to inject (e.g. [architecture, domain])
+- context.write: list of entry types the agent may write back
+
+Available context entry types: nfr, discovery, acceptance, design, decision, note, test-plan, playbook
+Available traversal: ancestors (pull from parent items too)
+
+The playbook body (below the frontmatter) is natural language instructions for the AI agent.
+${playbookContent ? `\nCurrent playbook:\n\`\`\`markdown\n${playbookContent}\n\`\`\`` : ''}`
+
+    const resp = await client.messages.create({
+      model: cfg.model,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: message }],
+    }, { timeout: 30_000 })
+
+    res.json({ reply: resp.content[0]?.text || '' })
   } catch (err) { next(err) }
 })
 
