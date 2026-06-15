@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { FormDrawer } from '@/components/FormDrawer'
-import { ChevronLeft, ChevronRight, Plus, Loader2, Trash2, TriangleAlert } from 'lucide-react'
+import PlaybookEditor from '@/components/PlaybookEditor'
+import { ChevronLeft, ChevronRight, Plus, Loader2, Trash2, TriangleAlert, BookOpen } from 'lucide-react'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -132,11 +133,12 @@ function Flowchart({ stages, transitions }) {
 
 // ─── Inline Editable Stage Column ────────────────────────────────────────────
 
-function StageColumn({ stage, allStages, isFirst, isLast, selected, onClick, onSave, onDelete, onMoveLeft, onMoveRight }) {
+function StageColumn({ stage, allStages, isFirst, isLast, selected, onClick, onSave, onDelete, onMoveLeft, onMoveRight, orgId }) {
   const color = CLASS_COLOR[stage.stage_class] || '#6A6460'
   const isProtected = PROTECTED.has(stage.stage_class)
   const debounceRef = useRef(null)
   const [saving, setSaving] = useState(false)
+  const [playbookOpen, setPlaybookOpen] = useState(false)
 
   // Auto-save: debounce field changes
   const autoSave = useCallback((updates) => {
@@ -333,6 +335,21 @@ function StageColumn({ stage, allStages, isFirst, isLast, selected, onClick, onS
               </label>
             ))}
           </div>
+        </div>
+
+        {/* Playbook */}
+        <div className="pt-2 mt-1 border-t border-border/60">
+          <button
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors w-full"
+            onClick={() => setPlaybookOpen(v => !v)}
+          >
+            <BookOpen className="h-3 w-3 flex-shrink-0" />
+            <span>Playbook</span>
+            <span className="ml-auto text-xs">{playbookOpen ? '▲' : '▼'}</span>
+          </button>
+          {playbookOpen && (
+            <PlaybookEditor stageId={stage.id} orgId={orgId} stageName={stage.name} />
+          )}
         </div>
 
         {/* Delete */}
@@ -612,6 +629,7 @@ export default function WorkflowManager() {
               onDelete={() => handleDeleteStage(stage.id)}
               onMoveLeft={() => handleMoveStage(stage.id, -1)}
               onMoveRight={() => handleMoveStage(stage.id, 1)}
+              orgId={wfData?.workflow?.owner_org_id}
             />
           ))}
 

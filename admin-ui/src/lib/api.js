@@ -289,6 +289,7 @@ export const api = {
   createStagePlaybook:  (stageId, data)   => apiFetch(`/stages/${stageId}/playbook`, { method: 'POST', body: JSON.stringify(data) }),
   updatePlaybook:       (orgId, id, data) => apiFetch(`/organizations/${orgId}/playbooks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePlaybook:       (orgId, id)       => apiFetch(`/organizations/${orgId}/playbooks/${id}`, { method: 'DELETE' }),
+  aiAssistPlaybook:     (orgId, data)     => apiFetch(`/organizations/${orgId}/playbooks/ai-assist`, { method: 'POST', body: JSON.stringify(data) }),
 }
 
 // ─── Notifications API ──────────────────────────────────────────────────────
