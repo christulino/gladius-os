@@ -10,6 +10,12 @@ import { parse } from '../runtime/search/jql.js'
 import { compile } from '../runtime/search/jqlCompiler.js'
 import { pool } from '../db/postgres.js'
 
+// Agent identity — must be set to a valid blueprint.users.id for tools that
+// write records (add_comment, transition_work_item). Callers cannot override this.
+const AGENT_USER_ID = process.env.FLOWOS_AGENT_USER_ID
+  ? parseInt(process.env.FLOWOS_AGENT_USER_ID, 10)
+  : null
+
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
 const TOOLS = [
@@ -82,8 +88,9 @@ const TOOLS = [
       type: 'object',
       properties: {
         work_item_id: { type: 'number' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required — prevents cross-org access)' },
       },
-      required: ['work_item_id'],
+      required: ['work_item_id', 'org_id'],
     },
   },
   {
@@ -93,36 +100,34 @@ const TOOLS = [
       type: 'object',
       properties: {
         query:  { type: 'string', description: 'JQL query string' },
-        org_id: { type: 'number', description: 'Scope to a specific org (optional — leave unset for admin-bypass)' },
+        org_id: { type: 'number', description: 'Org to search within (required)' },
         limit:  { type: 'number', description: 'Max results (default 20, max 100)' },
       },
-      required: ['query'],
+      required: ['query', 'org_id'],
     },
   },
   {
     name: 'transition_work_item',
-    description: 'Move a work item to a different stage via the two-phase transition engine (exit criteria still apply)',
+    description: 'Move a work item to a different stage via the two-phase transition engine (exit criteria still apply). Actor is the configured agent identity.',
     inputSchema: {
       type: 'object',
       properties: {
-        work_item_id:  { type: 'number' },
-        to_stage_id:   { type: 'number' },
-        actor_user_id: { type: 'number', description: 'User performing the transition (required for audit trail)' },
+        work_item_id: { type: 'number' },
+        to_stage_id:  { type: 'number' },
       },
-      required: ['work_item_id', 'to_stage_id', 'actor_user_id'],
+      required: ['work_item_id', 'to_stage_id'],
     },
   },
   {
     name: 'add_comment',
-    description: 'Add a comment to a work item',
+    description: 'Add a comment to a work item. Author is the configured agent identity (FLOWOS_AGENT_USER_ID).',
     inputSchema: {
       type: 'object',
       properties: {
         work_item_id: { type: 'number' },
         body:         { type: 'string' },
-        author_id:    { type: 'number', description: 'User ID of the comment author' },
       },
-      required: ['work_item_id', 'body', 'author_id'],
+      required: ['work_item_id', 'body'],
     },
   },
 ]
@@ -182,6 +187,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'get_work_item': {
+        // Scope to org_id to prevent cross-org IDOR
         const r = await pool.query(`
           SELECT wi.id, wi.display_key, wi.title, wi.description,
                  wi.current_substate, wi.priority, wi.tags, wi.estimate, wi.estimate_unit,
@@ -194,23 +200,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           LEFT JOIN blueprint.stages             s   ON s.id   = wi.current_stage_id
           LEFT JOIN blueprint.work_item_types    wit ON wit.id = wi.work_item_type_id
           LEFT JOIN blueprint.organizations      o   ON o.id   = wi.owner_org_id
-          WHERE wi.id = $1
-        `, [args.work_item_id])
-        if (!r.rows.length) throw new Error(`Work item ${args.work_item_id} not found`)
+          WHERE wi.id = $1 AND wi.owner_org_id = $2
+        `, [args.work_item_id, args.org_id])
+        if (!r.rows.length) throw new Error(`Work item ${args.work_item_id} not found in org ${args.org_id}`)
         return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
       }
 
       case 'search_work_items': {
-        // Use the JQL compiler directly — the HTTP search endpoint requires an
-        // active user session (req.userId) which the MCP server doesn't have.
+        // Use the JQL compiler directly — the HTTP search endpoint requires a user session.
+        // Scope to the required org_id; no admin bypass.
         const limit = Math.min(args.limit ?? 20, 100)
         const ast = parse(args.query)
-        // Admin bypass: pass isAdmin=true so the compiler doesn't restrict to
-        // org_memberships. Callers can scope with explicit org predicates in JQL.
         const userCtx = {
           userId: null,
-          orgIds: args.org_id ? [args.org_id] : [],
-          isAdmin: true,
+          orgIds: [args.org_id],
+          isAdmin: false,
           doneRetentionDays: 90,
           customFields: [],
         }
@@ -221,21 +225,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'transition_work_item': {
+        if (!AGENT_USER_ID) throw new Error('FLOWOS_AGENT_USER_ID env var not set — cannot perform transitions')
         const { prepareTransition, executeTransition } = await import('../runtime/transitions.js')
-        const prep = await prepareTransition(args.work_item_id, args.to_stage_id, args.actor_user_id)
+        const prep = await prepareTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
         if (!prep.canTransition) {
           throw new Error(`Transition blocked: ${prep.reason ?? 'exit criteria not met'}`)
         }
-        const result = await executeTransition(args.work_item_id, args.to_stage_id, args.actor_user_id)
+        const result = await executeTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
       case 'add_comment': {
+        if (!AGENT_USER_ID) throw new Error('FLOWOS_AGENT_USER_ID env var not set — cannot post comments')
         const r = await pool.query(`
           INSERT INTO runtime.work_item_comments (work_item_id, author_user_id, body)
           VALUES ($1, $2, $3)
           RETURNING id, work_item_id, author_user_id, body, created_at, updated_at
-        `, [args.work_item_id, args.author_id, args.body])
+        `, [args.work_item_id, AGENT_USER_ID, args.body])
         return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
       }
 
