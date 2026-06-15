@@ -1,5 +1,17 @@
 # FlowOS — TODO
 
+## Flagged Items from Last Session (2026-06-15, Session 27)
+
+Bring up at the start of the next session:
+
+- **Context v1 shipped.** Item journal, org context library, stage playbooks, AI execution engine (post-transition hook → Anthropic SDK), MCP stdio server (8 tools). Migration 017. All 9 tasks complete.
+- **[P1] Bulk ops integration tests** — `tests/bulk-ops.test.js` still not written (carried from Session 26). Happy path + partial-success case.
+- **[P1] Stage-evidence requirements** — per-stage named attachment slots ("Permit to Operate") gating transitions. Brainstorm before planning.
+- **[P1] Agent Collaboration v1 design** — Context v1 lays the foundation (MCP server + playbook executor). Next step is the bidirectional protocol design: how agents respond, tool-use policies, error handling. Design spec before planning.
+- **[P2] Set `FLOWOS_ENCRYPTION_KEY` + `FLOWOS_AGENT_USER_ID` in `.env`** before testing Context v1 end-to-end (AI model config + MCP write tools both require them).
+- **[P2] Context v1 browser smoke test** — Journal tab, Org Context Library, AI Models config, PlaybookEditor not yet browser-verified.
+- **[P3] Smoke-test PNGs now gitignored** (`/*.png` added to .gitignore). The 12 existing root-level PNGs can be deleted manually.
+
 ## Flagged Items from Last Session (2026-06-13, Session 26)
 
 Bring up at the start of the next session:

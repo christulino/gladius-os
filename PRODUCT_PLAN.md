@@ -50,6 +50,7 @@ These are partly built or designed and represent the *reason* someone would leav
 | 21 | **Waiting queue visibility** | Built (L3 columns) | Neither platform shows the ready-vs-active split. This is real flow insight. |
 | 22 | **Derived class of service** | Built | Users don't have to learn Kanban vocabulary. Elegant. |
 | 23 | **Stage-class normalization** | Built | Cross-workflow comparability without forcing identical workflows. Neither platform has this. |
+| 24 | **AI-native context system** | ~~DONE~~ (Session 27). Item journal (typed context entries per work item), org context library, stage playbooks (YAML frontmatter + markdown body), playbook executor fires on stage entry via post-transition hook, MCP stdio server with 8 tools. Neither Jira nor SNOW has anything like this. | Every work item carries its own structured knowledge. AI agents read and write context as first-class operations. |
 
 ---
 

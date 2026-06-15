@@ -27,6 +27,7 @@ vite.config.js.timestamp-*
 *-screenshot.png
 search-page-after-save.png
 search-with-detail-drawer.png
+/*.png
 
 # Claude Code — commit settings.json (shared), ignore local overrides + runtime state
 .claude/settings.local.json

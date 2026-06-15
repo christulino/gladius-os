@@ -1,7 +1,7 @@
 # CLAUDE.md — FlowOS
 
 > Source of truth for project context. Update at the end of every working session.
-> Last updated: 2026-06-13 (Session 26 — Bulk ops + comment edit/delete shipped; all Tier-1 blockers done)
+> Last updated: 2026-06-15 (Session 27 — Context v1 shipped: item journal, org context library, stage playbooks, AI execution engine, MCP server)
 
 ---
 
@@ -122,6 +122,26 @@ tests use the same local PostgreSQL instance.
   (2-char shard). **Stage-evidence requirements are NOT built yet** —
   that's a follow-up plan; attachments today have no exit-criteria
   semantics.
+- **Context v1 (migration 017):** Four tables in `blueprint` — `org_context`
+  (org-level knowledge library), `stage_playbooks` (markdown+YAML instructions for
+  AI agents), `org_ai_models` (encrypted `api_key_enc` via AES-256-GCM, key from
+  `FLOWOS_ENCRYPTION_KEY` env var). One table in `runtime` — `context_entries`
+  (append-only typed journal on work items; types: nfr/discovery/acceptance/design/
+  decision/note/test-plan/playbook; visibility: item|descendants; `is_agent` flag).
+  **Playbook frontmatter** (parsed by `runtime/stagePlaybooks.js#parsePlaybook`):
+  `trigger`, `model`, `context.pull` (journal types + `ancestors` traversal),
+  `context.org` (org context types), `context.write` (allowlisted write-back types).
+  **Execution flow:** transition → `executePlaybookForStageEntry()` fires as side
+  effect (never blocks response) → `contextAssembler.js` pulls journal + ancestors
+  + org context → Anthropic SDK call → JSON array of entries written back via
+  `createContextEntry` with `isAgent=true`. Write allowlist from frontmatter enforced.
+  **MCP server** at `mcp/flowos-context-server.js` (stdio transport, 8 tools):
+  `list_context_entries`, `write_context_entry`, `get_assembled_context`,
+  `list_org_context`, `get_work_item`, `search_work_items`, `transition_work_item`,
+  `add_comment`. Actor identity for write tools comes from `FLOWOS_AGENT_USER_ID`
+  env var only — never from tool args. `org_id` required on cross-tenant tools.
+  **UI:** Journal tab on WorkItemDetail; Context Library + AI Models sections in
+  Org Center; Playbook tab in WorkflowManager stage editor with AI assistant panel.
 
 ---
 
@@ -159,6 +179,19 @@ tests use the same local PostgreSQL instance.
 | `admin-ui/src/components/AttachmentsList.jsx` | Attachments list rendering |
 | `admin-ui/src/components/AttachmentUpload.jsx` | File / camera / link upload UI |
 | `admin-ui/src/components/BulkActionBar.jsx` | Bulk action toolbar (transition/assign N items) |
+| `runtime/contextEntries.js` | Item journal CRUD + event emission |
+| `runtime/orgContext.js` | Org context library CRUD |
+| `runtime/stagePlaybooks.js` | Playbook CRUD + `parsePlaybook()` (YAML frontmatter) |
+| `runtime/orgAiModels.js` | Encrypted AI model configs + `resolveModelConfig()` |
+| `runtime/contextAssembler.js` | Assembles journal + ancestors + org context for AI prompts |
+| `runtime/playbookExecutor.js` | Runs active playbook on stage entry as post-transition side effect |
+| `mcp/flowos-context-server.js` | MCP stdio server — 8 tools for external AI agents |
+| `admin-ui/src/components/ContextEntryCard.jsx` | Journal entry card (expand/edit/delete, markdown render) |
+| `admin-ui/src/components/JournalTab.jsx` | Journal tab shell (add form, type filter, entry list) |
+| `admin-ui/src/components/PlaybookEditor.jsx` | Playbook textarea editor + active toggle + save/delete |
+| `admin-ui/src/components/PlaybookAiAssistant.jsx` | Collapsible AI assistant panel for playbook authoring |
+| `admin-ui/src/pages/OrgContextLibrary.jsx` | Org-level context entries (accordion list + add form) |
+| `admin-ui/src/pages/OrgAiModels.jsx` | AI model config management (add/delete named models) |
 
 ---
 
@@ -239,8 +272,10 @@ For deep architecture details, read these on demand — not every session:
 - **Git:** `christulino/flowos` (private, will go public on release)
 - **Open source release blockers:** Cross-instance service requests, seed-and-go
   experience, README + LICENSE
-- **Current state:** 60+ PG tables, 16 migrations, 90+ API endpoints, 20+ React pages,
+- **Current state:** 65+ PG tables, 17 migrations, ~100 API endpoints, 20+ React pages,
   auth working, intake forms working, exit criteria engine working, notifications working,
   per-item audit trail working, search v1 (JQL + Haiku translator + saved filters) working,
-  attachments v1 working, **bulk operations working, comment edit/delete working — all 7 Tier-1 go-live blockers DONE**
+  attachments v1 working, bulk operations working, comment edit/delete working — **all 7
+  Tier-1 go-live blockers DONE**. **Context v1 working** — item journal, org context library,
+  stage playbooks, AI execution engine (Anthropic SDK, post-transition hook), MCP stdio server.
 - **See `ARCHITECTURE.md`** for the full "what's built / what's not" breakdown

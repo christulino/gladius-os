@@ -1,18 +1,17 @@
 # STATE — FlowOS
 
 ## Right Now
-- Session 26 complete. All 7 Tier-1 go-live blockers are now **DONE**.
-- Bulk operations (Tier 1 #6) shipped: multi-select on board → bulk transition/assign with per-item results.
-- Comment edit/delete shipped: PATCH/DELETE endpoints, `is_edited` flag, event wiring, notification fanout, UI.
-- ESLint config added (`.eslintrc.json`), `npm test` hang fixed (Neo4j driver / test isolation).
+- Session 27 complete. **Context v1 shipped** — item journal, org context library, stage playbooks, AI execution engine (post-transition hook → Anthropic SDK → write-back), MCP stdio server with 8 tools.
+- Migration 017, 17 new runtime/blueprint files, 6 new React components, ~100 API endpoints total.
+- All 7 Tier-1 blockers still DONE. Context v1 is Tier 3 #24 (Differentiator).
 
 ## Next Up
-1. **Stage-evidence requirements** — natural follow-up to attachments; per-stage named slots ("Permit to Operate") that gate transitions. Design: `blueprint.stage_evidence_requirements` + `runtime.evidence_fulfillments`.
-2. **SLA tracking & alerts** — Tier 2 #9; `sla_hours` exists on service_classes, needs countdown display + breach alerts.
+1. **Bulk ops integration tests** — `tests/bulk-ops.test.js` (deferred since Session 26); happy path + partial-success case.
+2. **Stage-evidence requirements** — per-stage named attachment slots ("Permit to Operate") that gate transitions. Brainstorm before planning.
 3. **Open-source release prep** — README, LICENSE, seed-and-go (`docker-compose up` → working board), cross-instance service requests.
 
 ## Blockers
-- None.
+- `FLOWOS_ENCRYPTION_KEY` (32-byte hex) and `FLOWOS_AGENT_USER_ID` must be set in `.env` for Context v1 features to work. Not blockers for dev, but required before any org can configure AI models or run the MCP server.
 
 ## Last Updated
-2026-06-13 — by session-close (tier: Full)
+2026-06-15 — by session-close (tier: Full)
