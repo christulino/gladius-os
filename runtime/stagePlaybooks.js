@@ -35,21 +35,35 @@ export async function createPlaybook({ stageId, witTypeId, name, content }) {
   return r.rows[0]
 }
 
-export async function updatePlaybook(id, { name, content, isActive }) {
+export async function updatePlaybook(id, orgId, { name, content, isActive }) {
   const sets = ['updated_at=now()'], params = []
   if (name     !== undefined) { params.push(name);     sets.push(`name=$${params.length}`) }
   if (content  !== undefined) { params.push(content);  sets.push(`content=$${params.length}`) }
   if (isActive !== undefined) { params.push(isActive); sets.push(`is_active=$${params.length}`) }
-  params.push(id)
+  params.push(id, orgId)
+  // Scope to org via stage→workflow or wit_type — prevents cross-org IDOR
   const r = await pool.query(
-    `UPDATE blueprint.stage_playbooks SET ${sets.join(',')} WHERE id=$${params.length} RETURNING *`,
+    `UPDATE blueprint.stage_playbooks sp SET ${sets.join(',')}
+     WHERE sp.id=$${params.length - 1} AND (
+       EXISTS (SELECT 1 FROM blueprint.stages s JOIN blueprint.workflows w ON w.id=s.workflow_id WHERE s.id=sp.stage_id AND w.org_id=$${params.length})
+       OR EXISTS (SELECT 1 FROM blueprint.work_item_types wit WHERE wit.id=sp.wit_type_id AND wit.org_id=$${params.length})
+     )
+     RETURNING *`,
     params
   )
   return r.rows[0] || null
 }
 
-export async function deletePlaybook(id) {
-  const r = await pool.query(`DELETE FROM blueprint.stage_playbooks WHERE id=$1 RETURNING id`,[id])
+export async function deletePlaybook(id, orgId) {
+  const r = await pool.query(
+    `DELETE FROM blueprint.stage_playbooks sp
+     WHERE sp.id=$1 AND (
+       EXISTS (SELECT 1 FROM blueprint.stages s JOIN blueprint.workflows w ON w.id=s.workflow_id WHERE s.id=sp.stage_id AND w.org_id=$2)
+       OR EXISTS (SELECT 1 FROM blueprint.work_item_types wit WHERE wit.id=sp.wit_type_id AND wit.org_id=$2)
+     )
+     RETURNING id`,
+    [id, orgId]
+  )
   return r.rowCount > 0
 }
 
