@@ -271,6 +271,24 @@ export const api = {
   createContextEntry: (workItemId, data)  => apiFetch(`/work-items/${workItemId}/context-entries`, { method: 'POST', body: JSON.stringify(data) }),
   updateContextEntry: (workItemId, id, data) => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteContextEntry: (workItemId, id)    => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'DELETE' }),
+
+  // Org Context Library
+  orgContext:       (orgId, types) => apiFetch(`/organizations/${orgId}/context${types ? '?types='+types : ''}`),
+  createOrgContext: (orgId, data)  => apiFetch(`/organizations/${orgId}/context`, { method: 'POST', body: JSON.stringify(data) }),
+  updateOrgContext: (orgId, id, data) => apiFetch(`/organizations/${orgId}/context/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteOrgContext: (orgId, id)    => apiFetch(`/organizations/${orgId}/context/${id}`, { method: 'DELETE' }),
+
+  // Org AI Models
+  orgAiModels:      (orgId)        => apiFetch(`/organizations/${orgId}/ai-models`),
+  createOrgAiModel: (orgId, data)  => apiFetch(`/organizations/${orgId}/ai-models`, { method: 'POST', body: JSON.stringify(data) }),
+  updateOrgAiModel: (orgId, id, d) => apiFetch(`/organizations/${orgId}/ai-models/${id}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  deleteOrgAiModel: (orgId, id)    => apiFetch(`/organizations/${orgId}/ai-models/${id}`, { method: 'DELETE' }),
+
+  // Stage Playbooks
+  stagePlaybook:        (stageId)         => apiFetch(`/stages/${stageId}/playbook`),
+  createStagePlaybook:  (stageId, data)   => apiFetch(`/stages/${stageId}/playbook`, { method: 'POST', body: JSON.stringify(data) }),
+  updatePlaybook:       (orgId, id, data) => apiFetch(`/organizations/${orgId}/playbooks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deletePlaybook:       (orgId, id)       => apiFetch(`/organizations/${orgId}/playbooks/${id}`, { method: 'DELETE' }),
 }
 
 // ─── Notifications API ──────────────────────────────────────────────────────
