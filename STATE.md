@@ -1,17 +1,18 @@
 # STATE — FlowOS
 
 ## Right Now
-- Session 27 complete. **Context v1 shipped** — item journal, org context library, stage playbooks, AI execution engine (post-transition hook → Anthropic SDK → write-back), MCP stdio server with 8 tools.
-- Migration 017, 17 new runtime/blueprint files, 6 new React components, ~100 API endpoints total.
-- All 7 Tier-1 blockers still DONE. Context v1 is Tier 3 #24 (Differentiator).
+- **Dogfood environment live.** "FlowOS Development" org (id:109) running locally — 8-stage Kanban, 15 work items loaded, MCP server registered in `.claude/settings.json`. FlowOS now manages its own development.
+- FEAT.25338 (MCP → REST API refactor) is in **Todo** — the first item to pull into Discovery. Requires Bearer token auth middleware first.
+- PM2 manages the API server (flowos-api). Admin UI built and served at `/admin/`.
 
 ## Next Up
-1. **Bulk ops integration tests** — `tests/bulk-ops.test.js` (deferred since Session 26); happy path + partial-success case.
-2. **Stage-evidence requirements** — per-stage named attachment slots ("Permit to Operate") that gate transitions. Brainstorm before planning.
-3. **Open-source release prep** — README, LICENSE, seed-and-go (`docker-compose up` → working board), cross-instance service requests.
+1. **Bearer token auth middleware** — implement `Authorization: Bearer fos_ak_...` in `requireAuth`. Required before MCP→REST refactor can start.
+2. **Add yourself to flowos-dev org** — Org Center → Members in the running instance.
+3. **Bulk ops integration tests** (DEBT.25342) — `tests/bulk-ops.test.js`; happy path + partial-success.
 
 ## Blockers
-- `FLOWOS_ENCRYPTION_KEY` (32-byte hex) and `FLOWOS_AGENT_USER_ID` must be set in `.env` for Context v1 features to work. Not blockers for dev, but required before any org can configure AI models or run the MCP server.
+- PM2 launchd registration not yet confirmed (sudo command provided — needs to be run in terminal).
+- Bearer token auth unimplemented — blocks MCP→REST refactor (FEAT.25338).
 
 ## Last Updated
-2026-06-15 — by session-close (tier: Full)
+2026-06-16 — by session-close (tier: Full)
