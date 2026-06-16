@@ -4,5 +4,17 @@
       "Bash(npm test)",
       "Bash(node api/server.js)"
     ]
+  },
+  "mcpServers": {
+    "flowos": {
+      "command": "node",
+      "args": [
+        "/Users/chris/Documents/ai/flowos/mcp/flowos-context-server.js"
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://flowos:flowos_dev@localhost:5432/flowos",
+        "FLOWOS_AGENT_USER_ID": "309"
+      }
+    }
   }
 }
