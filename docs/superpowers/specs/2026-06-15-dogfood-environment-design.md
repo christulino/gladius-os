@@ -166,6 +166,12 @@ Loaded by `scripts/load-dogfood-items.js` via `POST /admin/api/work-items`. All 
 | Cross-org flow visibility (Network Board) | Feature | Killer differentiator; designed, not built |
 | Blocking chain analysis | Feature | Neo4j-backed; "what's blocking what" across the system |
 
+### Priority 2 (continued)
+
+| Title | Type | Notes |
+|-------|------|-------|
+| Apply skills to work items | Feature | On-demand agent skill palette on any work item — distinct from playbooks (which are automated and stage-triggered). User selects a named skill (architecture review, BDD, UX design, proofreading, Gherkin, code review, root cause analysis, reproduce bug, etc.) and invokes it against the current work item. The agent executes with full context (journal, org context, ancestors) and surfaces output. The user responds interactively; the agent can act on that response via MCP (write context entries, transition the item, add comments). Skills write back to the journal using the appropriate entry types — Gherkin → `acceptance`, architecture review → `design`/`decision`, code review → `note`. Completes the agent interaction model: playbooks for automation, skills for on-demand interrogation. |
+
 ### Priority 3 (low — backlog depth)
 
 | Title | Type | Notes |
