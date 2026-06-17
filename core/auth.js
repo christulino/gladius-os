@@ -62,15 +62,33 @@ export function createSessionMiddleware() {
 // ─── Route guards ──────────────────────────────────────────────────────────
 
 /**
- * Middleware: requires an authenticated session.
+ * Middleware: requires an authenticated session OR a valid Bearer API token.
  * Attaches req.userId for downstream use.
+ *
+ * Auth order: Bearer token → session. Bearer is required for non-human callers
+ * (MCP server, automation) which can't maintain a cookie session.
  */
-export function requireAuth(req, res, next) {
-  if (req.session?.userId) {
-    req.userId = req.session.userId
-    next()
-  } else {
+export async function requireAuth(req, res, next) {
+  try {
+    const authHeader = req.headers['authorization']
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7)
+      const user = await findUserByApiToken(token)
+      if (user) {
+        req.userId = user.id
+        return next()
+      }
+      return res.status(401).json({ error: 'Invalid API token' })
+    }
+
+    if (req.session?.userId) {
+      req.userId = req.session.userId
+      return next()
+    }
+
     res.status(401).json({ error: 'Authentication required' })
+  } catch (err) {
+    next(err)
   }
 }
 
@@ -112,6 +130,15 @@ export async function findUserById(id) {
   const result = await query(
     'SELECT id, uri, email, display_name, is_admin, is_active FROM blueprint.users WHERE id = $1',
     [id]
+  )
+  return result.rows[0] || null
+}
+
+export async function findUserByApiToken(token) {
+  if (!token?.startsWith('fos_ak_')) return null
+  const result = await query(
+    'SELECT id, uri, email, display_name, is_admin, is_active, is_agent FROM blueprint.users WHERE api_token = $1 AND is_active = true',
+    [token]
   )
   return result.rows[0] || null
 }

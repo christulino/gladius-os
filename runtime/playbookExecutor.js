@@ -77,23 +77,26 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
     ].filter(Boolean).join('\n')
 
     // 6. Call the AI model
+    const maxTokens = meta?.max_tokens ?? 4096
     const client = new Anthropic({ apiKey: config.apiKey })
     const response = await client.messages.create(
       {
         model:      config.model,
-        max_tokens: 2048,
+        max_tokens: maxTokens,
         system:     systemPrompt,
         messages:   [{ role: 'user', content: userPrompt }],
       },
-      { timeout: 60_000 }
+      { timeout: 90_000 }
     )
 
     const rawText = response.content[0]?.text ?? ''
 
-    // 7. Parse response — expect a JSON array; fall back to a single note
+    // 7. Parse response — strip all markdown code fences, then extract the JSON array.
+    //    Fall back to a single note if parsing fails (truncated response, non-JSON output, etc.)
     let entries = []
     try {
-      const match = rawText.match(/\[[\s\S]*\]/)
+      const stripped = rawText.replace(/```(?:json)?\n?/g, '').replace(/\n?```/g, '')
+      const match = stripped.match(/\[[\s\S]*\]/)
       if (match) entries = JSON.parse(match[0])
     } catch {
       entries = [{ type: 'note', title: 'AI Analysis', content: rawText }]
