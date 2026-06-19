@@ -1,8 +1,4 @@
 // mcp/http-client.js
-// Authenticated HTTP wrapper for the FlowOS REST API.
-// Used by the MCP server to make all API calls via Bearer token instead of
-// direct database access.
-
 const API_KEY  = process.env.FLOWOS_API_KEY
 const BASE_URL = process.env.FLOWOS_API_BASE_URL ?? 'http://localhost:3000'
 
@@ -15,31 +11,14 @@ const BASE_HEADERS = {
 
 const MAX_RETRIES = 3
 
-/**
- * Exponential backoff helper.
- * @param {number} attempt - Zero-based retry index (0 = first retry).
- * @returns {number} Delay in milliseconds.
- */
 function backoffDelay(attempt) {
   return 100 * (2 ** attempt)
 }
 
-/**
- * Sleep for `ms` milliseconds.
- * @param {number} ms
- * @returns {Promise<void>}
- */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-/**
- * Core fetch wrapper with retry logic.
- * @param {string} url - Full URL to fetch.
- * @param {RequestInit} options - fetch options.
- * @param {number} [attempt=0] - Current attempt index (0-based).
- * @returns {Promise<unknown>} Parsed JSON response, or null on 404.
- */
 async function request(url, options, attempt = 0) {
   const res = await fetch(url, options)
 
@@ -84,12 +63,6 @@ async function request(url, options, attempt = 0) {
   throw new Error(`FlowOS API error (${status}): ${body}`)
 }
 
-/**
- * Authenticated GET request.
- * @param {string} path - API path, e.g. '/admin/api/work-items/42'
- * @param {Record<string, string|number|boolean>} [params={}] - Query string params.
- * @returns {Promise<unknown>} Parsed JSON, or null on 404.
- */
 export async function apiGet(path, params = {}) {
   const url = new URL(`${BASE_URL}${path}`)
   for (const [key, value] of Object.entries(params)) {
@@ -100,12 +73,6 @@ export async function apiGet(path, params = {}) {
   return request(url.toString(), { method: 'GET', headers: BASE_HEADERS })
 }
 
-/**
- * Authenticated POST request.
- * @param {string} path - API path, e.g. '/admin/api/work-items'
- * @param {Record<string, unknown>} [body={}] - JSON request body.
- * @returns {Promise<unknown>} Parsed JSON, or null on 404.
- */
 export async function apiPost(path, body = {}) {
   const url = `${BASE_URL}${path}`
   return request(url, {
@@ -115,8 +82,4 @@ export async function apiPost(path, body = {}) {
   })
 }
 
-/**
- * Names of MCP tools that perform write operations.
- * Used by the rate limiter (Task 4) to apply stricter limits.
- */
 export const WRITE_TOOLS = new Set(['write_context_entry', 'add_comment', 'transition_work_item'])
