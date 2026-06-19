@@ -4731,6 +4731,7 @@ router.delete('/work-items/:id/context-entries/:entryId', async (req, res, next)
 router.get('/work-items/:id/assembled-context', async (req, res, next) => {
   try {
     const workItemId = parseInt(req.params.id, 10)
+    if (!Number.isInteger(workItemId)) return res.status(400).json({ error: 'invalid work item id' })
     const { rows: wiRows } = await query(
       'SELECT owner_org_id FROM runtime.work_items WHERE id = $1',
       [workItemId],

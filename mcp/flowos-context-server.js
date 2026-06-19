@@ -3,18 +3,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { listContextEntries, createContextEntry } from '../runtime/contextEntries.js'
-import { listOrgContext } from '../runtime/orgContext.js'
-import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
-import { parse } from '../runtime/search/jql.js'
-import { compile } from '../runtime/search/jqlCompiler.js'
-import { pool } from '../db/postgres.js'
-
-// Agent identity — must be set to a valid blueprint.users.id for tools that
-// write records (add_comment, transition_work_item). Callers cannot override this.
-const AGENT_USER_ID = process.env.FLOWOS_AGENT_USER_ID
-  ? parseInt(process.env.FLOWOS_AGENT_USER_ID, 10)
-  : null
+import { apiGet, apiPost } from './http-client.js'
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -150,99 +139,69 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
 
       case 'list_context_entries': {
-        const rows = await listContextEntries(args.work_item_id, { types: args.types })
-        return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] }
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/context-entries`,
+          args.types?.length ? { types: args.types.join(',') } : {}
+        )
+        return { content: [{ type: 'text', text: JSON.stringify(data.rows ?? data, null, 2) }] }
       }
 
       case 'write_context_entry': {
-        const entry = await createContextEntry(args.work_item_id, {
+        const entry = await apiPost(`/admin/api/work-items/${args.work_item_id}/context-entries`, {
           type:       args.type,
           title:      args.title ?? null,
           content:    args.content,
           visibility: args.visibility ?? 'item',
-          isAgent:    args.is_agent !== false,
-          authorId:   null,
         })
         return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
       }
 
       case 'get_assembled_context': {
-        const meta = {
-          context: {
-            pull: [
-              ...(args.pull_types || []),
-              ...(args.include_ancestors ? ['ancestors'] : []),
-            ],
-            org: args.org_types || [],
-          },
-        }
-        const ctx = await assembleContext(args.work_item_id, args.org_id, meta)
-        const formatted = formatContextForPrompt(ctx)
-        return { content: [{ type: 'text', text: formatted || '(no context)' }] }
+        const params = {}
+        if (args.pull_types?.length) params.pull_types = args.pull_types.join(',')
+        if (args.org_types?.length)  params.org_types  = args.org_types.join(',')
+        if (args.include_ancestors)  params.include_ancestors = 'true'
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/assembled-context`, params)
+        return { content: [{ type: 'text', text: data?.context ?? '(no context)' }] }
       }
 
       case 'list_org_context': {
-        const rows = await listOrgContext(args.org_id, { types: args.types })
-        return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] }
+        const data = await apiGet(`/admin/api/organizations/${args.org_id}/context`,
+          args.types?.length ? { types: args.types.join(',') } : {}
+        )
+        return { content: [{ type: 'text', text: JSON.stringify(data.rows ?? data, null, 2) }] }
       }
 
       case 'get_work_item': {
-        // Scope to org_id to prevent cross-org IDOR
-        const r = await pool.query(`
-          SELECT wi.id, wi.display_key, wi.title, wi.description,
-                 wi.current_substate, wi.priority, wi.tags, wi.estimate, wi.estimate_unit,
-                 wi.due_date, wi.is_expedited, wi.work_nature, wi.origin,
-                 wi.created_at, wi.updated_at, wi.started_at, wi.resolved_at,
-                 s.name  AS stage_name,  s.stage_class,
-                 wit.name AS type_name,  wit.icon AS type_icon,
-                 o.slug  AS org_slug,    o.name AS org_name
-          FROM runtime.work_items wi
-          LEFT JOIN blueprint.stages             s   ON s.id   = wi.current_stage_id
-          LEFT JOIN blueprint.work_item_types    wit ON wit.id = wi.work_item_type_id
-          LEFT JOIN blueprint.organizations      o   ON o.id   = wi.owner_org_id
-          WHERE wi.id = $1 AND wi.owner_org_id = $2
-        `, [args.work_item_id, args.org_id])
-        if (!r.rows.length) throw new Error(`Work item ${args.work_item_id} not found in org ${args.org_id}`)
-        return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}`)
+        if (!data) throw new Error(`Work item ${args.work_item_id} not found`)
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
       }
 
       case 'search_work_items': {
-        // Use the JQL compiler directly — the HTTP search endpoint requires a user session.
-        // Scope to the required org_id; no admin bypass.
         const limit = Math.min(args.limit ?? 20, 100)
-        const ast = parse(args.query)
-        const userCtx = {
-          userId: null,
-          orgIds: [args.org_id],
-          isAdmin: false,
-          doneRetentionDays: 90,
-          customFields: [],
-        }
-        const { sql, params } = compile(ast, userCtx)
-        const limitedSql = `${sql} LIMIT $${params.length + 1}`
-        const r = await pool.query(limitedSql, [...params, limit])
-        return { content: [{ type: 'text', text: JSON.stringify(r.rows, null, 2) }] }
+        const data = await apiGet('/admin/api/search', { q: args.query, limit })
+        return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? data, null, 2) }] }
       }
 
       case 'transition_work_item': {
-        if (!AGENT_USER_ID) throw new Error('FLOWOS_AGENT_USER_ID env var not set — cannot perform transitions')
-        const { prepareTransition, executeTransition } = await import('../runtime/transitions.js')
-        const prep = await prepareTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
-        if (!prep.canTransition) {
-          throw new Error(`Transition blocked: ${prep.reason ?? 'exit criteria not met'}`)
+        const prep = await apiGet(
+          `/admin/api/work-items/${args.work_item_id}/transition/prepare`,
+          { to_stage_id: args.to_stage_id }
+        )
+        if (!prep?.canTransition) {
+          throw new Error(`Transition blocked: ${prep?.blockedCriteria?.[0]?.reason ?? 'exit criteria not met'}`)
         }
-        const result = await executeTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
+        const result = await apiPost(`/admin/api/work-items/${args.work_item_id}/transition`, {
+          to_stage_id: args.to_stage_id,
+        })
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
       case 'add_comment': {
-        if (!AGENT_USER_ID) throw new Error('FLOWOS_AGENT_USER_ID env var not set — cannot post comments')
-        const r = await pool.query(`
-          INSERT INTO runtime.work_item_comments (work_item_id, author_user_id, body)
-          VALUES ($1, $2, $3)
-          RETURNING id, work_item_id, author_user_id, body, created_at, updated_at
-        `, [args.work_item_id, AGENT_USER_ID, args.body])
-        return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
+        const comment = await apiPost(`/admin/api/work-items/${args.work_item_id}/comments`, {
+          body: args.body,
+        })
+        return { content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }] }
       }
 
       default:
