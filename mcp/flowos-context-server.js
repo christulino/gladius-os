@@ -3,7 +3,12 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { apiGet, apiPost } from './http-client.js'
+import { apiGet, apiPost, WRITE_TOOLS } from './http-client.js'
+
+const WRITE_LIMIT = process.env.FLOWOS_MCP_WRITE_RATE_LIMIT
+  ? parseInt(process.env.FLOWOS_MCP_WRITE_RATE_LIMIT, 10)
+  : null
+let writeCount = 0
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -136,6 +141,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
   try {
+    if (WRITE_TOOLS.has(name) && WRITE_LIMIT !== null && writeCount >= WRITE_LIMIT) {
+      return {
+        content: [{ type: 'text', text: `Error: write rate limit reached (${WRITE_LIMIT} writes per session). Set FLOWOS_MCP_WRITE_RATE_LIMIT to increase.` }],
+        isError: true,
+      }
+    }
+
     switch (name) {
 
       case 'list_context_entries': {
@@ -152,6 +164,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           content:    args.content,
           visibility: args.visibility ?? 'item',
         })
+        writeCount++
         return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
       }
 
@@ -194,6 +207,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const result = await apiPost(`/admin/api/work-items/${args.work_item_id}/transition`, {
           to_stage_id: args.to_stage_id,
         })
+        writeCount++
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
@@ -201,6 +215,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const comment = await apiPost(`/admin/api/work-items/${args.work_item_id}/comments`, {
           body: args.body,
         })
+        writeCount++
         return { content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }] }
       }
 
