@@ -186,7 +186,7 @@ export default function App() {
       {/* Sidebar (right) */}
       <nav className="w-44 flex-shrink-0 border-l border-border bg-card flex flex-col">
         <div className="px-3 py-3 border-b border-border flex items-center justify-between">
-          <span className="text-sm font-semibold text-foreground">Flow OS</span>
+          <span className="text-sm font-semibold text-foreground">Gladius</span>
           <div className="flex items-center gap-1">
             <button
               className="p-1 rounded hover:bg-black/[0.04] text-muted-foreground hover:text-foreground transition-colors"

@@ -558,7 +558,7 @@ export default function IntakeForm({ slug }) {
       <div className="border-t border-border bg-card mt-8">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <p className="text-xs text-muted-foreground/50 text-center">
-            Powered by Flow OS
+            Powered by Gladius
           </p>
         </div>
       </div>
