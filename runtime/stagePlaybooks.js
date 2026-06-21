@@ -45,8 +45,8 @@ export async function updatePlaybook(id, orgId, { name, content, isActive }) {
   const r = await pool.query(
     `UPDATE blueprint.stage_playbooks sp SET ${sets.join(',')}
      WHERE sp.id=$${params.length - 1} AND (
-       EXISTS (SELECT 1 FROM blueprint.stages s JOIN blueprint.workflows w ON w.id=s.workflow_id WHERE s.id=sp.stage_id AND w.org_id=$${params.length})
-       OR EXISTS (SELECT 1 FROM blueprint.work_item_types wit WHERE wit.id=sp.wit_type_id AND wit.org_id=$${params.length})
+       EXISTS (SELECT 1 FROM blueprint.stages s JOIN blueprint.workflows w ON w.id=s.workflow_id WHERE s.id=sp.stage_id AND w.owner_org_id=$${params.length})
+       OR EXISTS (SELECT 1 FROM blueprint.work_item_types wit WHERE wit.id=sp.wit_type_id AND wit.owner_org_id=$${params.length})
      )
      RETURNING *`,
     params
@@ -58,8 +58,8 @@ export async function deletePlaybook(id, orgId) {
   const r = await pool.query(
     `DELETE FROM blueprint.stage_playbooks sp
      WHERE sp.id=$1 AND (
-       EXISTS (SELECT 1 FROM blueprint.stages s JOIN blueprint.workflows w ON w.id=s.workflow_id WHERE s.id=sp.stage_id AND w.org_id=$2)
-       OR EXISTS (SELECT 1 FROM blueprint.work_item_types wit WHERE wit.id=sp.wit_type_id AND wit.org_id=$2)
+       EXISTS (SELECT 1 FROM blueprint.stages s JOIN blueprint.workflows w ON w.id=s.workflow_id WHERE s.id=sp.stage_id AND w.owner_org_id=$2)
+       OR EXISTS (SELECT 1 FROM blueprint.work_item_types wit WHERE wit.id=sp.wit_type_id AND wit.owner_org_id=$2)
      )
      RETURNING id`,
     [id, orgId]
