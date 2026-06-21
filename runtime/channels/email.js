@@ -30,7 +30,7 @@ export async function deliverEmail({ to, subject, text, html }) {
   if (mode === 'noop') return { ok: true, status: 200, noop: true }
   try {
     const info = await transport.sendMail({
-      from: process.env.SMTP_FROM || 'FlowOS <no-reply@flowos.local>',
+      from: process.env.SMTP_FROM || 'Gladius <no-reply@gladius.local>',
       to, subject, text, html,
     })
     return { ok: true, status: 200, messageId: info.messageId }
@@ -41,14 +41,14 @@ export async function deliverEmail({ to, subject, text, html }) {
 
 export function renderRealtimeBody(notification, workItem, baseUrl) {
   const link = `${baseUrl}/admin/work-items/${workItem.id}`
-  const subject = `[FlowOS] ${notification.summary}`
+  const subject = `[Gladius] ${notification.summary}`
   const text = `${notification.summary}\n\n${link}\n`
-  const html = `<p>${notification.summary}</p><p><a href="${link}">Open in FlowOS</a></p>`
+  const html = `<p>${notification.summary}</p><p><a href="${link}">Open in Gladius</a></p>`
   return { subject, text, html }
 }
 
 export function renderDigestBody(notifications, baseUrl) {
-  const subject = `${notifications.length} updates from FlowOS — ${new Date().toDateString()}`
+  const subject = `${notifications.length} updates from Gladius — ${new Date().toDateString()}`
   const lines = notifications.map(n => `• ${n.summary}\n  ${baseUrl}/admin/work-items/${n.work_item_id}`)
   const text = lines.join('\n\n')
   const html = '<ul>' +

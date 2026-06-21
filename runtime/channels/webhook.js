@@ -20,8 +20,8 @@ export async function deliverWebhook({ url, secret, deliveryId, body, timeoutMs 
       signal: controller.signal,
       headers: {
         'Content-Type':          'application/json',
-        'X-FlowOS-Signature':    signBody(bodyString, secret),
-        'X-FlowOS-Delivery-Id':  String(deliveryId),
+        'X-Gladius-Signature':    signBody(bodyString, secret),
+        'X-Gladius-Delivery-Id':  String(deliveryId),
       },
       body: bodyString,
     })

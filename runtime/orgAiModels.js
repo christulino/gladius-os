@@ -3,10 +3,10 @@ import crypto from 'node:crypto'
 import { pool } from '../db/postgres.js'
 
 const ALGO = 'aes-256-gcm'
-const KEY_HEX = process.env.FLOWOS_ENCRYPTION_KEY
+const KEY_HEX = process.env.GLADIUS_ENCRYPTION_KEY
 
 function getKey() {
-  if (!KEY_HEX) throw new Error('FLOWOS_ENCRYPTION_KEY env var not set')
+  if (!KEY_HEX) throw new Error('GLADIUS_ENCRYPTION_KEY env var not set')
   return Buffer.from(KEY_HEX, 'hex')
 }
 

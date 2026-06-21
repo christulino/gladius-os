@@ -4838,7 +4838,7 @@ router.post('/organizations/:orgId/playbooks/ai-assist', async (req, res, next) 
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const client = new Anthropic({ apiKey: cfg.apiKey })
 
-    const systemPrompt = `You are an expert at writing FlowOS stage playbooks.
+    const systemPrompt = `You are an expert at writing Gladius stage playbooks.
 A playbook is a markdown file with YAML frontmatter that tells a stage's AI agent what context to pull and what to write back.
 
 Frontmatter fields:

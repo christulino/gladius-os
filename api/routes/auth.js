@@ -136,7 +136,7 @@ router.post('/login', async (req, res, next) => {
 router.post('/logout', (req, res, next) => {
   req.session.destroy((err) => {
     if (err) return next(err)
-    res.clearCookie('flowos.sid')
+    res.clearCookie('gladius.sid')
     res.json({ ok: true })
   })
 })

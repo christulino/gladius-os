@@ -46,7 +46,7 @@ export function createSessionMiddleware() {
       tableName: 'sessions',
       createTableIfMissing: false,  // We create it in migration 010
     }),
-    secret: process.env.SESSION_SECRET || 'flowos-dev-secret-change-in-production',
+    secret: process.env.SESSION_SECRET || 'gladius-dev-secret-change-in-production',
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -55,7 +55,7 @@ export function createSessionMiddleware() {
       sameSite: 'lax',
       secure:   process.env.NODE_ENV === 'production',
     },
-    name: 'flowos.sid',
+    name: 'gladius.sid',
   })
 }
 

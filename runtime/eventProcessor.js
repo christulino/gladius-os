@@ -19,7 +19,7 @@ import { auditLogHandler, handlesEventType as auditHandles } from './subscribers
 import { notificationsHandler, handlesEventType as notificationsHandles } from './subscribers/notifications.js'
 import { searchIndexHandler, handlesEventType as searchIndexHandles } from './subscribers/searchIndex.js'
 
-const LOCK_KEY        = 0x0F105053   // 'FlOS' — unique FlowOS processor key
+const LOCK_KEY        = 0x0F105053   // 'FlOS' — unique Gladius processor key (value frozen — changing breaks advisory lock continuity)
 const SAFETY_POLL_MS  = 30_000
 const BATCH_SIZE      = 100
 

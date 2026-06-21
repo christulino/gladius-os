@@ -14,8 +14,8 @@
 
 import { createLocalStorage } from './localStorage.js'
 
-const TYPE = process.env.FLOWOS_STORAGE_TYPE || 'local'
-const LOCAL_DIR = process.env.FLOWOS_STORAGE_LOCAL_DIR || './uploads'
+const TYPE = process.env.GLADIUS_STORAGE_TYPE || 'local'
+const LOCAL_DIR = process.env.GLADIUS_STORAGE_LOCAL_DIR || './uploads'
 
 export function buildStorageKey(uuid) {
   return `${uuid.slice(0, 2)}/${uuid}`
@@ -28,15 +28,15 @@ export function getStorage() {
   if (TYPE === 'local') {
     _adapter = createLocalStorage(LOCAL_DIR)
   } else {
-    throw new Error(`unsupported FLOWOS_STORAGE_TYPE: ${TYPE} (only 'local' supported in v1)`)
+    throw new Error(`unsupported GLADIUS_STORAGE_TYPE: ${TYPE} (only 'local' supported in v1)`)
   }
   return _adapter
 }
 
-const _maxMb = parseInt(process.env.FLOWOS_MAX_ATTACHMENT_MB || '25', 10)
+const _maxMb = parseInt(process.env.GLADIUS_MAX_ATTACHMENT_MB || '25', 10)
 if (!Number.isFinite(_maxMb) || _maxMb <= 0) {
   throw new Error(
-    `FLOWOS_MAX_ATTACHMENT_MB must be a positive integer; got: ${JSON.stringify(process.env.FLOWOS_MAX_ATTACHMENT_MB)}`
+    `GLADIUS_MAX_ATTACHMENT_MB must be a positive integer; got: ${JSON.stringify(process.env.GLADIUS_MAX_ATTACHMENT_MB)}`
   )
 }
 export const MAX_ATTACHMENT_MB = _maxMb

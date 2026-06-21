@@ -19,7 +19,7 @@ describe('channels/webhook', () => {
       let body = ''
       req.on('data', d => body += d)
       req.on('end', () => {
-        receivedSig = req.headers['x-flowos-signature']
+        receivedSig = req.headers['x-gladius-signature']
         receivedBody = body
         res.writeHead(200); res.end('ok')
       })
@@ -83,7 +83,7 @@ describe('channels/agent — envelope', () => {
   it('wraps notification in prompt envelope using channel config', () => {
     const env = buildAgentEnvelope(
       {
-        system_prompt: 'You are FlowOS Assistant',
+        system_prompt: 'You are Gladius Assistant',
         context_template: 'Notification for {{ work_item.display_key }}: {{ summary }}',
       },
       {
@@ -91,7 +91,7 @@ describe('channels/agent — envelope', () => {
         work_item: { display_key: 'BUG.1' },
       },
     )
-    assert.equal(env.system_prompt, 'You are FlowOS Assistant')
+    assert.equal(env.system_prompt, 'You are Gladius Assistant')
     assert.match(env.instruction, /BUG\.1/)
     assert.match(env.instruction, /moved to Done/)
     assert.ok(env.context)

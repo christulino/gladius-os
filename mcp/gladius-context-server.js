@@ -1,5 +1,5 @@
-// mcp/flowos-context-server.js
-// FlowOS MCP stdio server — exposes 8 context/workflow tools to external AI agents.
+// mcp/gladius-context-server.js
+// Gladius MCP stdio server — exposes 8 context/workflow tools to external AI agents.
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -12,8 +12,8 @@ import { pool } from '../db/postgres.js'
 
 // Agent identity — must be set to a valid blueprint.users.id for tools that
 // write records (add_comment, transition_work_item). Callers cannot override this.
-const AGENT_USER_ID = process.env.FLOWOS_AGENT_USER_ID
-  ? parseInt(process.env.FLOWOS_AGENT_USER_ID, 10)
+const AGENT_USER_ID = process.env.GLADIUS_AGENT_USER_ID
+  ? parseInt(process.env.GLADIUS_AGENT_USER_ID, 10)
   : null
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ const TOOLS = [
   },
   {
     name: 'add_comment',
-    description: 'Add a comment to a work item. Author is the configured agent identity (FLOWOS_AGENT_USER_ID).',
+    description: 'Add a comment to a work item. Author is the configured agent identity (GLADIUS_AGENT_USER_ID).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -135,7 +135,7 @@ const TOOLS = [
 // ── Server setup ──────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'flowos-context', version: '1.0.0' },
+  { name: 'gladius-context', version: '1.0.0' },
   { capabilities: { tools: {} } }
 )
 
@@ -225,7 +225,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'transition_work_item': {
-        if (!AGENT_USER_ID) throw new Error('FLOWOS_AGENT_USER_ID env var not set — cannot perform transitions')
+        if (!AGENT_USER_ID) throw new Error('GLADIUS_AGENT_USER_ID env var not set — cannot perform transitions')
         const { prepareTransition, executeTransition } = await import('../runtime/transitions.js')
         const prep = await prepareTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
         if (!prep.canTransition) {
@@ -236,7 +236,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'add_comment': {
-        if (!AGENT_USER_ID) throw new Error('FLOWOS_AGENT_USER_ID env var not set — cannot post comments')
+        if (!AGENT_USER_ID) throw new Error('GLADIUS_AGENT_USER_ID env var not set — cannot post comments')
         const r = await pool.query(`
           INSERT INTO runtime.work_item_comments (work_item_id, author_user_id, body)
           VALUES ($1, $2, $3)
@@ -261,10 +261,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error('[flowos-mcp] Context server running on stdio')
+  console.error('[gladius-mcp] Context server running on stdio')
 }
 
 main().catch(err => {
-  console.error('[flowos-mcp] Fatal:', err)
+  console.error('[gladius-mcp] Fatal:', err)
   process.exit(1)
 })

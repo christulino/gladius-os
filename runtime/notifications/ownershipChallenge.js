@@ -1,6 +1,6 @@
 /**
  * runtime/notifications/ownershipChallenge.js
- * POSTs { type:'flowos.verify', token } to a URL and verifies the response
+ * POSTs { type:'gladius.verify', token } to a URL and verifies the response
  * JSON body echoes the same token. Used to gate webhook / agent channel
  * activation against the amplifier attack.
  */
@@ -19,7 +19,7 @@ export async function runChallenge({ url, timeoutMs = 10000, token = generateTok
       method: 'POST',
       signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'flowos.verify', token }),
+      body: JSON.stringify({ type: 'gladius.verify', token }),
     })
     if (!res.ok) return { ok: false, reason: `status=${res.status}` }
     const body = await res.json().catch(() => ({}))

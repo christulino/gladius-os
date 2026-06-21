@@ -1,6 +1,6 @@
 version: "3.9"
 
-# Flow OS — Local Development Environment
+# Gladius — Local Development Environment
 # Runs PostgreSQL, Neo4j, and MinIO (S3-compatible object storage for evidence files)
 #
 # Start:   docker compose up -d
@@ -16,7 +16,7 @@ services:
   # ===========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: flowos-postgres
+    container_name: gladius-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB:       flowos
@@ -40,7 +40,7 @@ services:
   # ===========================================================================
   neo4j:
     image: neo4j:5-community
-    container_name: flowos-neo4j
+    container_name: gladius-neo4j
     restart: unless-stopped
     environment:
       NEO4J_AUTH: neo4j/flowos_dev
@@ -66,7 +66,7 @@ services:
   # ===========================================================================
   minio:
     image: minio/minio:latest
-    container_name: flowos-minio
+    container_name: gladius-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

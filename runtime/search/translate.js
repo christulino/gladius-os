@@ -83,7 +83,7 @@ function buildSystemPrompt(catalog) {
         `  ${f.key} (${f.type}, org: ${f.org_slug}): ${f.description}`
       ).join('\n')
 
-  return `You translate natural language requests into JQL queries for FlowOS.
+  return `You translate natural language requests into JQL queries for Gladius.
 
 ## JQL grammar
 Predicates: field op value | field IN (values) | field NOT IN (values) | field IS [NOT] EMPTY | field ~ "text" | field !~ "text"
