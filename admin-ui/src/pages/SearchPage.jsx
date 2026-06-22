@@ -1,159 +1,201 @@
-import { useState, useEffect } from 'react'
-import { api, searchApi, savedFiltersApi } from '@/lib/api'
-import JQLEditor from '@/components/JQLEditor'
-import SavedFiltersList from '@/components/SavedFiltersList'
-import SearchResultsList from '@/components/SearchResultsList'
-import SavedFilterFormDrawer from '@/components/SavedFilterFormDrawer'
-import { WorkItemDetail } from '@/components/WorkItemDetail'
+import { useState, useEffect, useRef } from 'react'
+import { searchApi, savedFiltersApi } from '@/lib/api'
+import { Search, X, Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 
-export default function SearchPage() {
-  const [query, setQuery]                       = useState('')
-  const [mode, setMode]                         = useState('jql')
-  const [filters, setFilters]                   = useState([])
-  const [rows, setRows]                         = useState([])
-  const [nextBefore, setNextBefore]             = useState(null)
-  const [error, setError]                       = useState(null)
-  const [running, setRunning]                   = useState(false)
-  const [openItemId, setOpenItemId]             = useState(null)
-  const [detailOpen, setDetailOpen]             = useState(false)
-  const [fieldCatalog, setFieldCatalog]         = useState(null)
-  const [translatorAvailable, setTranslatorAvailable] = useState(false)
-  const [saveDrawerOpen, setSaveDrawerOpen]     = useState(false)
-  const [editingFilter, setEditingFilter]       = useState(null)
-  const [userOrgs, setUserOrgs]                 = useState([])
+const STAGE_CLASSES = [
+  { value: '', label: 'Any status' },
+  { value: 'active', label: 'Active' },
+  { value: 'queued', label: 'Queued' },
+  { value: 'done', label: 'Done' },
+]
+
+export default function SearchPage({ onOpenWorkItem }) {
+  const [input, setInput]               = useState('')
+  const [filters, setFilters]           = useState({})
+  const [rows, setRows]                 = useState([])
+  const [nextBefore, setNextBefore]     = useState(null)
+  const [loading, setLoading]           = useState(false)
+  const [translating, setTranslating]   = useState(false)
+  const [error, setError]               = useState(null)
+  const [savedFilters, setSavedFilters] = useState([])
+  const [fieldMeta, setFieldMeta]       = useState(null)
+  const inputRef = useRef(null)
 
   useEffect(() => {
-    savedFiltersApi.list().then(r => setFilters(r.rows || [])).catch(() => {})
-    searchApi.fields().then(r => {
-      setFieldCatalog(r)
-      setTranslatorAvailable(r.translator_available)
-    }).catch(() => {})
-    api.organizations().then(r => setUserOrgs(r.rows || r || [])).catch(() => {})
+    inputRef.current?.focus()
+    searchApi.fields().then(r => setFieldMeta(r)).catch(() => {})
+    savedFiltersApi.list().then(r => setSavedFilters(r.rows || [])).catch(() => {})
   }, [])
 
-  const run = async (overrideQuery) => {
-    const qToRun = overrideQuery ?? query
-    if (!qToRun.trim()) return
-    setRunning(true)
+  async function run(activeFilters, reset = true) {
+    if (!Object.values(activeFilters).some(Boolean)) return
+    setLoading(true)
     setError(null)
     try {
-      let jql = qToRun
-      if (mode === 'ask') {
-        const tr = await searchApi.translate(qToRun)
-        jql = tr.jql
-        setQuery(jql)
-        setMode('jql')
-      }
-      const r = await searchApi.query(jql, { limit: 50, include: ['snippet'] })
-      setRows(r.rows)
+      const before = reset ? undefined : nextBefore
+      const r = await searchApi.query(activeFilters, { limit: 50, include: ['snippet'], ...(before ? { before } : {}) })
+      setRows(reset ? r.rows : prev => [...prev, ...r.rows])
       setNextBefore(r.next_before)
-    } catch (err) {
-      const body = err.body || {}
-      let msg = body.message || err.message || String(err)
-      if (body.position !== undefined && body.snippet) {
-        msg += ` (near "${body.snippet}" at position ${body.position})`
-      }
-      if (body.suggestion) {
-        msg += ` — did you mean "${body.suggestion}"?`
-      }
-      setError(msg)
-      setRows([])
-      setNextBefore(null)
+    } catch (e) {
+      setError(e.message)
     } finally {
-      setRunning(false)
+      setLoading(false)
     }
   }
 
-  const loadMore = async () => {
-    if (!nextBefore) return
-    try {
-      const r = await searchApi.query(query, { before: nextBefore, limit: 50, include: ['snippet'] })
-      setRows([...rows, ...r.rows])
-      setNextBefore(r.next_before)
-    } catch {
-      // Ignore: keep what we have.
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!input.trim()) return
+    if (fieldMeta?.translator_available) {
+      setTranslating(true)
+      try {
+        const tr = await searchApi.translate(input.trim())
+        const next = { ...tr.filters, ...(tr.filters.type_name ? { type_name: tr.filters.type_name } : {}) }
+        setFilters(next)
+        await run(next)
+      } catch {
+        const kw = { keyword: input.trim() }
+        setFilters(kw)
+        await run(kw)
+      } finally {
+        setTranslating(false)
+      }
+    } else {
+      const kw = { keyword: input.trim() }
+      setFilters(kw)
+      await run(kw)
     }
   }
 
-  const selectFilter = (f) => {
-    setQuery(f.jql)
-    setMode('jql')
-    setEditingFilter(f)
-    run(f.jql)
+  function loadSavedFilter(f) {
+    setFilters(f.filter_params || {})
+    setInput(f.name)
+    run(f.filter_params || {})
   }
 
-  const handleDelete = async (f) => {
-    await savedFiltersApi.remove(f.id)
-    setFilters(prev => prev.filter(p => p.id !== f.id))
-    if (editingFilter?.id === f.id) setEditingFilter(null)
+  function setFilter(key, value) {
+    const next = { ...filters, [key]: value || undefined }
+    if (!value) delete next[key]
+    setFilters(next)
+    run(next)
   }
 
-  const handleEdit = (f) => {
-    setEditingFilter(f)
-    setQuery(f.jql)
-    setSaveDrawerOpen(true)
+  function clearFilters() {
+    setFilters({})
+    setRows([])
+    setNextBefore(null)
+    setInput('')
   }
 
-  const onSaved = (saved) => {
-    setFilters(prev => {
-      const exists = prev.find(p => p.id === saved.id)
-      return exists ? prev.map(p => p.id === saved.id ? saved : p) : [...prev, saved]
-    })
-    setEditingFilter(saved)
-  }
-
-  const openItem = (id) => { setOpenItemId(id); setDetailOpen(true) }
+  const activeFilterCount = Object.values(filters).filter(Boolean).length
 
   return (
-    <div className="flex h-full">
-      <SavedFiltersList
-        filters={filters}
-        onSelect={selectFilter}
-        onNew={() => { setEditingFilter(null); setSaveDrawerOpen(true) }}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
-      <div className="flex-1 flex flex-col">
-        <div className="p-3 border-b border-border">
-          <JQLEditor
-            value={query}
-            onChange={setQuery}
-            onRun={() => run()}
-            mode={mode}
-            onModeChange={setMode}
-            fieldCatalog={fieldCatalog}
-            translatorAvailable={translatorAvailable}
-            error={error}
-          />
-        </div>
-        <div className="flex items-center justify-between p-3 border-b border-border">
-          <div className="text-xs text-foreground/60">
-            {rows.length} result{rows.length === 1 ? '' : 's'}{nextBefore ? '+' : ''}
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="p-4 border-b border-border space-y-3">
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="Describe what you're looking for…"
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+            />
           </div>
           <button
-            onClick={() => { setEditingFilter(null); setSaveDrawerOpen(true) }}
-            disabled={!query.trim()}
-            className="text-xs px-3 py-1 rounded border border-border hover:bg-black/[0.03] disabled:opacity-50"
-          >Save filter</button>
+            type="submit"
+            disabled={loading || translating || !input.trim()}
+            className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {(loading || translating) && <Loader2 className="h-3 w-3 animate-spin" />}
+            Search
+          </button>
+          {activeFilterCount > 0 && (
+            <button type="button" onClick={clearFilters} className="px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </form>
+
+        <div className="flex gap-2 items-center flex-wrap">
+          <select
+            value={filters.stage_class || ''}
+            onChange={e => setFilter('stage_class', e.target.value)}
+            className="text-xs border border-border rounded px-2 py-1 bg-background"
+          >
+            {STAGE_CLASSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <button
+            type="button"
+            onClick={() => setFilter('assignee_id', filters.assignee_id === 'me' ? '' : 'me')}
+            className={`text-xs px-2 py-1 rounded border ${filters.assignee_id === 'me' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'}`}
+          >
+            My items
+          </button>
         </div>
-        <div className="flex-1 overflow-auto">
-          {running && <div className="p-6 text-xs">Running…</div>}
-          {!running && <SearchResultsList rows={rows} onOpen={openItem} hasMore={!!nextBefore} onLoadMore={loadMore} />}
-        </div>
+
+        {savedFilters.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            {savedFilters.map(f => (
+              <button
+                key={f.id}
+                onClick={() => loadSavedFilter(f)}
+                className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+              >
+                {f.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      <WorkItemDetail
-        workItemId={openItemId}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-      />
-      <SavedFilterFormDrawer
-        open={saveDrawerOpen}
-        onOpenChange={setSaveDrawerOpen}
-        currentJql={query}
-        editing={editingFilter}
-        userOrgs={userOrgs}
-        onSaved={onSaved}
-      />
+
+      <div className="flex-1 overflow-y-auto">
+        {error && (
+          <div className="p-4 text-xs text-destructive">{error}</div>
+        )}
+        {!loading && rows.length === 0 && activeFilterCount > 0 && (
+          <div className="p-4 text-xs text-muted-foreground">No results.</div>
+        )}
+        {rows.map(row => (
+          <button
+            key={row.id}
+            onClick={() => onOpenWorkItem?.(row.id)}
+            className="w-full text-left px-4 py-3 border-b border-border hover:bg-black/[0.03] transition-colors"
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="text-xs font-medium text-muted-foreground font-mono">{row.display_key}</span>
+              <span className="text-sm font-medium text-foreground truncate flex-1">{row.title}</span>
+              {row.stage_class && (
+                <Badge variant={row.stage_class === 'done' ? 'default' : row.stage_class === 'active' ? 'blue' : 'muted'} className="shrink-0">
+                  {row.status}
+                </Badge>
+              )}
+            </div>
+            {row.snippet && (
+              <div
+                className="mt-1 text-xs text-muted-foreground line-clamp-2"
+                dangerouslySetInnerHTML={{ __html: row.snippet }}
+              />
+            )}
+            <div className="mt-1 flex gap-2 text-xs text-muted-foreground">
+              <span>{row.type_name}</span>
+              {row.org_name && <span>· {row.org_name}</span>}
+              {row.assignee_name && <span>· {row.assignee_name}</span>}
+            </div>
+          </button>
+        ))}
+        {nextBefore && (
+          <button
+            onClick={() => run(filters, false)}
+            disabled={loading}
+            className="w-full p-3 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {loading ? 'Loading…' : 'Load more'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

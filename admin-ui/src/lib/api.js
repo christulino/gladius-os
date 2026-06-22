@@ -122,9 +122,7 @@ export const api = {
 
   // Work Item Search + Linking
   searchWorkItems:   async (q) => {
-    const escaped = String(q).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-    const jql = `text ~ "${escaped}" ORDER BY updated DESC`
-    const res = await apiFetch(`/search?q=${encodeURIComponent(jql)}&limit=20`)
+    const res = await searchApi.query({ keyword: q }, { limit: 20 })
     return { rows: res.rows || [], count: (res.rows || []).length }
   },
   addWorkItemLink:   (id, target_work_item_id, link_type) => apiFetch(`/work-items/${id}/links`, { method: 'POST', body: JSON.stringify({ target_work_item_id, link_type }) }),
@@ -330,11 +328,17 @@ export const forms = {
 // ─── Search v1 ──────────────────────────────────────────────────────────────
 
 export const searchApi = {
-  query: (q, opts = {}) => {
-    const params = new URLSearchParams({ q })
-    if (opts.before) params.set('before', opts.before)
-    if (opts.limit) params.set('limit', opts.limit)
-    if (opts.include) params.set('include', opts.include.join(','))
+  query: (filters = {}, opts = {}) => {
+    const params = new URLSearchParams()
+    if (filters.keyword)     params.set('keyword',     filters.keyword)
+    if (filters.type_id)     params.set('type_id',     filters.type_id)
+    if (filters.org_id)      params.set('org_id',      filters.org_id)
+    if (filters.assignee_id) params.set('assignee_id', filters.assignee_id)
+    if (filters.stage_class) params.set('stage_class', filters.stage_class)
+    if (filters.priority)    params.set('priority',    filters.priority)
+    if (opts.before)         params.set('before',      opts.before)
+    if (opts.limit)          params.set('limit',       opts.limit)
+    if (opts.include)        params.set('include',     opts.include.join(','))
     return apiFetch(`/search?${params.toString()}`)
   },
   fields: () => apiFetch('/search/fields'),

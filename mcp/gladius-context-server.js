@@ -6,8 +6,6 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { listContextEntries, createContextEntry } from '../runtime/contextEntries.js'
 import { listOrgContext } from '../runtime/orgContext.js'
 import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
-import { parse } from '../runtime/search/jql.js'
-import { compile } from '../runtime/search/jqlCompiler.js'
 import { pool } from '../db/postgres.js'
 
 // Agent identity — must be set to a valid blueprint.users.id for tools that
@@ -95,15 +93,19 @@ const TOOLS = [
   },
   {
     name: 'search_work_items',
-    description: 'Search work items using JQL (e.g. "type = BUG AND status = \\"In Progress\\"")',
+    description: 'Search work items using structured filters',
     inputSchema: {
       type: 'object',
       properties: {
-        query:  { type: 'string', description: 'JQL query string' },
-        org_id: { type: 'number', description: 'Org to search within (required)' },
-        limit:  { type: 'number', description: 'Max results (default 20, max 100)' },
+        keyword:     { type: 'string',  description: 'Full-text search across title, description, and comments' },
+        stage_class: { type: 'string',  enum: ['active','queued','done','cancelled'], description: 'Filter by stage class' },
+        type_name:   { type: 'string',  description: 'Filter by work item type name (e.g. "Bug", "Feature")' },
+        priority:    { type: 'number',  enum: [1,2,3,4], description: '1=critical, 2=high, 3=medium, 4=low' },
+        assignee_id: { type: 'number',  description: 'Filter by assignee user ID' },
+        org_id:      { type: 'number',  description: 'Org to search within (required)' },
+        limit:       { type: 'number',  description: 'Max results (default 20, max 100)' },
       },
-      required: ['query', 'org_id'],
+      required: ['org_id'],
     },
   },
   {
@@ -207,20 +209,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'search_work_items': {
-        // Use the JQL compiler directly — the HTTP search endpoint requires a user session.
-        // Scope to the required org_id; no admin bypass.
         const limit = Math.min(args.limit ?? 20, 100)
-        const ast = parse(args.query)
-        const userCtx = {
-          userId: null,
-          orgIds: [args.org_id],
-          isAdmin: false,
-          doneRetentionDays: 90,
-          customFields: [],
+        const qparams = [args.org_id]
+        const where = [`wi.owner_org_id = $1`]
+        where.push(`(wi.resolved_at IS NULL OR wi.resolved_at > NOW() - INTERVAL '90 days')`)
+        if (args.keyword) {
+          const tokens = String(args.keyword).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+          if (tokens.length > 0) {
+            const tsq = tokens.map(t => t + ':*').join(' & ')
+            qparams.push(tsq)
+            where.push(`wis.search_doc @@ to_tsquery('english', $${qparams.length})`)
+          }
         }
-        const { sql, params } = compile(ast, userCtx)
-        const limitedSql = `${sql} LIMIT $${params.length + 1}`
-        const r = await pool.query(limitedSql, [...params, limit])
+        if (args.stage_class) {
+          qparams.push(args.stage_class)
+          where.push(`s.stage_class = $${qparams.length}`)
+        }
+        if (args.type_name) {
+          qparams.push(args.type_name)
+          where.push(`wit.name = $${qparams.length}`)
+        }
+        if (args.priority) {
+          qparams.push(args.priority)
+          where.push(`wi.priority = $${qparams.length}`)
+        }
+        if (args.assignee_id) {
+          qparams.push(args.assignee_id)
+          where.push(`rel_owns.user_id = $${qparams.length}`)
+        }
+        qparams.push(limit)
+        const searchSql = `
+          SELECT wi.id, wi.display_key, wi.title, wi.priority, wi.updated_at, wi.resolved_at,
+                 s.name AS status, s.stage_class,
+                 o.name AS org_name, wit.name AS type_name
+          FROM runtime.work_items wi
+          JOIN blueprint.stages s ON s.id = wi.current_stage_id
+          JOIN blueprint.organizations o ON o.id = wi.owner_org_id
+          JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+          LEFT JOIN runtime.work_item_user_relationships rel_owns
+            ON rel_owns.work_item_id = wi.id AND rel_owns.relationship_type = 'owns'
+          LEFT JOIN runtime.work_item_search wis ON wis.work_item_id = wi.id
+          WHERE ${where.join(' AND ')}
+          ORDER BY wi.priority DESC NULLS LAST, wi.updated_at DESC
+          LIMIT $${qparams.length}
+        `.trim()
+        const r = await pool.query(searchSql, qparams)
         return { content: [{ type: 'text', text: JSON.stringify(r.rows, null, 2) }] }
       }
 

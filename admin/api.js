@@ -2150,10 +2150,14 @@ router.delete('/org-wip-limits/:id', async (req, res, next) => {
 // =============================================================================
 
 import { prepareTransition, executeTransition } from '../runtime/transitions.js'
-import { parse as jqlParse, JQLSyntaxError, JQLSemanticError } from '../runtime/search/jql.js'
-import { compile as jqlCompile, buildPrefixTsquery } from '../runtime/search/jqlCompiler.js'
 import { buildFieldCatalog } from '../runtime/search/fieldCatalog.js'
 import { translate as nlTranslate } from '../runtime/search/translate.js'
+
+function buildPrefixTsquery(text) {
+  const tokens = String(text).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  if (tokens.length === 0) return null
+  return tokens.map(t => t + ':*').join(' & ')
+}
 
 // Build the per-request user search context: userId, accessible orgIds, isAdmin.
 // Used by all /search* and /saved-filters* routes.
@@ -4319,7 +4323,7 @@ router.get('/events', async (req, res, next) => {
 })
 
 // =============================================================================
-// SEARCH v1 — JQL + saved filters
+// SEARCH v1 — structured filter search + saved filters
 // =============================================================================
 
 router.get('/search/fields', async (req, res, next) => {
@@ -4340,54 +4344,89 @@ router.get('/search/fields', async (req, res, next) => {
 router.get('/search', async (req, res, next) => {
   try {
     const ctx = await getUserSearchContext(req)
-    const q = (req.query.q || '').trim()
-    if (!q) return res.json({ rows: [], next_before: null })
+    const { keyword, type_id, org_id, assignee_id, stage_class, priority } = req.query
+    const hasFilters = keyword || type_id || org_id || assignee_id || stage_class || priority
+    if (!hasFilters) return res.json({ rows: [], next_before: null })
 
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
     const before = req.query.before ? parseInt(req.query.before, 10) : null
     const include = (req.query.include || '').split(',').map(s => s.trim()).filter(Boolean)
-    const debug = req.query.debug === '1' && ctx.isAdmin
 
-    const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
-    const compileCtx = {
-      userId:            ctx.userId,
-      orgIds:            ctx.orgIds,
-      isAdmin:           ctx.isAdmin,
-      doneRetentionDays: 90,
-      customFields:      catalog.compilerInput,
+    const params = []
+    const where = []
+
+    if (!ctx.isAdmin) {
+      params.push(ctx.orgIds)
+      where.push(`wi.owner_org_id = ANY($${params.length})`)
     }
 
-    let ast
-    try { ast = jqlParse(q) }
-    catch (err) {
-      if (err instanceof JQLSyntaxError) {
-        return res.status(400).json({
-          error: 'JQL_SYNTAX_ERROR', message: err.message,
-          position: err.position, snippet: err.snippet,
-        })
+    params.push(90)
+    where.push(`(wi.resolved_at IS NULL OR wi.resolved_at > NOW() - INTERVAL '1 day' * $${params.length})`)
+
+    if (keyword) {
+      const tsq = buildPrefixTsquery(keyword)
+      if (tsq) {
+        params.push(tsq)
+        where.push(`wis.search_doc @@ to_tsquery('english', $${params.length})`)
       }
-      throw err
     }
 
-    let compiled
-    try { compiled = jqlCompile(ast, compileCtx) }
-    catch (err) {
-      if (err instanceof JQLSemanticError) {
-        return res.status(400).json({
-          error: 'JQL_SEMANTIC_ERROR', message: err.message,
-          field: err.field, reason: err.reason, suggestion: err.suggestion,
-        })
-      }
-      throw err
+    if (type_id) {
+      params.push(parseInt(type_id, 10))
+      where.push(`wi.work_item_type_id = $${params.length}`)
     }
 
-    let { sql, params } = compiled
+    if (org_id) {
+      params.push(parseInt(org_id, 10))
+      where.push(`wi.owner_org_id = $${params.length}`)
+    }
+
+    if (assignee_id) {
+      const uid = assignee_id === 'me' ? ctx.userId : parseInt(assignee_id, 10)
+      params.push(uid)
+      where.push(`rel_owns.user_id = $${params.length}`)
+    }
+
+    if (stage_class) {
+      params.push(stage_class)
+      where.push(`s.stage_class = $${params.length}`)
+    }
+
+    if (priority) {
+      params.push(parseInt(priority, 10))
+      where.push(`wi.priority = $${params.length}`)
+    }
+
     if (before) {
       params.push(before)
-      sql = sql.replace(/ORDER BY/, `AND wi.id < $${params.length} ORDER BY`)
+      where.push(`wi.id < $${params.length}`)
     }
+
+    const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
     params.push(limit + 1)
-    sql += `\n    LIMIT $${params.length}`
+    const sql = `
+      SELECT wi.id, wi.display_key, wi.title, wi.priority, wi.tags,
+             wi.due_date, wi.is_expedited, wi.updated_at, wi.resolved_at, wi.created_at,
+             wi.owner_org_id,
+             s.name AS status, s.stage_class,
+             o.slug AS org_slug, o.name AS org_name,
+             wit.name AS type_name, wit.icon AS type_icon, wit.color AS type_color,
+             wi.current_substate AS substate,
+             rel_owns.user_id AS owner_user_id,
+             u.email AS assignee_email, u.display_name AS assignee_name
+      FROM runtime.work_items wi
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      JOIN blueprint.organizations o ON o.id = wi.owner_org_id
+      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+      JOIN blueprint.workflows w ON w.id = wi.workflow_id
+      LEFT JOIN runtime.work_item_user_relationships rel_owns
+        ON rel_owns.work_item_id = wi.id AND rel_owns.relationship_type = 'owns'
+      LEFT JOIN blueprint.users u ON u.id = rel_owns.user_id
+      LEFT JOIN runtime.work_item_search wis ON wis.work_item_id = wi.id
+      ${whereClause}
+      ORDER BY wi.priority DESC NULLS LAST, wi.updated_at DESC
+      LIMIT $${params.length}
+    `.trim()
 
     const result = await query(sql, params)
     let rows = result.rows
@@ -4397,9 +4436,8 @@ router.get('/search', async (req, res, next) => {
       nextBefore = rows[rows.length - 1].id
     }
 
-    if (include.includes('snippet') && rows.length > 0) {
-      const textMatch = q.match(/(\w+)\s*~\s*(["'])(.+?)\2/)
-      const tsquery = textMatch ? buildPrefixTsquery(textMatch[3]) : null
+    if (keyword && include.includes('snippet') && rows.length > 0) {
+      const tsquery = buildPrefixTsquery(keyword)
       if (tsquery) {
         const ids = rows.map(r => r.id)
         const headlinesRes = await query(`
@@ -4416,18 +4454,7 @@ router.get('/search', async (req, res, next) => {
       }
     }
 
-    const response = { rows, next_before: nextBefore }
-    if (include.includes('total')) {
-      const countRes = await query(
-        `SELECT COUNT(*) AS c FROM (${compiled.sql.replace(/ORDER BY[\s\S]*$/, '')}) AS sub LIMIT 10001`,
-        compiled.params
-      )
-      response.total = parseInt(countRes.rows[0].c, 10)
-    }
-    if (debug) {
-      response.parsed_jql = { ast, sql: compiled.sql }
-    }
-    res.json(response)
+    res.json({ rows, next_before: nextBefore })
   } catch (err) {
     if (err.status) return res.status(err.status).json({ error: err.message })
     next(err)
@@ -4536,9 +4563,12 @@ router.get('/saved-filters/:id', async (req, res, next) => {
 router.post('/saved-filters', async (req, res, next) => {
   try {
     const ctx = await getUserSearchContext(req)
-    const { name, jql, share_scope, owner_org_id, sort_spec, column_spec, description } = req.body || {}
-    if (!name || !jql || !share_scope) {
-      return res.status(400).json({ error: 'BAD_REQUEST', message: 'name, jql, share_scope required' })
+    const { name, filter_params, share_scope, owner_org_id, sort_spec, column_spec, description } = req.body || {}
+    if (!name || !filter_params || !share_scope) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'name, filter_params, share_scope required' })
+    }
+    if (typeof filter_params !== 'object' || Array.isArray(filter_params)) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'filter_params must be an object' })
     }
     if (!['private', 'org', 'global'].includes(share_scope)) {
       return res.status(400).json({ error: 'BAD_REQUEST', message: 'share_scope must be private, org, or global' })
@@ -4553,20 +4583,6 @@ router.post('/saved-filters', async (req, res, next) => {
       return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS', message: 'must be member of target org' })
     }
 
-    try {
-      const ast = jqlParse(jql)
-      const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
-      jqlCompile(ast, {
-        userId: ctx.userId, orgIds: ctx.orgIds,
-        isAdmin: ctx.isAdmin, customFields: catalog.compilerInput,
-      })
-    } catch (err) {
-      if (err instanceof JQLSyntaxError)   return res.status(400).json({ error: 'JQL_SYNTAX_ERROR', message: err.message, position: err.position })
-      if (err instanceof JQLSemanticError) return res.status(400).json({ error: 'JQL_SEMANTIC_ERROR', message: err.message, field: err.field })
-      throw err
-    }
-
-    // System slug for private/global; org slug for org-scoped.
     let uriSlug = 'system'
     if (share_scope === 'org') {
       const orgRes = await query('SELECT slug FROM blueprint.organizations WHERE id = $1', [owner_org_id])
@@ -4576,10 +4592,11 @@ router.post('/saved-filters', async (req, res, next) => {
 
     const r = await query(`
       INSERT INTO blueprint.saved_filters
-        (uri, name, jql, owner_user_id, share_scope, owner_org_id, sort_spec, column_spec, description)
+        (uri, name, filter_params, owner_user_id, share_scope, owner_org_id, sort_spec, column_spec, description)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
-    `, [uri, name, jql, ctx.userId, share_scope, share_scope === 'org' ? owner_org_id : null,
+    `, [uri, name, JSON.stringify(filter_params), ctx.userId, share_scope,
+        share_scope === 'org' ? owner_org_id : null,
         sort_spec || {}, column_spec || {}, description || null])
     res.status(201).json(r.rows[0])
   } catch (err) {
@@ -4597,7 +4614,7 @@ router.patch('/saved-filters/:id', async (req, res, next) => {
       return res.status(403).json({ error: 'INSUFFICIENT_PERMISSIONS' })
     }
 
-    const fields = ['name','jql','share_scope','owner_org_id','sort_spec','column_spec','description']
+    const fields = ['name','share_scope','owner_org_id','sort_spec','column_spec','description']
     const sets = []
     const params = []
     for (const k of fields) {
@@ -4606,22 +4623,14 @@ router.patch('/saved-filters/:id', async (req, res, next) => {
         sets.push(`${k} = $${params.length}`)
       }
     }
-    if (sets.length === 0) return res.json(f)
-
-    if (req.body.jql) {
-      try {
-        const ast = jqlParse(req.body.jql)
-        const catalog = await buildFieldCatalog({ userId: ctx.userId, orgIds: ctx.orgIds })
-        jqlCompile(ast, {
-          userId: ctx.userId, orgIds: ctx.orgIds,
-          isAdmin: ctx.isAdmin, customFields: catalog.compilerInput,
-        })
-      } catch (err) {
-        if (err instanceof JQLSyntaxError)   return res.status(400).json({ error: 'JQL_SYNTAX_ERROR', message: err.message })
-        if (err instanceof JQLSemanticError) return res.status(400).json({ error: 'JQL_SEMANTIC_ERROR', message: err.message })
-        throw err
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'filter_params')) {
+      if (typeof req.body.filter_params !== 'object' || Array.isArray(req.body.filter_params)) {
+        return res.status(400).json({ error: 'BAD_REQUEST', message: 'filter_params must be an object' })
       }
+      params.push(JSON.stringify(req.body.filter_params))
+      sets.push(`filter_params = $${params.length}`)
     }
+    if (sets.length === 0) return res.json(f)
 
     sets.push(`updated_at = NOW()`)
     params.push(f.id)

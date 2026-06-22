@@ -8,8 +8,7 @@
     "start": "node api/server.js",
     "dev": "node --watch api/server.js",
     "seed": "node db/seeds/seed.js",
-    "test": "node --test",
-    "build:grammar": "peggy --format es --output runtime/search/jql.parser.js runtime/search/jql.peggy"
+    "test": "node --test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
@@ -21,7 +20,6 @@
     "express-session": "^1.19.0",
     "js-yaml": "^4.2.0",
     "multer": "^2.1.1",
-    "peggy": "^5.1.0",
     "pg": "^8.11.3",
     "uuid": "^14.0.1"
   },
