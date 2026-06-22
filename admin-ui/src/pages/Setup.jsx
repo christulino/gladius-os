@@ -42,7 +42,7 @@ export default function Setup({ onSetup }) {
       <div className="w-full max-w-sm">
         <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
           <div className="text-center mb-6">
-            <h1 className="text-sm font-semibold text-foreground">Gladius</h1>
+            <h1 className="text-sm font-semibold text-foreground">Gladius OS</h1>
             <p className="text-xs text-muted-foreground mt-1">Create your admin account to get started</p>
           </div>
 
