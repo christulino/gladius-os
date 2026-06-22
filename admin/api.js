@@ -4244,14 +4244,7 @@ router.put('/notification-preferences', async (req, res, next) => {
     }
     if (Array.isArray(channels)) {
       for (const ch of channels) {
-        const { rows: existing } = await client.query(
-          `SELECT config FROM blueprint.user_notification_channels WHERE user_id=$1 AND channel=$2`,
-          [uid, ch.channel]
-        )
-        const urlChanged = (ch.channel === 'webhook' || ch.channel === 'agent')
-                        && ch.config?.url
-                        && ch.config.url !== existing[0]?.config?.url
-        const isEnabled = urlChanged ? false : !!ch.is_enabled
+        const isEnabled = !!ch.is_enabled
         await client.query(
           `INSERT INTO blueprint.user_notification_channels
              (user_id, channel, is_enabled, digest, config)
@@ -4262,16 +4255,6 @@ router.put('/notification-preferences', async (req, res, next) => {
                config     = EXCLUDED.config`,
           [uid, ch.channel, isEnabled, ch.digest || 'realtime', JSON.stringify(ch.config || {})]
         )
-        if (urlChanged) {
-          const { runChallenge } = await import('../runtime/notifications/ownershipChallenge.js')
-          ;(async () => {
-            const result = await runChallenge({ url: ch.config.url })
-            if (result.ok) {
-              await query(`UPDATE blueprint.user_notification_channels
-                           SET is_enabled = true WHERE user_id=$1 AND channel=$2`, [uid, ch.channel])
-            }
-          })().catch(e => console.error('[challenge]', e))
-        }
       }
     }
     await client.query('COMMIT')
