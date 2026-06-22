@@ -19,9 +19,12 @@
  *   const tree = await getWorkItemHierarchy('flowos://org/work-items/uuid', userId)
  */
 
-import { runQuery } from '../db/neo4j.js'
 import { query }    from '../db/postgres.js'
 import { canAccess } from '../core/access.js'
+
+// Neo4j removed — hierarchy traversal returns empty sets until a PostgreSQL
+// CTE-based replacement is implemented.
+async function runQuery(_cypher, _params) { return [] }
 
 /**
  * Get the full hierarchy for a work item, permission-filtered.

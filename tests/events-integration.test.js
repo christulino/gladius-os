@@ -201,7 +201,6 @@ describe('Admin API — event subscribers endpoints', () => {
     assert.equal(status, 200)
     assert.ok(Array.isArray(data.rows))
     const names = data.rows.map(r => r.name)
-    assert.ok(names.includes('neo4j-sync'))
     assert.ok(names.includes('audit-log'))
   })
 
@@ -258,9 +257,9 @@ describe('API latency — emission does not block response', () => {
 })
 
 describe('End-to-end — work item creation flows through event system to subscribers', () => {
-  it('creating a work item produces a work_item.created event that advances neo4j-sync cursor', async () => {
+  it('creating a work item produces a work_item.created event that advances audit-log cursor', async () => {
     const cursorBefore = await query(
-      "SELECT last_processed_event_id FROM runtime.event_subscribers WHERE name = 'neo4j-sync'"
+      "SELECT last_processed_event_id FROM runtime.event_subscribers WHERE name = 'audit-log'"
     )
     const before = Number(cursorBefore.rows[0].last_processed_event_id)
 
@@ -280,15 +279,24 @@ describe('End-to-end — work item creation flows through event system to subscr
     })
     assert.equal(res.status, 201)
 
+    // Also PATCH the new item to produce a work_item.edited event the audit-log subscriber handles
+    const newItemId = res.data?.id
+    if (newItemId) {
+      await api(`/work-items/${newItemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ description: 'e2e cursor test ' + Date.now() }),
+      })
+    }
+
     let cursorAfter = before
     for (let i = 0; i < 15; i++) {
       await new Promise(r => setTimeout(r, 200))
       const c = await query(
-        "SELECT last_processed_event_id FROM runtime.event_subscribers WHERE name = 'neo4j-sync'"
+        "SELECT last_processed_event_id FROM runtime.event_subscribers WHERE name = 'audit-log'"
       )
       cursorAfter = Number(c.rows[0].last_processed_event_id)
       if (cursorAfter > before) break
     }
-    assert.ok(cursorAfter > before, `neo4j-sync cursor did not advance (was ${before}, is ${cursorAfter})`)
+    assert.ok(cursorAfter > before, `audit-log cursor did not advance (was ${before}, is ${cursorAfter})`)
   })
 })

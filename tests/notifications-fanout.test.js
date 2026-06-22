@@ -1,7 +1,6 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { query, getClient } from '../db/postgres.js'
-import { close as closeNeo4j } from '../db/neo4j.js'
 import { loadMatrix, isEnabled } from '../runtime/notifications/matrix.js'
 import { renderSummary } from '../runtime/notifications/summaries.js'
 import { extractMentions } from '../runtime/notifications/mentions.js'
@@ -163,9 +162,6 @@ describe('subscribers/notifications — fanout', () => {
     await query(`DELETE FROM runtime.work_item_user_relationships WHERE work_item_id = $1`, [workItemId])
     await query(`DELETE FROM runtime.work_items WHERE id = $1`, [workItemId])
     await query(`DELETE FROM blueprint.users WHERE id = ANY($1)`, [[ownerId, watcherId, actorId]])
-    // emitEvent → eventProcessor → neo4jSync → db/neo4j creates a driver at module load.
-    // Close it here (in the last describe's after) so the worker exits cleanly.
-    await closeNeo4j()
   })
 
   it('writes one notifications row per eligible recipient, excluding actor', async () => {

@@ -7,7 +7,6 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { query, getClient, pool } from '../db/postgres.js'
-import { close as closeNeo4j } from '../db/neo4j.js'
 import { emitEvent } from '../core/events.js'
 import {
   startProcessor,
@@ -17,7 +16,6 @@ import {
   drainNow,
   isProcessorPrimary,
 } from '../runtime/eventProcessor.js'
-import { neo4jSyncHandler } from '../runtime/subscribers/neo4jSync.js'
 import { auditLogHandler } from '../runtime/subscribers/auditLog.js'
 
 describe('core/events.js — emitEvent', () => {
@@ -227,35 +225,6 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
   })
 })
 
-describe('subscribers/neo4jSync — event-type mapping', () => {
-  it('routes work_item.created to syncToGraph work_item create', async () => {
-    await neo4jSyncHandler({
-      id: 9999,
-      event_type: 'work_item.created',
-      entity_id: 1,
-      entity_uri: 'flowos://test/work-items/abc',
-      actor_id: null,
-      occurred_at: new Date(),
-      payload: {
-        title: 'Test', work_item_type_uri: null, owner_org_uri: 'flowos://test/orgs/x',
-        owner_org_slug: 'x', current_stage_uri: null, current_stage_name: null,
-        current_stage_class: null, current_substate: 'active', spawn_state: 'active',
-        service_class: 'standard', sla_status: 'no_sla', due_date: null,
-        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      },
-    })
-  })
-
-  it('is a no-op for unmapped event types', async () => {
-    await neo4jSyncHandler({
-      id: 9998,
-      event_type: 'unknown.event_type',
-      entity_id: 1,
-      payload: {},
-    })
-  })
-})
-
 describe('subscribers/auditLog — writes work_item_edits rows', () => {
   let workItemId
 
@@ -323,9 +292,7 @@ describe('subscribers/auditLog — writes work_item_edits rows', () => {
 })
 
 // Close long-lived connections so the worker process exits cleanly.
-// The neo4j driver keeps bolt sockets open and the pg pool holds idle
-// connections — both prevent node --test workers from draining naturally.
+// The pg pool holds idle connections that prevent node --test workers from draining naturally.
 after(async () => {
-  await closeNeo4j()
   await pool.end()
 })

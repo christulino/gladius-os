@@ -18,7 +18,6 @@
  */
 
 import { query } from '../db/postgres.js'
-import { runQuery } from '../db/neo4j.js'
 
 /**
  * Check if a user can perform an action on a resource.
@@ -297,17 +296,19 @@ async function getOrgsWithTag(tagKey, tagValue) {
   return result.rows.map(r => r.org_id)
 }
 
-// Uses Neo4j for descendant lookup — fast graph traversal
+// PostgreSQL recursive CTE for descendant org URIs (Neo4j removed)
 async function getDescendantOrgUrisById(orgId) {
-  const orgResult = await query('SELECT uri FROM blueprint.organizations WHERE id = $1', [orgId])
-  const orgUri = orgResult.rows[0]?.uri
-  if (!orgUri) return []
-
-  const records = await runQuery(
-    'MATCH (root:Organization {uri: $uri})-[:PARENT_OF*1..]->(child:Organization) WHERE child.is_active = true RETURN child.uri AS uri',
-    { uri: orgUri }
-  )
-  return records.map(r => r.uri)
+  const result = await query(`
+    WITH RECURSIVE descendants AS (
+      SELECT id, uri FROM blueprint.organizations WHERE id = $1
+      UNION ALL
+      SELECT o.id, o.uri FROM blueprint.organizations o
+      JOIN descendants d ON o.parent_id = d.id
+      WHERE o.is_active = true
+    )
+    SELECT uri FROM descendants WHERE id <> $1
+  `, [orgId])
+  return result.rows.map(r => r.uri)
 }
 
 export default { canAccess, filterAccessible }
