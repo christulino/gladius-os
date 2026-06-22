@@ -38,3 +38,19 @@ uploads/
 
 # Visual brainstorming sessions
 .superpowers/
+
+# Internal session docs — never commit to public repo
+CLAUDE.md
+STATE.md
+BACKLOG.md
+DECISIONS.md
+PARKING_LOT.md
+PRODUCT_PLAN.md
+RISKS.md
+QUESTIONS.md
+TODO.md
+docs/superpowers/
+docs/plans/
+docs/strategy/
+feature_plans/
+.claude/

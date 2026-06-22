@@ -1,16 +1,16 @@
-# Gladius
+# Gladius OS
 
 An open source work operating system built on Kanban and Lean principles.
 
 **Self-hosted. Not SaaS. MIT licensed.**
 
-Gladius treats work as a flow system — the board is a health monitor, not a status tracker. Watch the work move, not the people doing it.
+Gladius OS treats work as a flow system — the board is a health monitor, not a status tracker. Watch the work move, not the people doing it.
 
 ---
 
 ## Philosophy
 
-Most tools track people. Gladius tracks work.
+Most tools track people. Gladius OS tracks work.
 
 Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Method, and Patrick Burrows' work on flow:
 
@@ -169,7 +169,7 @@ node --test tests/workflow-api.test.js
 
 ## MCP server
 
-Gladius ships an MCP stdio server for AI agent integration:
+Gladius OS ships an MCP stdio server for AI agent integration:
 
 ```bash
 node mcp/gladius-context-server.js
@@ -183,7 +183,7 @@ Configure `GLADIUS_AGENT_USER_ID` in `.env` to set the actor identity for write 
 
 ## Contributing
 
-Gladius is early-stage and actively developed. Contributions welcome.
+Gladius OS is early-stage and actively developed. Contributions welcome.
 
 - Open an issue before starting significant work
 - Keep PRs focused — one logical change per PR
@@ -196,5 +196,7 @@ Gladius is early-stage and actively developed. Contributions welcome.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+Website: [gladius-os.com](https://gladius-os.com)
 
 Maintainer: [Chris Tulino](https://github.com/christulino)
