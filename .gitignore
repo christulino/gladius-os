@@ -41,6 +41,7 @@ uploads/
 
 # Internal session docs — never commit to public repo
 CLAUDE.md
+SESSION_*.md
 STATE.md
 BACKLOG.md
 DECISIONS.md
