@@ -16,7 +16,6 @@ import { dirname, join } from 'path'
 import 'dotenv/config'
 import { initLogger }                 from '../admin/logger.js'
 import { healthCheck as pgHealth }    from '../db/postgres.js'
-import { healthCheck as neo4jHealth } from '../db/neo4j.js'
 import { createSessionMiddleware, requireAuth } from '../core/auth.js'
 import authRoutes       from './routes/auth.js'
 import formRoutes       from './routes/forms.js'
@@ -99,12 +98,10 @@ app.get('/intake/:slug', (_req, res) => {
 
 // Health check
 app.get('/health', async (_req, res) => {
-  const [postgres, neo4j] = await Promise.all([pgHealth(), neo4jHealth()])
-  const healthy = postgres && neo4j
-  res.status(healthy ? 200 : 503).json({
-    status:   healthy ? 'ok' : 'degraded',
+  const postgres = await pgHealth()
+  res.status(postgres ? 200 : 503).json({
+    status:   postgres ? 'ok' : 'degraded',
     postgres,
-    neo4j,
     version:  '0.1.0',
     timestamp: new Date().toISOString(),
   })

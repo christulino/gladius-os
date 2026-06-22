@@ -1,7 +1,7 @@
 version: "3.9"
 
 # Gladius — Local Development Environment
-# Runs PostgreSQL, Neo4j, and MinIO (S3-compatible object storage for evidence files)
+# Runs PostgreSQL and MinIO (S3-compatible object storage for evidence files)
 #
 # Start:   docker compose up -d
 # Stop:    docker compose down
@@ -34,32 +34,6 @@ services:
       retries: 10
 
   # ===========================================================================
-  # NEO4J
-  # Graph database for org hierarchy, work item relationships, workflow graphs
-  # Browser UI: http://localhost:7474  (user: neo4j, password: flowos_dev)
-  # ===========================================================================
-  neo4j:
-    image: neo4j:5-community
-    container_name: gladius-neo4j
-    restart: unless-stopped
-    environment:
-      NEO4J_AUTH: neo4j/flowos_dev
-      NEO4J_PLUGINS: '["apoc"]'                 # APOC utilities — useful for graph ops
-      NEO4J_dbms_memory_pagecache_size: 512M
-      NEO4J_dbms_memory_heap_max__size: 512M
-    ports:
-      - "7474:7474"   # HTTP browser UI
-      - "7687:7687"   # Bolt protocol (used by Node.js driver)
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "flowos_dev", "RETURN 1"]
-      interval: 10s
-      timeout: 10s
-      retries: 10
-
-  # ===========================================================================
   # MINIO
   # S3-compatible object storage for evidence files (photos, attachments)
   # Browser UI: http://localhost:9001  (user: flowos, password: flowos_dev_secret)
@@ -85,6 +59,4 @@ services:
 
 volumes:
   postgres_data:
-  neo4j_data:
-  neo4j_logs:
   minio_data:

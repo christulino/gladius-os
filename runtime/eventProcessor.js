@@ -14,7 +14,6 @@
  */
 
 import { pool, query } from '../db/postgres.js'
-import { neo4jSyncHandler, handlesEventType as neo4jHandles } from './subscribers/neo4jSync.js'
 import { auditLogHandler, handlesEventType as auditHandles } from './subscribers/auditLog.js'
 import { notificationsHandler, handlesEventType as notificationsHandles } from './subscribers/notifications.js'
 import { searchIndexHandler, handlesEventType as searchIndexHandles } from './subscribers/searchIndex.js'
@@ -298,12 +297,6 @@ export default {
 // =============================================================================
 // BUILT-IN SUBSCRIBERS — registered on first import
 // =============================================================================
-
-registerSubscriber({
-  name:    'neo4j-sync',
-  handles: neo4jHandles,
-  handler: neo4jSyncHandler,
-})
 
 registerSubscriber({
   name:    'audit-log',

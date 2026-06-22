@@ -21,11 +21,10 @@
     "express-session": "^1.19.0",
     "js-yaml": "^4.2.0",
     "multer": "^2.1.1",
-    "neo4j-driver": "^5.17.0",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "^9.0.1",
     "peggy": "^5.1.0",
     "pg": "^8.11.3",
-    "uuid": "^9.0.0"
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "eslint": "^8.57.0",
