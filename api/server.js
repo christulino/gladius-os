@@ -26,9 +26,8 @@ import boardRoutes      from './routes/board.js'
 import adminApiRoutes   from '../admin/api.js'
 import simulationRoutes from './routes/simulation.js'
 import { startProcessor } from '../runtime/eventProcessor.js'
-import { startDeliveryWorker, startDigestTick, stopDeliveryWorker, stopDigestTick } from '../runtime/deliveryWorker.js'
+import { startDeliveryWorker, stopDeliveryWorker } from '../runtime/deliveryWorker.js'
 import { startRetentionJob, stopRetentionJob } from '../runtime/jobs/notificationRetention.js'
-import { initEmail } from '../runtime/channels/email.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -137,18 +136,11 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('[events] Processor failed to start:', err.message)
   }
-  initEmail()
   try {
     await startDeliveryWorker()
     console.log('[notifications] Delivery worker started')
   } catch (err) {
     console.error('[notifications] Delivery worker failed to start:', err.message)
-  }
-  try {
-    await startDigestTick()
-    console.log('[notifications] Digest tick started')
-  } catch (err) {
-    console.error('[notifications] Digest tick failed to start:', err.message)
   }
   try {
     await startRetentionJob()
@@ -158,7 +150,7 @@ app.listen(PORT, async () => {
   }
 })
 
-process.on('SIGTERM', async () => { await stopDeliveryWorker(); await stopDigestTick(); stopRetentionJob() })
-process.on('SIGINT',  async () => { await stopDeliveryWorker(); await stopDigestTick(); stopRetentionJob() })
+process.on('SIGTERM', async () => { await stopDeliveryWorker(); stopRetentionJob() })
+process.on('SIGINT',  async () => { await stopDeliveryWorker(); stopRetentionJob() })
 
 export default app

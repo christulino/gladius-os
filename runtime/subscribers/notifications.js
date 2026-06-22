@@ -59,7 +59,7 @@ async function fetchHandleMap() {
 async function fetchEnabledOutOfBandChannels(userId) {
   const { rows } = await query(
     `SELECT channel FROM blueprint.user_notification_channels
-      WHERE user_id = $1 AND is_enabled = true AND channel <> 'in_app'`,
+      WHERE user_id = $1 AND is_enabled = true AND channel = 'agent'`,
     [userId]
   )
   return rows.map(r => r.channel)

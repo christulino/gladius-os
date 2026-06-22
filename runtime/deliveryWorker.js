@@ -5,10 +5,8 @@
  */
 
 import { query, getClient } from '../db/postgres.js'
-import { deliverWebhook } from './channels/webhook.js'
 import { deliverAgent } from './channels/agent.js'
-import { deliverEmail, renderRealtimeBody } from './channels/email.js'
-import { HostRateLimiter, Semaphore, checkUserChannelRate } from './rateLimiter.js'
+import { Semaphore, checkUserChannelRate } from './rateLimiter.js'
 
 const LOCK_KEY = 252727380
 const BACKOFF_MS = [60_000, 300_000, 1_800_000, 7_200_000, 43_200_000]  // 1m, 5m, 30m, 2h, 12h
@@ -23,9 +21,7 @@ const concurrency  = Number(process.env.DELIVERY_WORKER_CONCURRENCY)  || 10
 const pollMs       = Number(process.env.DELIVERY_WORKER_POLL_INTERVAL_MS) || 5000
 const perUserMin   = Number(process.env.RATE_LIMIT_PER_USER_PER_MIN)  || 60
 const perUserHour  = Number(process.env.RATE_LIMIT_PER_USER_PER_HOUR) || 600
-const perHostMin   = Number(process.env.RATE_LIMIT_PER_HOST_PER_MIN)  || 30
 
-const hostLimiter = new HostRateLimiter({ windowMs: 60_000, cap: perHostMin })
 const sem         = new Semaphore(concurrency)
 
 async function acquireLock() {
@@ -105,12 +101,6 @@ async function dispatch(c, row) {
   if (!chs.length) return markFailed(c, row.id, 'channel-disabled')
   const config = chs[0].config || {}
 
-  if (row.channel === 'webhook' || row.channel === 'agent') {
-    const host = safeHost(config.url)
-    if (!host) return markFailed(c, row.id, 'invalid-url')
-    if (!hostLimiter.allow(host)) return reschedule(c, row.id, 60_000)
-  }
-
   const payload = {
     notification_id: row.notification_id,
     event_id:        row.event_id,
@@ -122,16 +112,10 @@ async function dispatch(c, row) {
   }
 
   let result
-  if (row.channel === 'webhook') {
-    result = await deliverWebhook({ url: config.url, secret: config.secret, deliveryId: row.id, body: payload })
-  } else if (row.channel === 'agent') {
+  if (row.channel === 'agent') {
     result = await deliverAgent({ config, deliveryId: row.id, notificationPayload: payload })
-  } else if (row.channel === 'email') {
-    const { subject, text, html } = renderRealtimeBody(
-      { summary: row.summary }, { id: row.work_item_id }, process.env.PUBLIC_BASE_URL || '')
-    result = await deliverEmail({ to: config.email_to, subject, text, html })
   } else {
-    return markFailed(c, row.id, `unknown-channel:${row.channel}`)
+    return markFailed(c, row.id, `unsupported-channel:${row.channel}`)
   }
 
   if (result.ok) {
@@ -162,79 +146,7 @@ async function markFailed(c, id, reason) {
     SET status='failed', last_error=$1 WHERE id=$2`, [reason, id])
 }
 
-function safeHost(url) {
-  try { return new URL(url).hostname } catch { return null }
-}
-
 // Exported for tests
 export const __testables = { BACKOFF_MS, MAX_ATTEMPTS }
 
 export default { startDeliveryWorker, stopDeliveryWorker }
-
-let digestTimer = null
-
-export async function startDigestTick() {
-  if (digestTimer) return
-  digestTimer = setInterval(runDigestTick, 60_000)
-}
-
-export async function stopDigestTick() {
-  if (digestTimer) { clearInterval(digestTimer); digestTimer = null }
-}
-
-async function runDigestTick() {
-  try {
-    const { rows: users } = await query(`
-      SELECT user_id, config
-      FROM blueprint.user_notification_channels
-      WHERE channel = 'email' AND is_enabled = true
-        AND digest IN ('hourly','daily')
-        AND (next_digest_at IS NULL OR next_digest_at <= now())
-    `)
-    for (const u of users) await flushDigestForUser(u)
-  } catch (e) {
-    console.error('[deliveryWorker] digest tick failed:', e)
-  }
-}
-
-async function flushDigestForUser(u) {
-  const c = await getClient()
-  try {
-    await c.query('BEGIN')
-    const { rows: pending } = await c.query(`
-      SELECT d.id, n.summary, n.work_item_id
-      FROM runtime.notification_deliveries d
-      JOIN runtime.notifications n ON n.id = d.notification_id
-      WHERE d.status = 'pending' AND d.channel = 'email' AND n.user_id = $1
-      FOR UPDATE SKIP LOCKED
-    `, [u.user_id])
-    if (!pending.length) {
-      await bumpNextDigest(c, u); await c.query('COMMIT'); return
-    }
-    const { renderDigestBody } = await import('./channels/email.js')
-    const { subject, text, html } = renderDigestBody(pending, process.env.PUBLIC_BASE_URL || '')
-    const res = await deliverEmail({ to: u.config.email_to, subject, text, html })
-    if (res.ok) {
-      await c.query(`UPDATE runtime.notification_deliveries SET status='sent', sent_at=now()
-                     WHERE id = ANY($1)`, [pending.map(p => p.id)])
-    }
-    await bumpNextDigest(c, u)
-    await c.query('COMMIT')
-  } catch (e) {
-    await c.query('ROLLBACK'); throw e
-  } finally { c.release() }
-}
-
-async function bumpNextDigest(c, u) {
-  const { rows } = await c.query(
-    `SELECT digest FROM blueprint.user_notification_channels WHERE user_id=$1 AND channel='email'`,
-    [u.user_id]
-  )
-  const d = rows[0]?.digest || 'realtime'
-  const expr = d === 'hourly' ? `now() + interval '1 hour'`
-             : d === 'daily'  ? `now() + interval '1 day'`
-             : `NULL`
-  await c.query(`UPDATE blueprint.user_notification_channels
-                 SET next_digest_at = ${expr}
-                 WHERE user_id = $1 AND channel = 'email'`, [u.user_id])
-}
