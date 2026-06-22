@@ -3,6 +3,20 @@ import { searchApi, savedFiltersApi } from '@/lib/api'
 import { Search, X, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
+function SnippetHighlight({ text }) {
+  if (!text) return null
+  const parts = text.split(/(<b>|<\/b>)/i)
+  const elements = []
+  let bold = false
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].toLowerCase() === '<b>') { bold = true; continue }
+    if (parts[i].toLowerCase() === '</b>') { bold = false; continue }
+    if (!parts[i]) continue
+    elements.push(bold ? <b key={i}>{parts[i]}</b> : parts[i])
+  }
+  return <span>{elements}</span>
+}
+
 const STAGE_CLASSES = [
   { value: '', label: 'Any status' },
   { value: 'active', label: 'Active' },
@@ -51,7 +65,9 @@ export default function SearchPage({ onOpenWorkItem }) {
       setTranslating(true)
       try {
         const tr = await searchApi.translate(input.trim())
-        const next = { ...tr.filters, ...(tr.filters.type_name ? { type_name: tr.filters.type_name } : {}) }
+        const { assignee_me, ...rest } = tr.filters
+        const next = { ...rest }
+        if (assignee_me) next.assignee_id = 'me'
         setFilters(next)
         await run(next)
       } catch {
@@ -165,7 +181,7 @@ export default function SearchPage({ onOpenWorkItem }) {
             className="w-full text-left px-4 py-3 border-b border-border hover:bg-black/[0.03] transition-colors"
           >
             <div className="flex items-baseline gap-2">
-              <span className="text-xs font-medium text-muted-foreground font-mono">{row.display_key}</span>
+              <span className="text-xs font-medium text-muted-foreground">{row.display_key}</span>
               <span className="text-sm font-medium text-foreground truncate flex-1">{row.title}</span>
               {row.stage_class && (
                 <Badge variant={row.stage_class === 'done' ? 'default' : row.stage_class === 'active' ? 'blue' : 'muted'} className="shrink-0">
@@ -174,10 +190,9 @@ export default function SearchPage({ onOpenWorkItem }) {
               )}
             </div>
             {row.snippet && (
-              <div
-                className="mt-1 text-xs text-muted-foreground line-clamp-2"
-                dangerouslySetInnerHTML={{ __html: row.snippet }}
-              />
+              <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                <SnippetHighlight text={row.snippet} />
+              </div>
             )}
             <div className="mt-1 flex gap-2 text-xs text-muted-foreground">
               <span>{row.type_name}</span>

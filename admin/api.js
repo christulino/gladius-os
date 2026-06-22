@@ -4344,8 +4344,8 @@ router.get('/search/fields', async (req, res, next) => {
 router.get('/search', async (req, res, next) => {
   try {
     const ctx = await getUserSearchContext(req)
-    const { keyword, type_id, org_id, assignee_id, stage_class, priority } = req.query
-    const hasFilters = keyword || type_id || org_id || assignee_id || stage_class || priority
+    const { keyword, type_id, org_id, assignee_id, stage_class, priority, type_name } = req.query
+    const hasFilters = keyword || type_id || type_name || org_id || assignee_id || stage_class || priority
     if (!hasFilters) return res.json({ rows: [], next_before: null })
 
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
@@ -4374,6 +4374,11 @@ router.get('/search', async (req, res, next) => {
     if (type_id) {
       params.push(parseInt(type_id, 10))
       where.push(`wi.work_item_type_id = $${params.length}`)
+    }
+
+    if (type_name) {
+      params.push(type_name)
+      where.push(`wi.work_item_type_id IN (SELECT id FROM blueprint.work_item_types WHERE LOWER(name) = LOWER($${params.length}))`)
     }
 
     if (org_id) {
@@ -4424,7 +4429,7 @@ router.get('/search', async (req, res, next) => {
       LEFT JOIN blueprint.users u ON u.id = rel_owns.user_id
       LEFT JOIN runtime.work_item_search wis ON wis.work_item_id = wi.id
       ${whereClause}
-      ORDER BY wi.priority DESC NULLS LAST, wi.updated_at DESC
+      ORDER BY wi.priority ASC NULLS LAST, wi.updated_at DESC
       LIMIT $${params.length}
     `.trim()
 
@@ -4444,7 +4449,7 @@ router.get('/search', async (req, res, next) => {
           SELECT wis.work_item_id, ts_headline('english',
             wis.title_text || ' ' || wis.description_text || ' ' || wis.custom_text || ' ' || wis.comments_text,
             to_tsquery('english', $1),
-            'StartSel=<mark>, StopSel=</mark>, MaxWords=20, MinWords=5'
+            'StartSel=<b>, StopSel=</b>, MaxWords=20, MinWords=5'
           ) AS snippet
           FROM runtime.work_item_search wis
           WHERE wis.work_item_id = ANY($2)

@@ -13,7 +13,7 @@ describe('Saved filters CRUD', () => {
   it('creates a private filter', async () => {
     const r = await api('/saved-filters', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Test private', jql: 'priority = 1', share_scope: 'private' })
+      body: JSON.stringify({ name: 'Test private', filter_params: { stage_class: 'active' }, share_scope: 'private' })
     })
     assert.equal(r.status, 201)
     assert.ok(r.data.id)
@@ -26,10 +26,10 @@ describe('Saved filters CRUD', () => {
     assert.ok(Array.isArray(r.data.rows))
   })
 
-  it('rejects bad JQL on save', async () => {
+  it('rejects missing name on save', async () => {
     const r = await api('/saved-filters', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Bad', jql: 'xyz === ===', share_scope: 'private' })
+      body: JSON.stringify({ filter_params: {}, share_scope: 'private' })
     })
     assert.equal(r.status, 400)
   })
@@ -37,7 +37,7 @@ describe('Saved filters CRUD', () => {
   it('rejects org filter from non-member', async () => {
     const r = await api('/saved-filters', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Bad org', jql: 'priority = 1', share_scope: 'org', owner_org_id: 9999 })
+      body: JSON.stringify({ name: 'Bad org', filter_params: { keyword: 'test' }, share_scope: 'org', owner_org_id: 9999 })
     })
     assert.equal(r.status, 403)
   })
