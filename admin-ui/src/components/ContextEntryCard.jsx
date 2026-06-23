@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { DecisionResolution, DecisionStatusBadge } from './DecisionResolution'
 
 const TYPE_COLORS = {
   nfr:        'bg-[#7a9e6e22] text-[#2d5a27] border-[#2d5a2744]',
@@ -110,6 +111,7 @@ export function ContextEntryCard({ entry, workItemId, onUpdated, onDeleted, inhe
     <div className={`rounded-md border border-border bg-card overflow-hidden ${inherited ? 'opacity-80' : ''}`}>
       <div className="px-3 py-2 border-b border-border flex items-center gap-2 bg-muted/30">
         <TypeBadge type={entry.type} />
+        {entry.type === 'decision' && <DecisionStatusBadge resolved={entry.resolved} />}
         {entry.title && <span className="text-xs font-semibold text-foreground">{entry.title}</span>}
         {entry.is_agent && (
           <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">🤖 agent</span>
@@ -147,6 +149,10 @@ export function ContextEntryCard({ entry, workItemId, onUpdated, onDeleted, inhe
         <div className="px-3 py-2">
           <MarkdownBody content={entry.content} />
         </div>
+      )}
+
+      {entry.type === 'decision' && !editing && (
+        <DecisionResolution entry={entry} workItemId={workItemId} onUpdated={onUpdated} />
       )}
 
       <div className="px-3 py-1 border-t border-border flex items-center gap-3 text-[10px] text-muted-foreground">
