@@ -1,7 +1,7 @@
 ---
 trigger: on_enter
 model: sonnet
-max_tokens: 2048
+max_tokens: 8192
 context:
   pull: [discovery, decision, nfr, acceptance, note]
   org: [architecture, process, standard]

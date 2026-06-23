@@ -43,6 +43,7 @@ uploads/
 # Internal session docs — never commit to public repo
 _internal/
 *_HANDOFF.md
+ARCHITECTURE.md
 CLAUDE.md
 SESSION_*.md
 STATE.md
