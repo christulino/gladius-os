@@ -11,6 +11,7 @@ import { getPlaybookForStage, parsePlaybook } from './stagePlaybooks.js'
 import { resolveModelConfig }            from './orgAiModels.js'
 import { assembleContext, formatContextForPrompt } from './contextAssembler.js'
 import { createContextEntry }            from './contextEntries.js'
+import { parseAgentEntries }             from './parseAgentEntries.js'
 import { pool }                          from '../db/postgres.js'
 
 /**
@@ -91,18 +92,15 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
 
     const rawText = response.content[0]?.text ?? ''
 
-    // 7. Parse response — strip all markdown code fences, then extract the JSON array.
-    //    Fall back to a single note if parsing fails (truncated response, non-JSON output, etc.)
-    let entries = []
-    try {
-      const stripped = rawText.replace(/```(?:json)?\n?/g, '').replace(/\n?```/g, '')
-      const match = stripped.match(/\[[\s\S]*\]/)
-      if (match) entries = JSON.parse(match[0])
-    } catch {
-      entries = [{ type: 'note', title: 'AI Analysis', content: rawText }]
+    // 7. Parse the response into entries — tolerant of code fences and of
+    //    truncation (a token-limited array is salvaged object-by-object). The
+    //    raw blob is NEVER stored as a pretend entry.
+    const { entries, truncated } = parseAgentEntries(rawText)
+    if (truncated) {
+      console.warn(`[playbookExecutor] Imperfect/truncated output for work item ${workItemId} (stage ${stageId}); salvaged ${entries.length}. Consider raising the playbook max_tokens.`)
     }
 
-    // 8. Validate against write allowlist and persist each entry
+    // 8. Validate against the write allowlist and persist each entry
     const allowedTypes = new Set(allowedWriteTypes)
     let written = 0
     for (const entry of entries) {
@@ -116,6 +114,17 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
         authorId: null,
       })
       written++
+    }
+
+    // If nothing parsed, record a clean diagnostic note — never the raw JSON.
+    if (written === 0) {
+      await createContextEntry(workItemId, {
+        type:     'note',
+        title:    'Playbook produced no usable output',
+        content:  "The stage playbook ran but its output could not be parsed into entries (empty or malformed model output). The raw output was discarded. If this recurs, check the playbook's max_tokens and model.",
+        isAgent:  true,
+        authorId: null,
+      })
     }
 
     console.log(`[playbookExecutor] Wrote ${written} entries for work item ${workItemId} (stage ${stageId})`)
