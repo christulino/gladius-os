@@ -126,3 +126,85 @@ export async function deleteContextEntry(entryId, workItemId) {
   )
   return r.rows[0] || null
 }
+
+/**
+ * Resolve a decision-type context entry: records the answer, resolver identity, and
+ * timestamp on the row, and emits context_entry.decision_resolved for history.
+ * Scoped to work_item_id (IDOR guard). Only entries with type='decision' resolve.
+ *
+ * @param {number} entryId
+ * @param {number} workItemId   - must match the entry's work_item_id
+ * @param {Object} opts
+ * @param {string} [opts.resolutionText] - the recorded answer
+ * @param {number} [opts.resolvedBy]     - resolver's user id (from auth context)
+ * @returns {Promise<Object|null>} updated row, or null if not found / not a decision
+ */
+export async function resolveDecisionEntry(entryId, workItemId, { resolutionText, resolvedBy } = {}) {
+  const c = await pool.connect()
+  try {
+    await c.query('BEGIN')
+    const r = await c.query(`
+      UPDATE runtime.context_entries
+      SET resolved=true, resolved_by=$1, resolved_at=now(), resolution_text=$2, updated_at=now()
+      WHERE id=$3 AND work_item_id=$4 AND type='decision'
+      RETURNING *
+    `, [resolvedBy || null, resolutionText || null, entryId, workItemId])
+    const entry = r.rows[0]
+    if (!entry) { await c.query('ROLLBACK'); return null }
+
+    await emitEvent(c, {
+      eventType: 'context_entry.decision_resolved',
+      entityId:  workItemId,
+      actorId:   resolvedBy || null,
+      payload:   { entry_id: entry.id, resolution_text: entry.resolution_text },
+    })
+    await c.query('COMMIT')
+    return entry
+  } catch (err) {
+    await c.query('ROLLBACK')
+    throw err
+  } finally {
+    c.release()
+  }
+}
+
+/**
+ * Reopen a resolved decision entry: clears the resolution columns and emits
+ * context_entry.decision_reopened. The prior answer is NOT lost — it survives in the
+ * earlier decision_resolved event payload (history lives in the event log).
+ * Scoped to work_item_id. Only a currently-resolved decision can be reopened.
+ *
+ * @param {number} entryId
+ * @param {number} workItemId
+ * @param {Object} opts
+ * @param {number} [opts.reopenedBy] - actor's user id (from auth context)
+ * @returns {Promise<Object|null>} updated row, or null if not found / not a resolved decision
+ */
+export async function reopenDecisionEntry(entryId, workItemId, { reopenedBy } = {}) {
+  const c = await pool.connect()
+  try {
+    await c.query('BEGIN')
+    const r = await c.query(`
+      UPDATE runtime.context_entries
+      SET resolved=false, resolved_by=null, resolved_at=null, resolution_text=null, updated_at=now()
+      WHERE id=$1 AND work_item_id=$2 AND type='decision' AND resolved=true
+      RETURNING *
+    `, [entryId, workItemId])
+    const entry = r.rows[0]
+    if (!entry) { await c.query('ROLLBACK'); return null }
+
+    await emitEvent(c, {
+      eventType: 'context_entry.decision_reopened',
+      entityId:  workItemId,
+      actorId:   reopenedBy || null,
+      payload:   { entry_id: entry.id },
+    })
+    await c.query('COMMIT')
+    return entry
+  } catch (err) {
+    await c.query('ROLLBACK')
+    throw err
+  } finally {
+    c.release()
+  }
+}

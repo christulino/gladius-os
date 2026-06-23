@@ -269,6 +269,8 @@ export const api = {
   createContextEntry: (workItemId, data)  => apiFetch(`/work-items/${workItemId}/context-entries`, { method: 'POST', body: JSON.stringify(data) }),
   updateContextEntry: (workItemId, id, data) => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteContextEntry: (workItemId, id)    => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'DELETE' }),
+  resolveDecisionEntry: (workItemId, id, data) => apiFetch(`/work-items/${workItemId}/context-entries/${id}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
+  reopenDecisionEntry:  (workItemId, id)       => apiFetch(`/work-items/${workItemId}/context-entries/${id}/reopen`, { method: 'POST' }),
 
   // Org Context Library
   orgContext:       (orgId, types) => apiFetch(`/organizations/${orgId}/context${types ? '?types='+types : ''}`),

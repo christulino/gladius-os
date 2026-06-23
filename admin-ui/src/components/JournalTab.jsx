@@ -56,6 +56,7 @@ export function JournalTab({ workItemId }) {
   const [entries, setEntries]       = useState([])
   const [loading, setLoading]       = useState(true)
   const [typeFilter, setTypeFilter] = useState(null)
+  const [openOnly, setOpenOnly]     = useState(false)
   const [adding, setAdding]         = useState(false)
 
   const load = useCallback(async () => {
@@ -69,6 +70,8 @@ export function JournalTab({ workItemId }) {
   useEffect(() => { load() }, [load])
 
   const activeTypes = [...new Set(entries.map(e => e.type))]
+  const hasDecisions = entries.some(e => e.type === 'decision')
+  const displayed = openOnly ? entries.filter(e => e.type === 'decision' && !e.resolved) : entries
 
   return (
     <div className="flex flex-col gap-3">
@@ -84,6 +87,12 @@ export function JournalTab({ workItemId }) {
               {t}
             </button>
           ))}
+          {hasDecisions && (
+            <button onClick={() => setOpenOnly(v => !v)}
+              className={`px-2 py-0.5 rounded-full text-[10px] border ${openOnly ? 'bg-[#c8a84b] text-white border-[#c8a84b]' : 'bg-background border-border text-muted-foreground hover:text-foreground'}`}>
+              ○ open decisions
+            </button>
+          )}
         </div>
         {!adding && (
           <Button size="sm" onClick={() => setAdding(true)} className="text-xs">+ Add Entry</Button>
@@ -100,10 +109,10 @@ export function JournalTab({ workItemId }) {
 
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
-      ) : entries.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No journal entries yet.</p>
+      ) : displayed.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{openOnly ? 'No open decisions.' : 'No journal entries yet.'}</p>
       ) : (
-        entries.map(entry => (
+        displayed.map(entry => (
           <ContextEntryCard
             key={entry.id}
             entry={entry}

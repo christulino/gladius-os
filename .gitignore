@@ -1,5 +1,8 @@
-# Dependencies
+# Dependencies (pattern without trailing slash also catches node_modules symlinks
+# used by git worktrees that share the primary checkout's installed deps)
 node_modules/
+node_modules
+admin-ui/node_modules
 
 # Environment — never commit credentials
 .env

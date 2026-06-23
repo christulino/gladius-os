@@ -33,6 +33,8 @@ import {
   createContextEntry,
   updateContextEntry,
   deleteContextEntry,
+  resolveDecisionEntry,
+  reopenDecisionEntry,
 } from '../runtime/contextEntries.js'
 import { listOrgContext, createOrgContext, updateOrgContext, deleteOrgContext } from '../runtime/orgContext.js'
 import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook } from '../runtime/stagePlaybooks.js'
@@ -4721,6 +4723,34 @@ router.delete('/work-items/:id/context-entries/:entryId', async (req, res, next)
     const deleted = await deleteContextEntry(entryId, workItemId)
     if (!deleted) return res.status(404).json({ error: 'Not found' })
     res.json({ deleted: true, id: entryId })
+  } catch (err) { next(err) }
+})
+
+// Resolve a decision entry. Any authenticated org member may resolve (NOT author-only:
+// decisions are frequently agent-authored with no author_id, and resolution is a
+// workflow act, not an edit of one's own note). Records the answer + attribution + ts.
+router.post('/work-items/:id/context-entries/:entryId/resolve', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    const entryId    = parseInt(req.params.entryId, 10)
+    const entry = await resolveDecisionEntry(entryId, workItemId, {
+      resolutionText: req.body.resolution_text,
+      resolvedBy:     req.userId,
+    })
+    if (!entry) return res.status(404).json({ error: 'Decision entry not found' })
+    res.json(entry)
+  } catch (err) { next(err) }
+})
+
+// Reopen a resolved decision entry. Clears the resolution columns; the prior answer
+// remains in the decision_resolved event payload (history lives in the event log).
+router.post('/work-items/:id/context-entries/:entryId/reopen', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    const entryId    = parseInt(req.params.entryId, 10)
+    const entry = await reopenDecisionEntry(entryId, workItemId, { reopenedBy: req.userId })
+    if (!entry) return res.status(404).json({ error: 'Resolved decision entry not found' })
+    res.json(entry)
   } catch (err) { next(err) }
 })
 
