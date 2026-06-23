@@ -4899,6 +4899,7 @@ ${playbookContent ? `\nCurrent playbook:\n\`\`\`markdown\n${playbookContent}\n\`
 router.get('/work-items/:id/playbook-runs', async (req, res, next) => {
   try {
     const workItemId = parseInt(req.params.id, 10)
+    // Org-membership gate: user must belong to the org that owns the work item
     const result = await query(
       `SELECT
          pr.id,
@@ -4916,9 +4917,14 @@ router.get('/work-items/:id/playbook-runs', async (req, res, next) => {
          pr.completed_at
        FROM runtime.playbook_runs pr
        JOIN blueprint.stages s ON s.id = pr.stage_id
+       JOIN runtime.work_items wi ON wi.id = pr.work_item_id
+       JOIN blueprint.org_memberships om
+         ON om.org_id = wi.owner_org_id
+        AND om.user_id = $2
+        AND om.is_active = true
        WHERE pr.work_item_id = $1
        ORDER BY pr.started_at DESC`,
-      [workItemId]
+      [workItemId, req.userId]
     )
     res.json({ runs: result.rows })
   } catch (err) { next(err) }
