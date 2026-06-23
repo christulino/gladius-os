@@ -4346,8 +4346,10 @@ router.get('/search/fields', async (req, res, next) => {
 router.get('/search', async (req, res, next) => {
   try {
     const ctx = await getUserSearchContext(req)
-    const { keyword, type_id, org_id, assignee_id, stage_class, priority, type_name } = req.query
-    const hasFilters = keyword || type_id || type_name || org_id || assignee_id || stage_class || priority
+    const { keyword, type_id, org_id, assignee_id, stage_class, priority, type_name,
+            sort_by, sort_dir, created_after, created_before } = req.query
+    const hasFilters = keyword || type_id || type_name || org_id || assignee_id ||
+                       stage_class || priority || created_after || created_before
     if (!hasFilters) return res.json({ rows: [], next_before: null })
 
     const limit = Math.min(parseInt(req.query.limit || '50', 10), 200)
@@ -4404,6 +4406,26 @@ router.get('/search', async (req, res, next) => {
       where.push(`wi.priority = $${params.length}`)
     }
 
+    const SORT_COLS = { created_at: 'wi.created_at', updated_at: 'wi.updated_at', priority: 'wi.priority', due_date: 'wi.due_date' }
+    const RELATIVE_DATE_RE = /^(\d+)d$/
+
+    function pushDateFilter(v, col, op) {
+      const rel = RELATIVE_DATE_RE.exec(v)
+      if (rel) {
+        params.push(parseInt(rel[1], 10))
+        where.push(`${col} ${op} NOW() - ($${params.length} * INTERVAL '1 day')`)
+        return
+      }
+      const ts = Date.parse(v)
+      if (!isNaN(ts)) {
+        params.push(new Date(ts).toISOString())
+        where.push(`${col} ${op} $${params.length}::timestamptz`)
+      }
+    }
+
+    if (created_after)  pushDateFilter(created_after,  'wi.created_at', '>=')
+    if (created_before) pushDateFilter(created_before, 'wi.created_at', '<')
+
     if (before) {
       params.push(before)
       where.push(`wi.id < $${params.length}`)
@@ -4431,7 +4453,7 @@ router.get('/search', async (req, res, next) => {
       LEFT JOIN blueprint.users u ON u.id = rel_owns.user_id
       LEFT JOIN runtime.work_item_search wis ON wis.work_item_id = wi.id
       ${whereClause}
-      ORDER BY wi.priority ASC NULLS LAST, wi.updated_at DESC
+      ORDER BY ${SORT_COLS[sort_by] ?? 'wi.priority'} ${sort_dir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST, wi.updated_at DESC
       LIMIT $${params.length}
     `.trim()
 
