@@ -24,8 +24,8 @@ const SheetContent = forwardRef(({ className, children, side = 'left', overlay =
       className={cn(
         'fixed z-50 flex flex-col bg-card shadow-xl transition ease-in-out',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-200',
-        side === 'left' && 'inset-y-0 left-0 w-[420px] border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left',
-        side === 'right' && 'inset-y-0 right-0 w-[420px] border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
+        side === 'left' && 'inset-y-0 left-0 w-[min(65vw,960px)] border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left',
+        side === 'right' && 'inset-y-0 right-0 w-[min(65vw,960px)] border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right',
         className
       )}
       {...props}
