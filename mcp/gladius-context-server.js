@@ -39,7 +39,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'write_context_entry': {
         const entry = await createContextEntry(args.work_item_id, {
-          type:       args.type,
+          type:       args.entry_type,
           title:      args.title ?? null,
           content:    args.content,
           visibility: args.visibility ?? 'item',
@@ -141,21 +141,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'transition_work_item': {
         if (!AGENT_USER_ID) throw new Error('GLADIUS_AGENT_USER_ID env var not set — cannot perform transitions')
         const { prepareTransition, executeTransition } = await import('../runtime/transitions.js')
-        const prep = await prepareTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
+        const prep = await prepareTransition(args.work_item_id, args.target_stage_id, AGENT_USER_ID)
         if (!prep.canTransition) {
           throw new Error(`Transition blocked: ${prep.reason ?? 'exit criteria not met'}`)
         }
-        const result = await executeTransition(args.work_item_id, args.to_stage_id, AGENT_USER_ID)
+        const result = await executeTransition(args.work_item_id, args.target_stage_id, AGENT_USER_ID)
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
       case 'add_comment': {
         if (!AGENT_USER_ID) throw new Error('GLADIUS_AGENT_USER_ID env var not set — cannot post comments')
         const r = await pool.query(`
-          INSERT INTO runtime.work_item_comments (work_item_id, author_user_id, body)
-          VALUES ($1, $2, $3)
-          RETURNING id, work_item_id, author_user_id, body, created_at, updated_at
-        `, [args.work_item_id, AGENT_USER_ID, args.body])
+          INSERT INTO runtime.work_item_comments (work_item_id, author_user_id, body, parent_comment_id)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id, work_item_id, author_user_id, body, parent_comment_id, created_at, updated_at
+        `, [args.work_item_id, AGENT_USER_ID, args.body, args.parent_id || null])
         return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
       }
 
