@@ -4893,6 +4893,38 @@ ${playbookContent ? `\nCurrent playbook:\n\`\`\`markdown\n${playbookContent}\n\`
 })
 
 // =============================================================================
+// PLAYBOOK RUNS
+// =============================================================================
+
+router.get('/work-items/:id/playbook-runs', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    const result = await query(
+      `SELECT
+         pr.id,
+         pr.stage_id,
+         s.name         AS stage_name,
+         pr.playbook_id,
+         pr.status,
+         pr.model,
+         pr.input_tokens,
+         pr.output_tokens,
+         pr.stop_reason,
+         pr.entries_written,
+         pr.error_message,
+         pr.started_at,
+         pr.completed_at
+       FROM runtime.playbook_runs pr
+       JOIN blueprint.stages s ON s.id = pr.stage_id
+       WHERE pr.work_item_id = $1
+       ORDER BY pr.started_at DESC`,
+      [workItemId]
+    )
+    res.json({ runs: result.rows })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
 // MCP TOOL REFERENCE
 // =============================================================================
 

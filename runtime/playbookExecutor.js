@@ -14,6 +14,33 @@ import { createContextEntry }            from './contextEntries.js'
 import { parseAgentEntries }             from './parseAgentEntries.js'
 import { pool }                          from '../db/postgres.js'
 
+async function insertRunRecord(workItemId, stageId, playbookId) {
+  const result = await pool.query(
+    `INSERT INTO runtime.playbook_runs (work_item_id, stage_id, playbook_id, status)
+     VALUES ($1, $2, $3, 'running') RETURNING id`,
+    [workItemId, stageId, playbookId ?? null]
+  )
+  return result.rows[0].id
+}
+
+async function updateRunRecord(runId, fields) {
+  const { status, model, inputTokens, outputTokens, stopReason, entriesWritten, errorMessage } = fields
+  await pool.query(
+    `UPDATE runtime.playbook_runs SET
+       status          = $2,
+       model           = $3,
+       input_tokens    = $4,
+       output_tokens   = $5,
+       stop_reason     = $6,
+       entries_written = $7,
+       error_message   = $8,
+       completed_at    = now()
+     WHERE id = $1`,
+    [runId, status, model ?? null, inputTokens ?? null, outputTokens ?? null,
+     stopReason ?? null, entriesWritten ?? null, errorMessage ?? null]
+  )
+}
+
 /**
  * Run the playbook for a stage entry, if one exists and is active.
  *
@@ -23,6 +50,8 @@ import { pool }                          from '../db/postgres.js'
  * @param {number|null} witTypeId
  */
 export async function executePlaybookForStageEntry(workItemId, stageId, orgId, witTypeId = null) {
+  let runId = null
+
   try {
     // 1. Find the most specific active playbook for this stage + type
     const playbook = await getPlaybookForStage(stageId, witTypeId)
@@ -42,6 +71,9 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
       return
     }
 
+    // Insert run record with status=running before the LLM call
+    runId = await insertRunRecord(workItemId, stageId, playbook.id)
+
     // 3. Assemble context from item journal, ancestors, and org context
     const ctx = await assembleContext(workItemId, orgId, meta)
     const contextBlock = formatContextForPrompt(ctx)
@@ -52,7 +84,10 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
       [workItemId]
     )
     const wi = wiRow.rows[0]
-    if (!wi) return
+    if (!wi) {
+      await updateRunRecord(runId, { status: 'failed', errorMessage: 'Work item not found' })
+      return
+    }
 
     // 5. Build system and user prompts
     const allowedWriteTypes = meta?.context?.write ?? ['note']
@@ -91,6 +126,10 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
     )
 
     const rawText = response.content[0]?.text ?? ''
+    const inputTokens  = response.usage?.input_tokens  ?? null
+    const outputTokens = response.usage?.output_tokens ?? null
+    const stopReason   = response.stop_reason           ?? null
+    const resolvedModel = config.model
 
     // 7. Parse the response into entries — tolerant of code fences and of
     //    truncation (a token-limited array is salvaged object-by-object). The
@@ -116,20 +155,21 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
       written++
     }
 
-    // If nothing parsed, record a clean diagnostic note — never the raw JSON.
-    if (written === 0) {
-      await createContextEntry(workItemId, {
-        type:     'note',
-        title:    'Playbook produced no usable output',
-        content:  "The stage playbook ran but its output could not be parsed into entries (empty or malformed model output). The raw output was discarded. If this recurs, check the playbook's max_tokens and model.",
-        isAgent:  true,
-        authorId: null,
-      })
-    }
+    await updateRunRecord(runId, {
+      status:         'success',
+      model:          resolvedModel,
+      inputTokens,
+      outputTokens,
+      stopReason,
+      entriesWritten: written,
+    })
 
     console.log(`[playbookExecutor] Wrote ${written} entries for work item ${workItemId} (stage ${stageId})`)
   } catch (err) {
     // Never throw — this is a non-fatal side effect
     console.error(`[playbookExecutor] Error for work item ${workItemId}:`, err.message)
+    if (runId) {
+      await updateRunRecord(runId, { status: 'failed', errorMessage: err.message }).catch(() => {})
+    }
   }
 }

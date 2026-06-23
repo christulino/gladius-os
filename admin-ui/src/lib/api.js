@@ -271,6 +271,7 @@ export const api = {
   deleteContextEntry: (workItemId, id)    => apiFetch(`/work-items/${workItemId}/context-entries/${id}`, { method: 'DELETE' }),
   resolveDecisionEntry: (workItemId, id, data) => apiFetch(`/work-items/${workItemId}/context-entries/${id}/resolve`, { method: 'POST', body: JSON.stringify(data) }),
   reopenDecisionEntry:  (workItemId, id)       => apiFetch(`/work-items/${workItemId}/context-entries/${id}/reopen`, { method: 'POST' }),
+  playbookRuns:         (workItemId)            => apiFetch(`/work-items/${workItemId}/playbook-runs`),
 
   // Org Context Library
   orgContext:       (orgId, types) => apiFetch(`/organizations/${orgId}/context${types ? '?types='+types : ''}`),

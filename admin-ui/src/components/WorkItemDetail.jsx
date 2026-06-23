@@ -10,6 +10,7 @@ import { WorkItemHistory } from '@/components/WorkItemHistory'
 import AttachmentsList from '@/components/AttachmentsList'
 import AttachmentUpload from '@/components/AttachmentUpload'
 import { JournalTab } from '@/components/JournalTab'
+import PlaybookRunIndicator from '@/components/PlaybookRunIndicator'
 import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
 
 // ─── Custom Fields Renderer ─────────────────────────────────────────────────
@@ -812,6 +813,11 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                       <span className="text-xs text-muted-foreground">{formatRelative(item.updated_at)}</span>
                     </div>
                   </div>
+
+                  {/* Playbook run status */}
+                  {item.current_stage_id && (
+                    <PlaybookRunIndicator workItemId={workItemId} stageId={item.current_stage_id} />
+                  )}
 
                   {/* Class of Service fields */}
                   <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-border">
