@@ -237,6 +237,22 @@ async function evaluateCodified(criterion, workItem) {
       }
     }
 
+    case 'no_unresolved_decisions': {
+      // All decision-type journal entries on this item must be resolved.
+      // Prevents moving forward with open architectural or product questions.
+      const result = await query(`
+        SELECT COUNT(*) AS cnt
+        FROM runtime.context_entries
+        WHERE work_item_id = $1 AND type = 'decision' AND resolved = false
+      `, [workItem.id])
+      const count = parseInt(result.rows[0].cnt)
+      if (count === 0) return { passed: true }
+      return {
+        passed: false,
+        reason: `${count} unresolved decision${count === 1 ? '' : 's'} must be resolved before proceeding`,
+      }
+    }
+
     default:
       return { passed: false, reason: `Unknown codified condition type: "${condition.type}"` }
   }
