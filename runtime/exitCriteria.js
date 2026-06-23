@@ -215,6 +215,28 @@ async function evaluateCodified(criterion, workItem) {
       return { passed: true }
     }
 
+    case 'context_entry_exists': {
+      // At least min_count journal entries of a given type must exist on the item.
+      // Satisfiable by an agent via the write_context_entry MCP tool, so this gate
+      // checks actual work product rather than a field/checkbox the agent can't set.
+      if (!condition.entry_type) {
+        return { passed: false, reason: 'context_entry_exists condition is missing entry_type' }
+      }
+      const minCount = condition.min_count || 1
+      const result = await query(`
+        SELECT COUNT(*) AS cnt
+        FROM runtime.context_entries
+        WHERE work_item_id = $1 AND type = $2
+      `, [workItem.id, condition.entry_type])
+
+      const count = parseInt(result.rows[0].cnt)
+      if (count >= minCount) return { passed: true }
+      return {
+        passed: false,
+        reason: `Requires at least ${minCount} "${condition.entry_type}" context entr${minCount === 1 ? 'y' : 'ies'} (found ${count})`,
+      }
+    }
+
     default:
       return { passed: false, reason: `Unknown codified condition type: "${condition.type}"` }
   }
