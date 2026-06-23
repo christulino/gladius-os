@@ -1,0 +1,124 @@
+/**
+ * mcp/toolsManifest.js
+ * Canonical list of Gladius MCP tools — imported by the MCP server and the
+ * REST API (/admin/api/mcp/tools) so they stay in sync.
+ */
+
+export const TOOLS = [
+  {
+    name: 'list_context_entries',
+    description: 'List journal entries for a work item',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        types: {
+          type: 'array', items: { type: 'string' },
+          description: 'Filter by entry types (optional): nfr, discovery, acceptance, design, decision, note, test-plan, playbook',
+        },
+        org_id: { type: 'number', description: 'Org the work item belongs to (required)' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
+  {
+    name: 'write_context_entry',
+    description: 'Write a context entry to a work item journal',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required)' },
+        entry_type:   { type: 'string', enum: ['nfr','discovery','acceptance','design','decision','note','test-plan','playbook'], description: 'Entry type' },
+        content:      { type: 'string', description: 'Markdown content' },
+        visibility:   { type: 'string', enum: ['item','descendants'], description: 'Defaults to item' },
+        is_agent:     { type: 'boolean', description: 'Whether written by an AI agent (default: true)' },
+      },
+      required: ['work_item_id', 'org_id', 'entry_type', 'content'],
+    },
+  },
+  {
+    name: 'get_assembled_context',
+    description: 'Get fully assembled context for a work item (journal entries + ancestor entries + org-level context), formatted for prompt injection',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id:      { type: 'number', description: 'Work item ID' },
+        org_id:            { type: 'number', description: 'Org the work item belongs to (required)' },
+        pull_types:        { type: 'array', items: { type: 'string' }, description: 'Journal entry types to pull' },
+        org_types:         { type: 'array', items: { type: 'string' }, description: 'Org context types to inject' },
+        include_ancestors: { type: 'boolean', description: 'Include ancestor work item context (default: false)' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
+  {
+    name: 'list_org_context',
+    description: 'List org-level context entries (architecture standards, security policies, etc.)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org_id: { type: 'number', description: 'Organization ID' },
+        types:  { type: 'array', items: { type: 'string' }, description: 'Filter by context types (optional)' },
+      },
+      required: ['org_id'],
+    },
+  },
+  {
+    name: 'get_work_item',
+    description: 'Get work item details: title, description, display_key, stage, type, timestamps',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required — prevents cross-org access)' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
+  {
+    name: 'search_work_items',
+    description: 'Search work items by keyword and structured filters',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword:     { type: 'string', description: 'Full-text search across title, description, and comments' },
+        stage_class: { type: 'string', enum: ['active','queued','done','cancelled'], description: 'Filter by stage class' },
+        type_name:   { type: 'string', description: 'Filter by work item type name (e.g. "Bug", "Feature")' },
+        priority:    { type: 'number', enum: [1,2,3,4], description: '1=critical, 2=high, 3=medium, 4=low' },
+        assignee_id: { type: 'number', description: 'Filter by assignee user ID' },
+        org_id:      { type: 'number', description: 'Org to search within (required)' },
+        limit:       { type: 'number', description: 'Max results (default 20, max 100)' },
+      },
+      required: ['org_id'],
+    },
+  },
+  {
+    name: 'transition_work_item',
+    description: 'Move a work item to a different stage via the two-phase transition engine (exit criteria still apply). Actor is the configured agent identity.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id:    { type: 'number', description: 'Work item ID' },
+        org_id:          { type: 'number', description: 'Org the work item belongs to (required)' },
+        target_stage_id: { type: 'number', description: 'Destination stage ID' },
+        comment:         { type: 'string', description: 'Optional comment to add with the transition' },
+      },
+      required: ['work_item_id', 'org_id', 'target_stage_id'],
+    },
+  },
+  {
+    name: 'add_comment',
+    description: 'Add a comment to a work item. Author is the configured agent identity (GLADIUS_AGENT_USER_ID).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required)' },
+        body:         { type: 'string', description: 'Comment text (markdown supported)' },
+        parent_id:    { type: 'number', description: 'Comment ID to reply to (optional)' },
+      },
+      required: ['work_item_id', 'org_id', 'body'],
+    },
+  },
+]

@@ -4862,4 +4862,14 @@ ${playbookContent ? `\nCurrent playbook:\n\`\`\`markdown\n${playbookContent}\n\`
   } catch (err) { next(err) }
 })
 
+// =============================================================================
+// MCP TOOL REFERENCE
+// =============================================================================
+
+import { TOOLS as MCP_TOOLS } from '../mcp/toolsManifest.js'
+
+router.get('/mcp/tools', async (req, res) => {
+  res.json({ tools: MCP_TOOLS })
+})
+
 export default router

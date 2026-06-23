@@ -417,3 +417,9 @@ export async function deleteAttachment(workItemId, attachmentId) {
   if (!r.ok) throw new Error(`deleteAttachment: ${r.status}`)
   return (await r.json())
 }
+
+// ─── MCP Tool Reference ──────────────────────────────────────────────────────
+
+export const mcpApi = {
+  tools: () => apiFetch('/mcp/tools'),
+}

@@ -19,6 +19,7 @@ import {
   Activity,
   BellRing,
   Search as SearchIcon,
+  Terminal as TerminalIcon,
 } from 'lucide-react'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationsDrawer from '@/components/NotificationsDrawer'
@@ -46,6 +47,7 @@ import Simulation   from '@/pages/Simulation'
 import EventSubscribers from '@/pages/EventSubscribers'
 import SettingsNotifications from '@/pages/SettingsNotifications'
 import SearchPage    from '@/pages/SearchPage'
+import MCPTools      from '@/pages/MCPTools'
 
 const NAV = [
   { id: 'board',         label: 'Board',            section: null,       icon: LayoutDashboard },
@@ -72,6 +74,7 @@ const NAV = [
   { id: 'logs',          label: 'Log Viewer',       section: null,       icon: ScrollText },
   { id: 'db',            label: 'DB Console',       section: null,       icon: Database },
   { id: 'events',        label: 'Events',           section: null,       icon: Activity },
+  { id: 'mcp-tools',     label: 'MCP Tools',        section: null,       icon: TerminalIcon },
 ]
 
 const PAGES = {
@@ -95,6 +98,7 @@ const PAGES = {
   simulation:    Simulation,
   events:        EventSubscribers,
   settingsnotifications: SettingsNotifications,
+  'mcp-tools':          MCPTools,
 }
 
 export default function App() {
