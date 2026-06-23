@@ -28,7 +28,7 @@
 
 [P2] MCP tools to set fields / ack exit criteria — Review/Deployment gates (`pr_url`, `pr_status`, `deployed_version`) need curl+bearer from the worker today; the MCP agent can't satisfy them natively.
 
-[P2] Discovery readiness skill (FEAT.25361, Todo) — Multi-lens review agent that marks a work item "ready" for Planning. Reads journal entries, checks for unresolved decisions, writes a readiness assessment. Exit criteria on Discovery stage gate on the ready flag.
+[done 2026-06-23] feat(exit-criteria): FEAT.25361 — Discovery readiness gate. `no_unresolved_decisions` codified condition type added to exitCriteria.js; applied to dogfood Discovery stage as 3rd gate. Session-start skill Step 1.4.5 added to read live Gladius board. Commit: 58e21dd.
 
 [P2] Planning stage playbook (FEAT.25362, Todo) — Worker briefing document: assembles acceptance criteria, decisions, constraints into a structured brief. Sonnet-class. No code search. Writes one `note` entry titled "Planning Brief."
 
@@ -44,9 +44,10 @@
 
 [P2] Open-source release prep (FEAT.25344, Backlog) — README, LICENSE, seed-and-go experience.
 
-## Done (Session 36 — 2026-06-23 — FEAT.25454 search sort/date)
+## Done (Session 36 — 2026-06-23 — FEAT.25454 + FEAT.25361 + session-start board)
 
 [done 2026-06-23] feat(search): FEAT.25454 — sort/date NL support. `sort_by/sort_dir/created_after/created_before` wired translator→endpoint; code-fence stripping in `extractText()` (Haiku wraps JSON in fences); `type_name` frontend gap fixed as bonus. All 59 integration tests green; browser-verified. Commit: 9a4a772.
+[done 2026-06-23] feat(exit-criteria): FEAT.25361 — Discovery readiness gate. `no_unresolved_decisions` condition type; applied to dogfood Discovery stage; session-start Step 1.4.5 reads live board. Commit: 58e21dd.
 
 ## Done (Session 35 — 2026-06-23 — FEAT.25487 playbook-run observability)
 
