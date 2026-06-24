@@ -133,4 +133,48 @@ export const TOOLS = [
       required: ['work_item_id', 'org_id', 'body'],
     },
   },
+  {
+    name: 'set_work_item_fields',
+    description: 'Update native fields or custom field values on a work item. Use field_values for custom fields like pr_url, pr_status, deployed_version.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id:  { type: 'number', description: 'Work item ID' },
+        org_id:        { type: 'number', description: 'Org the work item belongs to (required)' },
+        priority:      { type: 'number', enum: [1,2,3,4], description: '1=critical, 2=high, 3=medium, 4=low' },
+        tags:          { type: 'array', items: { type: 'string' }, description: 'Replace tag list' },
+        estimate:      { type: 'number', description: 'Effort estimate' },
+        estimate_unit: { type: 'string', enum: ['points','hours','days'], description: 'Unit for estimate' },
+        due_date:      { type: 'string', description: 'Due date as ISO string (e.g. 2026-07-01)' },
+        is_expedited:  { type: 'boolean', description: 'Mark as expedited' },
+        field_values:  { type: 'object', description: 'Custom field key-value pairs (e.g. {"pr_url": "...", "pr_status": "merged", "deployed_version": "1.2.3"})' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
+  {
+    name: 'get_exit_criteria',
+    description: 'Get exit criteria for the work item\'s current stage with their current pass/fail status. Call this to see what needs to be satisfied before transitioning.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required)' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
+  {
+    name: 'ack_exit_criterion',
+    description: 'Acknowledge a manual exit criterion as met. Only works on criteria with criteria_tier = "manual". Get criterion IDs from get_exit_criteria.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id:  { type: 'number', description: 'Work item ID' },
+        org_id:        { type: 'number', description: 'Org the work item belongs to (required)' },
+        criterion_id:  { type: 'number', description: 'Exit criterion ID (from get_exit_criteria response)' },
+      },
+      required: ['work_item_id', 'org_id', 'criterion_id'],
+    },
+  },
 ]

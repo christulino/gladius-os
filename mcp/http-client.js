@@ -80,4 +80,16 @@ export async function apiPost(path, body = {}) {
   })
 }
 
-export const WRITE_TOOLS = new Set(['write_context_entry', 'add_comment', 'transition_work_item'])
+export async function apiPatch(path, body = {}) {
+  const url = `${BASE_URL}${path}`
+  return request(url, {
+    method: 'PATCH',
+    headers: BASE_HEADERS,
+    body: JSON.stringify(body),
+  })
+}
+
+export const WRITE_TOOLS = new Set([
+  'write_context_entry', 'add_comment', 'transition_work_item',
+  'set_work_item_fields', 'ack_exit_criterion',
+])

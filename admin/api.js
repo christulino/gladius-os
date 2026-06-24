@@ -2536,6 +2536,20 @@ router.get('/work-items/:id/exit-criteria-status', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// GET /admin/api/work-items/:id/exit-criteria — exit criteria for current stage + their status (MCP-friendly flat array)
+router.get('/work-items/:id/exit-criteria', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    const { rows: wiRows } = await query(
+      'SELECT id FROM runtime.work_items WHERE id = $1',
+      [workItemId],
+    )
+    if (!wiRows.length) return res.status(404).json({ error: 'Work item not found' })
+    const criteria = await getWorkItemCriteriaStatus(workItemId)
+    res.json(criteria)
+  } catch (err) { next(err) }
+})
+
 // POST /admin/api/work-items/:id/exit-criteria/:criteriaId/acknowledge
 router.post('/work-items/:id/exit-criteria/:criteriaId/acknowledge', async (req, res, next) => {
   try {
