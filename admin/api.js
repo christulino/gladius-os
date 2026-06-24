@@ -37,6 +37,7 @@ import {
   reopenDecisionEntry,
 } from '../runtime/contextEntries.js'
 import { listOrgContext, createOrgContext, updateOrgContext, deleteOrgContext } from '../runtime/orgContext.js'
+import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
 import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook } from '../runtime/stagePlaybooks.js'
 import { listOrgAiModels, createOrgAiModel, updateOrgAiModel, deleteOrgAiModel, resolveModelConfig } from '../runtime/orgAiModels.js'
 
@@ -4773,6 +4774,29 @@ router.post('/work-items/:id/context-entries/:entryId/reopen', async (req, res, 
     const entry = await reopenDecisionEntry(entryId, workItemId, { reopenedBy: req.userId })
     if (!entry) return res.status(404).json({ error: 'Resolved decision entry not found' })
     res.json(entry)
+  } catch (err) { next(err) }
+})
+
+router.get('/work-items/:id/assembled-context', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    if (isNaN(workItemId)) return res.status(400).json({ error: 'Invalid work item id' })
+    const { rows: wiRows } = await query(
+      'SELECT owner_org_id FROM runtime.work_items WHERE id = $1',
+      [workItemId],
+    )
+    if (!wiRows.length) return res.status(404).json({ error: 'Work item not found' })
+    const orgId = wiRows[0].owner_org_id
+
+    const pullTypes = req.query.pull_types ? req.query.pull_types.split(',') : []
+    const orgTypes  = req.query.org_types  ? req.query.org_types.split(',')  : []
+    if (req.query.include_ancestors === 'true') pullTypes.push('ancestors')
+
+    const meta = { context: { pull: pullTypes, org: orgTypes } }
+    const ctx  = await assembleContext(workItemId, orgId, meta)
+    const context = formatContextForPrompt(ctx)
+
+    res.json({ context, workItemId, orgId })
   } catch (err) { next(err) }
 })
 
