@@ -56,17 +56,15 @@ describe('Translator — output validation', () => {
     assert.equal(calls, 2)
   })
 
-  it('rejects markdown code fences with TRANSLATION_FAILED, no retry', async () => {
+  it('strips markdown code fences and succeeds (Haiku wraps JSON in fences)', async () => {
     const stub = { messages: { create: async () => ({
-      content: [{ type: 'text', text: '```\n{"keyword":"api"}\n```' }],
+      content: [{ type: 'text', text: '```json\n{"keyword":"api"}\n```' }],
       usage: { input_tokens: 50, output_tokens: 8 }
     })}}
     const { translate, __setInstanceBudgetForTesting } = await loadTranslator(stub)
     __setInstanceBudgetForTesting(5_000_000)
-    await assert.rejects(
-      translate({ prompt: 'show P1', userContext: { userId: TEST_USER, orgIds: [1] } }),
-      err => err.code === 'TRANSLATION_FAILED'
-    )
+    const result = await translate({ prompt: 'show P1', userContext: { userId: TEST_USER, orgIds: [1] } })
+    assert.deepEqual(result.filters, { keyword: 'api' })
   })
 
   it('retries once when first response is non-object JSON', async () => {
