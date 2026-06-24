@@ -4808,6 +4808,17 @@ router.get('/organizations/:orgId/session-context', async (req, res, next) => {
     const orgId = parseInt(req.params.orgId, 10)
     if (isNaN(orgId)) return res.status(400).json({ error: 'Invalid org id' })
 
+    // Org-membership gate: user must belong to this org (admins bypass)
+    const userRow = await query('SELECT is_admin FROM blueprint.users WHERE id = $1', [req.userId])
+    const isAdmin = !!userRow.rows[0]?.is_admin
+    if (!isAdmin) {
+      const memb = await query(
+        'SELECT 1 FROM blueprint.org_memberships WHERE org_id = $1 AND user_id = $2 AND is_active = true',
+        [orgId, req.userId]
+      )
+      if (!memb.rows.length) return res.status(403).json({ error: 'Forbidden' })
+    }
+
     const [activeResult, queuedResult, doneResult, decisionsResult] = await Promise.all([
       query(`
         SELECT wi.id, wi.display_key, wi.title, wi.priority, wi.current_substate,
