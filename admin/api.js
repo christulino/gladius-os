@@ -38,7 +38,7 @@ import {
 } from '../runtime/contextEntries.js'
 import { listOrgContext, createOrgContext, updateOrgContext, deleteOrgContext } from '../runtime/orgContext.js'
 import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
-import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook } from '../runtime/stagePlaybooks.js'
+import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook, getPlaybookForStage } from '../runtime/stagePlaybooks.js'
 import { listOrgAiModels, createOrgAiModel, updateOrgAiModel, deleteOrgAiModel, resolveModelConfig } from '../runtime/orgAiModels.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -5020,6 +5020,25 @@ ${playbookContent ? `\nCurrent playbook:\n\`\`\`markdown\n${playbookContent}\n\`
     }, { timeout: 30_000 })
 
     res.json({ reply: resp.content[0]?.text || '' })
+  } catch (err) { next(err) }
+})
+
+// GET /admin/api/work-items/:id/stage-playbook — active playbook for item's current stage
+router.get('/work-items/:id/stage-playbook', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    const { rows } = await query(
+      'SELECT current_stage_id, work_item_type_id FROM runtime.work_items WHERE id = $1',
+      [workItemId],
+    )
+    if (!rows.length) return res.status(404).json({ error: 'Work item not found' })
+    const { current_stage_id, work_item_type_id } = rows[0]
+
+    const playbook = await getPlaybookForStage(current_stage_id, work_item_type_id)
+    if (!playbook || !playbook.is_active) {
+      return res.status(404).json({ error: 'No active playbook for current stage' })
+    }
+    res.json(playbook)
   } catch (err) { next(err) }
 })
 

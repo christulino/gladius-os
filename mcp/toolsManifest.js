@@ -133,4 +133,16 @@ export const TOOLS = [
       required: ['work_item_id', 'org_id', 'body'],
     },
   },
+  {
+    name: 'get_stage_playbook',
+    description: 'Get the active playbook for a work item\'s current stage. Returns playbook content (markdown with YAML frontmatter), is_active flag, and execution_owner. Returns null if no active playbook exists for the current stage.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required)' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
 ]

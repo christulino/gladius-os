@@ -122,6 +122,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }] }
       }
 
+      case 'get_stage_playbook': {
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/stage-playbook`)
+        if (data === null) {
+          return { content: [{ type: 'text', text: 'No active playbook for current stage.' }] }
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`)
     }
