@@ -1,8 +1,8 @@
 // mcp/http-client.js
-const API_KEY  = process.env.FLOWOS_API_KEY
-const BASE_URL = process.env.FLOWOS_API_BASE_URL ?? 'http://localhost:3000'
+const API_KEY  = process.env.GLADIUS_API_KEY
+const BASE_URL = process.env.GLADIUS_API_BASE_URL ?? 'http://localhost:3000'
 
-if (!API_KEY) throw new Error('[flowos-mcp] FLOWOS_API_KEY env var is required')
+if (!API_KEY) throw new Error('[gladius-mcp] GLADIUS_API_KEY env var is required')
 
 const BASE_HEADERS = {
   'Authorization': `Bearer ${API_KEY}`,
@@ -30,8 +30,7 @@ async function request(url, options, attempt = 0) {
   const { status } = res
 
   if (status === 401 || status === 403) {
-    // Never include the key itself in the error message
-    throw new Error(`FlowOS API auth failed (${status}): check FLOWOS_API_KEY`)
+    throw new Error(`Gladius API auth failed (${status}): check GLADIUS_API_KEY`)
   }
 
   if (status === 404) {
@@ -40,10 +39,10 @@ async function request(url, options, attempt = 0) {
 
   if (status === 429) {
     if (attempt >= MAX_RETRIES) {
-      throw new Error(`FlowOS API rate limit exceeded after ${MAX_RETRIES} retries`)
+      throw new Error(`Gladius API rate limit exceeded after ${MAX_RETRIES} retries`)
     }
     const delay = backoffDelay(attempt)
-    console.error(`[flowos-mcp] rate limited, retrying in ${delay}ms`)
+    console.error(`[gladius-mcp] rate limited, retrying in ${delay}ms`)
     await sleep(delay)
     return request(url, options, attempt + 1)
   }
@@ -51,16 +50,15 @@ async function request(url, options, attempt = 0) {
   if (status >= 500) {
     if (attempt >= MAX_RETRIES) {
       const body = await res.text()
-      throw new Error(`FlowOS API server error (${status}) after ${MAX_RETRIES} retries: ${body}`)
+      throw new Error(`Gladius API server error (${status}) after ${MAX_RETRIES} retries: ${body}`)
     }
     const delay = backoffDelay(attempt)
     await sleep(delay)
     return request(url, options, attempt + 1)
   }
 
-  // Other 4xx — throw immediately with status + body
   const body = await res.text()
-  throw new Error(`FlowOS API error (${status}): ${body}`)
+  throw new Error(`Gladius API error (${status}): ${body}`)
 }
 
 export async function apiGet(path, params = {}) {

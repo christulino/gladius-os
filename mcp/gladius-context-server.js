@@ -1,19 +1,16 @@
 // mcp/gladius-context-server.js
-// Gladius MCP stdio server — exposes 8 context/workflow tools to external AI agents.
+// Gladius MCP stdio server — exposes context/workflow tools to external AI agents.
+// All tools call the Gladius REST API via Bearer auth (GLADIUS_API_KEY).
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { listContextEntries, createContextEntry } from '../runtime/contextEntries.js'
-import { listOrgContext } from '../runtime/orgContext.js'
-import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
-import { pool } from '../db/postgres.js'
+import { apiGet, apiPost, WRITE_TOOLS } from './http-client.js'
 import { TOOLS } from './toolsManifest.js'
 
-// Agent identity — must be set to a valid blueprint.users.id for tools that
-// write records (add_comment, transition_work_item). Callers cannot override this.
-const AGENT_USER_ID = process.env.GLADIUS_AGENT_USER_ID
-  ? parseInt(process.env.GLADIUS_AGENT_USER_ID, 10)
+const WRITE_LIMIT = process.env.GLADIUS_MCP_WRITE_RATE_LIMIT
+  ? parseInt(process.env.GLADIUS_MCP_WRITE_RATE_LIMIT, 10)
   : null
+let writeCount = 0
 
 // ── Server setup ──────────────────────────────────────────────────────────────
 
@@ -30,133 +27,94 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
   try {
+    if (WRITE_TOOLS.has(name) && WRITE_LIMIT !== null && writeCount >= WRITE_LIMIT) {
+      return {
+        content: [{ type: 'text', text: `Error: write rate limit reached (${WRITE_LIMIT} writes per session). Set GLADIUS_MCP_WRITE_RATE_LIMIT to increase.` }],
+        isError: true,
+      }
+    }
+
     switch (name) {
 
       case 'list_context_entries': {
-        const rows = await listContextEntries(args.work_item_id, { types: args.types })
-        return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] }
+        const params = {}
+        if (args.types?.length) params.types = args.types.join(',')
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/context-entries`, params)
+        return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? data, null, 2) }] }
       }
 
       case 'write_context_entry': {
-        const entry = await createContextEntry(args.work_item_id, {
+        writeCount++
+        const entry = await apiPost(`/admin/api/work-items/${args.work_item_id}/context-entries`, {
           type:       args.entry_type,
           title:      args.title ?? null,
           content:    args.content,
           visibility: args.visibility ?? 'item',
-          isAgent:    args.is_agent !== false,
-          authorId:   null,
+          is_agent:   args.is_agent !== false,
         })
         return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
       }
 
       case 'get_assembled_context': {
-        const meta = {
-          context: {
-            pull: [
-              ...(args.pull_types || []),
-              ...(args.include_ancestors ? ['ancestors'] : []),
-            ],
-            org: args.org_types || [],
-          },
-        }
-        const ctx = await assembleContext(args.work_item_id, args.org_id, meta)
-        const formatted = formatContextForPrompt(ctx)
-        return { content: [{ type: 'text', text: formatted || '(no context)' }] }
+        const params = {}
+        if (args.pull_types?.length)    params.pull_types = args.pull_types.join(',')
+        if (args.org_types?.length)     params.org_types  = args.org_types.join(',')
+        if (args.include_ancestors)     params.include_ancestors = 'true'
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/assembled-context`, params)
+        return { content: [{ type: 'text', text: data?.context ?? '(no context)' }] }
       }
 
       case 'list_org_context': {
-        const rows = await listOrgContext(args.org_id, { types: args.types })
-        return { content: [{ type: 'text', text: JSON.stringify(rows, null, 2) }] }
+        const params = {}
+        if (args.types?.length) params.types = args.types.join(',')
+        const data = await apiGet(`/admin/api/organizations/${args.org_id}/context`, params)
+        return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? data, null, 2) }] }
       }
 
       case 'get_work_item': {
-        // Scope to org_id to prevent cross-org IDOR
-        const r = await pool.query(`
-          SELECT wi.id, wi.display_key, wi.title, wi.description,
-                 wi.current_substate, wi.priority, wi.tags, wi.estimate, wi.estimate_unit,
-                 wi.due_date, wi.is_expedited, wi.work_nature, wi.origin,
-                 wi.created_at, wi.updated_at, wi.started_at, wi.resolved_at,
-                 s.name  AS stage_name,  s.stage_class,
-                 wit.name AS type_name,  wit.icon AS type_icon,
-                 o.slug  AS org_slug,    o.name AS org_name
-          FROM runtime.work_items wi
-          LEFT JOIN blueprint.stages             s   ON s.id   = wi.current_stage_id
-          LEFT JOIN blueprint.work_item_types    wit ON wit.id = wi.work_item_type_id
-          LEFT JOIN blueprint.organizations      o   ON o.id   = wi.owner_org_id
-          WHERE wi.id = $1 AND wi.owner_org_id = $2
-        `, [args.work_item_id, args.org_id])
-        if (!r.rows.length) throw new Error(`Work item ${args.work_item_id} not found in org ${args.org_id}`)
-        return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}`)
+        if (!data) throw new Error(`Work item ${args.work_item_id} not found`)
+        if (data.owner_org_id !== args.org_id) {
+          throw new Error(`Work item ${args.work_item_id} not found in org ${args.org_id}`)
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
       }
 
       case 'search_work_items': {
-        const limit = Math.min(args.limit ?? 20, 100)
-        const qparams = [args.org_id]
-        const where = [`wi.owner_org_id = $1`]
-        where.push(`(wi.resolved_at IS NULL OR wi.resolved_at > NOW() - INTERVAL '90 days')`)
-        if (args.keyword) {
-          const tokens = String(args.keyword).toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
-          if (tokens.length > 0) {
-            const tsq = tokens.map(t => t + ':*').join(' & ')
-            qparams.push(tsq)
-            where.push(`wis.search_doc @@ to_tsquery('english', $${qparams.length})`)
-          }
-        }
-        if (args.stage_class) {
-          qparams.push(args.stage_class)
-          where.push(`s.stage_class = $${qparams.length}`)
-        }
-        if (args.type_name) {
-          qparams.push(args.type_name)
-          where.push(`wit.name = $${qparams.length}`)
-        }
-        if (args.priority) {
-          qparams.push(args.priority)
-          where.push(`wi.priority = $${qparams.length}`)
-        }
-        if (args.assignee_id) {
-          qparams.push(args.assignee_id)
-          where.push(`rel_owns.user_id = $${qparams.length}`)
-        }
-        qparams.push(limit)
-        const searchSql = `
-          SELECT wi.id, wi.display_key, wi.title, wi.priority, wi.updated_at, wi.resolved_at,
-                 s.name AS status, s.stage_class,
-                 o.name AS org_name, wit.name AS type_name
-          FROM runtime.work_items wi
-          JOIN blueprint.stages s ON s.id = wi.current_stage_id
-          JOIN blueprint.organizations o ON o.id = wi.owner_org_id
-          JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
-          LEFT JOIN runtime.work_item_user_relationships rel_owns
-            ON rel_owns.work_item_id = wi.id AND rel_owns.relationship_type = 'owns'
-          LEFT JOIN runtime.work_item_search wis ON wis.work_item_id = wi.id
-          WHERE ${where.join(' AND ')}
-          ORDER BY wi.priority DESC NULLS LAST, wi.updated_at DESC
-          LIMIT $${qparams.length}
-        `.trim()
-        const r = await pool.query(searchSql, qparams)
-        return { content: [{ type: 'text', text: JSON.stringify(r.rows, null, 2) }] }
+        const params = { org_id: args.org_id, limit: Math.min(args.limit ?? 20, 100) }
+        if (args.keyword)     params.keyword     = args.keyword
+        if (args.stage_class) params.stage_class = args.stage_class
+        if (args.type_name)   params.type_name   = args.type_name
+        if (args.priority)    params.priority    = args.priority
+        if (args.assignee_id) params.assignee_id = args.assignee_id
+        const data = await apiGet('/admin/api/search', params)
+        return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? data, null, 2) }] }
       }
 
       case 'transition_work_item': {
-        if (!AGENT_USER_ID) throw new Error('GLADIUS_AGENT_USER_ID env var not set — cannot perform transitions')
-        const { prepareTransition, executeTransition } = await import('../runtime/transitions.js')
-        const prep = await prepareTransition(args.work_item_id, args.target_stage_id, AGENT_USER_ID)
-        if (!prep.canTransition) {
-          throw new Error(`Transition blocked: ${prep.reason ?? 'exit criteria not met'}`)
+        writeCount++
+        const prep = await apiGet(
+          `/admin/api/work-items/${args.work_item_id}/transition/prepare`,
+          { to_stage_id: args.target_stage_id }
+        )
+        if (!prep?.canTransition) {
+          const reason = prep?.blockedCriteria?.[0]?.reason ?? prep?.reason ?? 'exit criteria not met'
+          throw new Error(`Transition blocked: ${reason}`)
         }
-        const result = await executeTransition(args.work_item_id, args.target_stage_id, AGENT_USER_ID)
+        const result = await apiPost(`/admin/api/work-items/${args.work_item_id}/transition`, {
+          to_stage_id: args.target_stage_id,
+          comment: args.comment,
+        })
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
       case 'add_comment': {
-        if (!AGENT_USER_ID) throw new Error('GLADIUS_AGENT_USER_ID env var not set — cannot post comments')
-        const r = await pool.query(`
-          INSERT INTO runtime.work_item_comments (work_item_id, author_user_id, body, parent_comment_id)
-          VALUES ($1, $2, $3, $4)
-          RETURNING id, work_item_id, author_user_id, body, parent_comment_id, created_at, updated_at
-        `, [args.work_item_id, AGENT_USER_ID, args.body, args.parent_id || null])
-        return { content: [{ type: 'text', text: JSON.stringify(r.rows[0], null, 2) }] }
+        writeCount++
+        const comment = await apiPost(`/admin/api/work-items/${args.work_item_id}/comments`, {
+          body:      args.body,
+          parent_id: args.parent_id ?? null,
+        })
+        return { content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }] }
       }
 
       default:
