@@ -4,7 +4,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { apiGet, apiPost, WRITE_TOOLS } from './http-client.js'
+import { apiGet, apiPost, apiPatch, WRITE_TOOLS } from './http-client.js'
 import { TOOLS } from './toolsManifest.js'
 
 const WRITE_LIMIT = process.env.GLADIUS_MCP_WRITE_RATE_LIMIT
@@ -120,6 +120,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           parent_id: args.parent_id ?? null,
         })
         return { content: [{ type: 'text', text: JSON.stringify(comment, null, 2) }] }
+      }
+
+      case 'set_work_item_fields': {
+        writeCount++
+        const body = {}
+        if (args.priority      !== undefined) body.priority      = args.priority
+        if (args.tags          !== undefined) body.tags          = args.tags
+        if (args.estimate      !== undefined) body.estimate      = args.estimate
+        if (args.estimate_unit !== undefined) body.estimate_unit = args.estimate_unit
+        if (args.due_date      !== undefined) body.due_date      = args.due_date
+        if (args.is_expedited  !== undefined) body.is_expedited  = args.is_expedited
+        if (args.field_values  !== undefined) body.field_values  = args.field_values
+        if (Object.keys(body).length === 0) throw new Error('No fields provided to update')
+        const result = await apiPatch(`/admin/api/work-items/${args.work_item_id}`, body)
+        if (!result) throw new Error(`Work item ${args.work_item_id} not found`)
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+      }
+
+      case 'get_exit_criteria': {
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/exit-criteria`)
+        if (data === null) throw new Error(`Work item ${args.work_item_id} not found`)
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
+      }
+
+      case 'ack_exit_criterion': {
+        writeCount++
+        const result = await apiPost(
+          `/admin/api/work-items/${args.work_item_id}/exit-criteria/${args.criterion_id}/acknowledge`,
+          {},
+        )
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
       default:
