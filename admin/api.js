@@ -4933,8 +4933,15 @@ router.post('/stages/:stageId/playbook', async (req, res, next) => {
 })
 router.patch('/organizations/:orgId/playbooks/:id', async (req, res, next) => {
   try {
-    const { name, content, isActive } = req.body
-    const row = await updatePlaybook(parseInt(req.params.id), parseInt(req.params.orgId), { name, content, isActive })
+    const { name, content, isActive, execution_owner } = req.body
+    if (execution_owner !== undefined && !['in_server', 'agent'].includes(execution_owner)) {
+      return res.status(400).json({ error: 'execution_owner must be "in_server" or "agent"' })
+    }
+    const row = await updatePlaybook(
+      parseInt(req.params.id),
+      parseInt(req.params.orgId),
+      { name, content, isActive, executionOwner: execution_owner },
+    )
     if (!row) return res.status(404).json({ error: 'Not found' })
     res.json(row)
   } catch (err) { next(err) }

@@ -56,6 +56,10 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
     // 1. Find the most specific active playbook for this stage + type
     const playbook = await getPlaybookForStage(stageId, witTypeId)
     if (!playbook || !playbook.is_active) return
+    if (playbook.execution_owner === 'agent') {
+      console.error(`[playbookExecutor] stage ${stageId}: execution_owner=agent, skipping in-server execution`)
+      return
+    }
 
     const { meta, body } = parsePlaybook(playbook.content)
 

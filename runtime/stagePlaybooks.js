@@ -35,11 +35,12 @@ export async function createPlaybook({ stageId, witTypeId, name, content }) {
   return r.rows[0]
 }
 
-export async function updatePlaybook(id, orgId, { name, content, isActive }) {
+export async function updatePlaybook(id, orgId, { name, content, isActive, executionOwner }) {
   const sets = ['updated_at=now()'], params = []
-  if (name     !== undefined) { params.push(name);     sets.push(`name=$${params.length}`) }
-  if (content  !== undefined) { params.push(content);  sets.push(`content=$${params.length}`) }
-  if (isActive !== undefined) { params.push(isActive); sets.push(`is_active=$${params.length}`) }
+  if (name           !== undefined) { params.push(name);           sets.push(`name=$${params.length}`) }
+  if (content        !== undefined) { params.push(content);        sets.push(`content=$${params.length}`) }
+  if (isActive       !== undefined) { params.push(isActive);       sets.push(`is_active=$${params.length}`) }
+  if (executionOwner !== undefined) { params.push(executionOwner); sets.push(`execution_owner=$${params.length}`) }
   params.push(id, orgId)
   // Scope to org via stage→workflow or wit_type — prevents cross-org IDOR
   const r = await pool.query(
