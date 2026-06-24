@@ -19,13 +19,14 @@ The AI agent will receive the above context and follow these instructions.
 `.trimStart()
 
 export default function PlaybookEditor({ stageId, orgId, stageName }) {
-  const [playbook,     setPlaybook]     = useState(null)
-  const [loading,      setLoading]      = useState(true)
-  const [content,      setContent]      = useState('')
-  const [isActive,     setIsActive]     = useState(true)
-  const [saving,       setSaving]       = useState(false)
-  const [deleting,     setDeleting]     = useState(false)
-  const [saveError,    setSaveError]    = useState(null)
+  const [playbook,        setPlaybook]        = useState(null)
+  const [loading,         setLoading]         = useState(true)
+  const [content,         setContent]         = useState('')
+  const [isActive,        setIsActive]        = useState(true)
+  const [executionOwner,  setExecutionOwner]  = useState('in_server')
+  const [saving,          setSaving]          = useState(false)
+  const [deleting,        setDeleting]        = useState(false)
+  const [saveError,       setSaveError]       = useState(null)
 
   const textareaRef = useRef(null)
 
@@ -40,11 +41,13 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
         setPlaybook(pb)
         setContent(pb?.content ?? '')
         setIsActive(pb?.is_active ?? true)
+        setExecutionOwner(pb?.execution_owner ?? 'in_server')
       })
       .catch(() => {
         setPlaybook(null)
         setContent('')
         setIsActive(true)
+        setExecutionOwner('in_server')
       })
       .finally(() => setLoading(false))
   }, [stageId])
@@ -55,10 +58,11 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
     try {
       if (playbook) {
         // PATCH returns raw row
-        const row = await api.updatePlaybook(orgId, playbook.id, { content, isActive })
+        const row = await api.updatePlaybook(orgId, playbook.id, { content, isActive, execution_owner: executionOwner })
         setPlaybook(row)
         setContent(row.content)
         setIsActive(row.is_active)
+        setExecutionOwner(row.execution_owner ?? 'in_server')
       } else {
         // POST returns raw row (201)
         const row = await api.createStagePlaybook(stageId, { name: 'default', content })
@@ -83,6 +87,7 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
       setPlaybook(null)
       setContent('')
       setIsActive(true)
+      setExecutionOwner('in_server')
     } catch (e) {
       setSaveError(e.message || 'Delete failed')
     } finally {
@@ -130,6 +135,36 @@ export default function PlaybookEditor({ stageId, orgId, stageName }) {
           <span className="text-xs text-muted-foreground">Active</span>
           <Switch checked={isActive} onCheckedChange={setIsActive} />
         </label>
+      )}
+
+      {/* Execution owner toggle (only when playbook exists) */}
+      {playbook && (
+        <div className="flex flex-col gap-1 mt-1">
+          <span className="text-xs text-muted-foreground font-medium">Execution owner</span>
+          <div className="flex gap-3">
+            {[
+              { value: 'in_server', label: 'In-server' },
+              { value: 'agent',     label: 'Agent' },
+            ].map(opt => (
+              <label key={opt.value} className="flex items-center gap-1.5 cursor-pointer text-xs">
+                <input
+                  type="radio"
+                  name="execution_owner"
+                  value={opt.value}
+                  checked={executionOwner === opt.value}
+                  onChange={() => setExecutionOwner(opt.value)}
+                  className="accent-primary"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {executionOwner === 'agent'
+              ? 'External agent runs this playbook. In-server executor will skip.'
+              : 'In-server executor fires automatically on stage entry.'}
+          </p>
+        </div>
       )}
 
       {/* Main content editor */}
