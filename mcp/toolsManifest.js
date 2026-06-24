@@ -108,6 +108,17 @@ export const TOOLS = [
     },
   },
   {
+    name: 'get_session_context',
+    description: 'Get a board snapshot for session orientation: active items (in-progress), queued items (up next), recently completed (last 7 days), and open decisions on active/queued work items. Call this at the start of a session instead of multiple search_work_items calls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org_id: { type: 'number', description: 'Organization ID' },
+      },
+      required: ['org_id'],
+    },
+  },
+  {
     name: 'add_comment',
     description: 'Add a comment to a work item. Author is the configured agent identity (GLADIUS_AGENT_USER_ID).',
     inputSchema: {

@@ -108,6 +108,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
+      case 'get_session_context': {
+        const data = await apiGet(`/admin/api/organizations/${args.org_id}/session-context`)
+        return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
+      }
+
       case 'add_comment': {
         writeCount++
         const comment = await apiPost(`/admin/api/work-items/${args.work_item_id}/comments`, {

@@ -1,15 +1,16 @@
 # STATE — Gladius
 
-## Right Now
-- **Session 36 closed.** FEAT.25454 (search sort/date NL support) + FEAT.25361 (Discovery readiness gate: `no_unresolved_decisions` codified exit criterion) + session-start live board read — all shipped and pushed. CLAUDE.md staleness fixed (NL→JQL references updated).
+> Work item status lives on the Gladius board (use `get_session_context`).
+> This file tracks project-level context only: blockers, goals, open questions.
 
-## Next Up
-1. **FEAT.25338 [P1]** — MCP → REST API refactor. All 5 Discovery decisions answered, ready for Planning. Write planning playbook (FEAT.25362) first.
-2. **Agent author_id fix [P2]** — executor and MCP `write_context_entry` write entries with `author_id=NULL`. Fix write path to use agent user (id 309). Unblocks non-admin Workers from edit/delete on agent entries.
-3. **Raise max_tokens [P2]** — Dev/Test/Review/Deployment stages still 1024–1536 in live DB. Planning fixed (8192). Raise rest to ≥8192.
+## Right Now
+Session 37 in progress. FEAT.25338 (MCP→REST refactor) shipped this session.
+`get_session_context` endpoint + MCP tool built and tested.
 
 ## Blockers
-- (carry-over) npm `gladius` squat; parchment-vs-neutral theme decision still open.
+- npm `gladius` name squat (open)
+- parchment-vs-neutral theme decision (open)
+- `GLADIUS_API_KEY` must be set in `.claude/settings.json` before MCP server will start (filled in session 37)
 
 ## Last Updated
-2026-06-23 — session-close (tier: Full — FEAT.25454 + FEAT.25361, 4 commits)
+2026-06-24 — session 37 (FEAT.25338 + get_session_context)

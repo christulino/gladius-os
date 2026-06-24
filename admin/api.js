@@ -4800,6 +4800,80 @@ router.get('/work-items/:id/assembled-context', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// Session context — board snapshot for agent/tool orientation at session start.
+// Returns active items, queued items, recently-done (7 days), and open decisions
+// on active/queued work items. All in one round-trip.
+router.get('/organizations/:orgId/session-context', async (req, res, next) => {
+  try {
+    const orgId = parseInt(req.params.orgId, 10)
+    if (isNaN(orgId)) return res.status(400).json({ error: 'Invalid org id' })
+
+    const [activeResult, queuedResult, doneResult, decisionsResult] = await Promise.all([
+      query(`
+        SELECT wi.id, wi.display_key, wi.title, wi.priority, wi.current_substate,
+               wi.updated_at, wi.started_at,
+               s.name AS stage_name, s.stage_class,
+               wit.name AS type_name, wit.icon AS type_icon
+        FROM runtime.work_items wi
+        JOIN blueprint.stages s   ON s.id  = wi.current_stage_id
+        JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+        WHERE wi.owner_org_id = $1
+          AND wi.spawn_state = 'active'
+          AND s.stage_class = 'active'
+        ORDER BY wi.priority ASC, wi.updated_at DESC
+        LIMIT 20
+      `, [orgId]),
+      query(`
+        SELECT wi.id, wi.display_key, wi.title, wi.priority, wi.current_substate,
+               wi.updated_at,
+               s.name AS stage_name, s.stage_class,
+               wit.name AS type_name, wit.icon AS type_icon
+        FROM runtime.work_items wi
+        JOIN blueprint.stages s   ON s.id  = wi.current_stage_id
+        JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+        WHERE wi.owner_org_id = $1
+          AND wi.spawn_state = 'active'
+          AND s.stage_class = 'queued'
+        ORDER BY wi.priority ASC, wi.updated_at DESC
+        LIMIT 5
+      `, [orgId]),
+      query(`
+        SELECT wi.id, wi.display_key, wi.title, wi.priority,
+               wi.resolved_at, s.name AS stage_name,
+               wit.name AS type_name, wit.icon AS type_icon
+        FROM runtime.work_items wi
+        JOIN blueprint.stages s   ON s.id  = wi.current_stage_id
+        JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+        WHERE wi.owner_org_id = $1
+          AND wi.spawn_state = 'done'
+          AND wi.resolved_at > NOW() - INTERVAL '7 days'
+        ORDER BY wi.resolved_at DESC
+        LIMIT 10
+      `, [orgId]),
+      query(`
+        SELECT ce.id, ce.work_item_id, ce.title, ce.content, ce.created_at,
+               wi.display_key, wi.title AS work_item_title
+        FROM runtime.context_entries ce
+        JOIN runtime.work_items wi ON wi.id = ce.work_item_id
+        JOIN blueprint.stages s    ON s.id  = wi.current_stage_id
+        WHERE wi.owner_org_id = $1
+          AND ce.type = 'decision'
+          AND ce.resolved = false
+          AND s.stage_class IN ('active', 'queued')
+        ORDER BY ce.created_at ASC
+        LIMIT 20
+      `, [orgId]),
+    ])
+
+    res.json({
+      active:         activeResult.rows,
+      queued:         queuedResult.rows,
+      recently_done:  doneResult.rows,
+      open_decisions: decisionsResult.rows,
+    })
+  } catch (err) { next(err) }
+})
+
 // Org Context Library
 router.get('/organizations/:orgId/context', async (req, res, next) => {
   try {
