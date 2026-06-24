@@ -30,6 +30,7 @@ export const TOOLS = [
         work_item_id: { type: 'number', description: 'Work item ID' },
         org_id:       { type: 'number', description: 'Org the work item belongs to (required)' },
         entry_type:   { type: 'string', enum: ['nfr','discovery','acceptance','design','decision','note','test-plan','playbook'], description: 'Entry type' },
+        title:        { type: 'string', description: 'Short title for the entry (recommended; max ~120 chars)' },
         content:      { type: 'string', description: 'Markdown content' },
         visibility:   { type: 'string', enum: ['item','descendants'], description: 'Defaults to item' },
         is_agent:     { type: 'boolean', description: 'Whether written by an AI agent (default: true)' },
