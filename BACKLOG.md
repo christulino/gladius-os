@@ -2,13 +2,10 @@
 
 ## Active / Up Next
 
-[P1] MCP → REST API refactor (FEAT.25338, **Discovery** on dogfood board — all 5 decisions answered, ready for Planning) — Refactor `mcp/gladius-context-server.js` to call REST API via HTTP. Bearer auth now implemented; move to Planning stage, write planning playbook first (FEAT.25362).
-
 [done 2026-06-23] feat(search): FEAT.25454 — sort/date NL support. `sort_by/sort_dir/created_after/created_before` wired translator→endpoint; code-fence stripping in extractText(); type_name frontend gap fixed. Commit: 9a4a772.
 
 [P3] Data cleanup (DEBT.25359, Backlog on dogfood board) — Data side **DONE** (Session 34): deleted 25,048 orphaned `requested_by` relationship rows pointing at non-existent `user_id=1` (all enterprise seed orgs; dogfood org 109 was clean). Remaining: fold any residual `runtime.notifications` / `blueprint.notification_defaults` orphan check into the DEBT.25476 hardening; close otherwise.
 
-[P1] Decision open/resolved state (FEAT.25360, Todo) — Add `resolved` boolean to `runtime.context_entries`. Required for decision workflow and discovery readiness checks.
 
 [P1] PM2 launchd registration — run the sudo env PATH=... command from `pm2 startup` output to register with launchd. Command: `sudo env PATH=$PATH:/usr/local/bin /Users/chris/.npm-global/lib/node_modules/pm2/bin/pm2 startup launchd -u chris --hp /Users/chris`
 
@@ -43,6 +40,10 @@
 [P2] Playbook read/author over API/MCP — `get_stage_playbook` (read, so an external agentic session can fetch its own instructions) + playbook CRUD over API/MCP (author, so users aren't forced through the UI). Product capability, decoupled from the feature-factory loop. Per 2026-06-23 [STRATEGY] "Gladius serves; consumers orchestrate." The immediate loop uses wrapper-injection (`--append-system-prompt-file`), no server change needed — these are the follow-on product surface.
 
 [P2] Open-source release prep (FEAT.25344, Backlog) — README, LICENSE, seed-and-go experience.
+
+## Done (Session 37 — 2026-06-24 — FEAT.25338 MCP→REST refactor)
+
+[done 2026-06-24] refactor(mcp): FEAT.25338 — MCP server calls REST API via Bearer auth; http-client.js added; zero direct DB/runtime imports. get_session_context endpoint + MCP tool for single-round-trip board snapshot. STATE.md scope narrowed; gladius-session skill created. Commits: d242515..8a176d8.
 
 ## Done (Session 36 — 2026-06-23 — FEAT.25454 + FEAT.25361 + session-start board)
 
