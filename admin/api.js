@@ -4707,7 +4707,7 @@ router.post('/work-items/:id/context-entries', async (req, res, next) => {
     if (!type || !content) return res.status(400).json({ error: 'type and content required' })
     const entry = await createContextEntry(workItemId, {
       type, title, content, visibility, tags,
-      authorId: req.session?.userId,
+      authorId: req.userId,
     })
     res.status(201).json(entry)
   } catch (err) { next(err) }
