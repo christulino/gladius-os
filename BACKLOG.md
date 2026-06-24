@@ -13,17 +13,17 @@
 
 [P1] Raise playbook `max_tokens` (Dev/Test/Review/Deployment, currently 1024–1536) — truncation of the JSON array was the DEBT.25477 root cause. PR#6 recovery handles it, but stop truncating. **Planning fixed Session 34** (2048→8192, file + DB) after it truncated on a rich journal. **Key insight: the default is backwards** — downstream stages need MORE output budget, not less, because each upstream stage enriches the journal that the next must synthesize. Consider scaling `max_tokens` with assembled-context size, or a global floor ≥8192 for synthesis stages.
 
-[P2] Agent-authored context entries have `author_id = NULL` — both the Executor and MCP `write_context_entry` write entries with no `author_id` (not attributed to the agent identity, user 309). Two consequences surfaced in the FEAT.25360 lap: (1) audit attribution is lost; (2) the context-entry edit/delete endpoints are **author-or-admin gated** (`admin/api.js:4701`), so agent entries are effectively **admin-only to edit** — a non-admin Worker gets 403. Fix the write path to record the agent identity as `author_id`. Related to the title=NULL gap (same lossy agent write path).
+[done 2026-06-24] fix(mcp): FEAT.25602 — `write_context_entry` via Bearer now sets `author_id` from the API key identity (`req.userId`). Previously `req.session?.userId` was undefined for Bearer callers, leaving `author_id=NULL`. Commit: 98c2a7a.
 
 [P2] FEAT.25360's resolve action needs org-member authz, not author-only — decisions are often agent-authored (`author_id` null), so an author-only gate (like today's entry-edit endpoint) would let only admins resolve them. The resolve/reopen endpoints must allow any permitted org member. (Design input captured during the FEAT.25360 Planning lap.)
 
-[P2] Two-writers guard for agent-owned stages — when a headless agent owns a stage, the in-server `on_enter` executor must NOT also fire (both write to the same journal). Surfaced in feature-factory step 1 (FEAT.25352): had to manually `UPDATE blueprint.stage_playbooks SET is_active=false` before the run and restore after. Make it a wrapper responsibility or a per-stage "execution owner" flag so a cron can do it safely. Implements the 2026-06-23 [STRATEGY] "Gladius serves; consumers orchestrate" — one execution owner per stage.
+[done 2026-06-24] feat(mcp): FEAT.25806 — Two-writers guard. Migration 021 adds `execution_owner` column (`in_server`|`agent`, default `in_server`, CHECK constraint). `playbookExecutor.js` early-returns when `execution_owner=agent`. `updatePlaybook()` and PATCH endpoint wired. `PlaybookEditor.jsx` radio toggle. Commits: 5324587, d4b07bc.
 
-[P2] Agent-written context entries have `title = NULL` — MCP `write_context_entry` has no `title` param, so agents put the title as a markdown `# H1` inside `content`. The journal renders titleless / mis-derives. Add an optional `title` to the tool + map to `runtime.context_entries.title`. Surfaced in feature-factory step 1.
+[done 2026-06-24] feat(mcp): FEAT.25603 — `write_context_entry` now accepts optional `title` param; previously entries had `title=NULL` forcing agents to embed the title in markdown content.
 
 [P2] `getPlaybookForStage` ignores `wit_type_id` for stage-specific playbooks — a Feature-bound playbook fires for any type; type-specific playbooks aren't actually type-scoped. (Sidestepped Session 33 by setting Feature Dev playbooks to `wit_type_id=NULL`.)
 
-[P2] MCP tools to set fields / ack exit criteria — Review/Deployment gates (`pr_url`, `pr_status`, `deployed_version`) need curl+bearer from the worker today; the MCP agent can't satisfy them natively.
+[done 2026-06-24] feat(mcp): FEAT.25804 — Three new MCP tools: `set_work_item_fields` (native fields + custom field_values via PATCH), `get_exit_criteria` (status of current-stage criteria), `ack_exit_criterion` (acknowledge manual-tier criteria). `apiPatch` added to http-client.js. Commit: c0d2954.
 
 [done 2026-06-23] feat(exit-criteria): FEAT.25361 — Discovery readiness gate. `no_unresolved_decisions` codified condition type added to exitCriteria.js; applied to dogfood Discovery stage as 3rd gate. Session-start skill Step 1.4.5 added to read live Gladius board. Commit: 58e21dd.
 
@@ -37,7 +37,11 @@
 
 [P2] Exit-criteria rationale/expectation field — each criterion carries human/agent-readable intent alongside the machine condition ("test coverage ≥ 80% because X; record in field `test_coverage`"), assembled into the worker's context via `get_assembled_context`. This "exit-criteria context" is what makes tier-2/3 (worker-evidence and manual-ack) gates legible enough to satisfy honestly. Falls out of the 2026-06-23 [STRATEGY] "frames and gates" decision. Dissolves the "who computes the % score" question — Gladius states the expectation; the agent+human produces and records the evidence.
 
-[P2] Playbook read/author over API/MCP — `get_stage_playbook` (read, so an external agentic session can fetch its own instructions) + playbook CRUD over API/MCP (author, so users aren't forced through the UI). Product capability, decoupled from the feature-factory loop. Per 2026-06-23 [STRATEGY] "Gladius serves; consumers orchestrate." The immediate loop uses wrapper-injection (`--append-system-prompt-file`), no server change needed — these are the follow-on product surface.
+[done 2026-06-24] feat(mcp): FEAT.25805 — `get_stage_playbook` MCP tool + `GET /work-items/:id/stage-playbook` REST endpoint. Agents can fetch their own playbook instructions by work item ID. Commit: 889ee85.
+
+[P2] Playbook CRUD over MCP — author/update/delete playbooks via MCP so users aren't forced through the UI. The read half (`get_stage_playbook`) shipped Session 38; the write half remains.
+
+[P2] Org-membership gate missing on new MCP endpoints — `GET /work-items/:id/exit-criteria` (FEAT.25804) and `GET /work-items/:id/stage-playbook` (FEAT.25805) lack org-membership checks; any valid Bearer token can read any work item's criteria/playbook by ID. Pre-existing pattern gap (same on adjacent endpoints). Must fix before multi-tenant / public deployment.
 
 [P2] Open-source release prep (FEAT.25344, Backlog) — README, LICENSE, seed-and-go experience.
 
