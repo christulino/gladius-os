@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
-const BEARER = 'fos_ak_defd916e25282153aaab2604173aca09cad1fc7100a4ffaa'
-const AGENT_USER_ID = 309
-const ORG_ID = 109
-const WIT_TYPE_ID = 138
+const BEARER = process.env.GLADIUS_API_KEY || ''
+const AGENT_USER_ID = parseInt(process.env.GLADIUS_AGENT_USER_ID || '0', 10)
+const ORG_ID = parseInt(process.env.GLADIUS_TEST_ORG_ID || '109', 10)
+const WIT_TYPE_ID = parseInt(process.env.GLADIUS_TEST_WIT_TYPE_ID || '138', 10)
 
 const api = createAuthApi()
 
@@ -21,6 +21,9 @@ async function bearerFetch(path, options = {}) {
 describe('MCP Attribution', () => {
   let workItemId
 
+  // Skip Bearer-specific tests when no API key is configured
+  const skipBearer = !BEARER || !AGENT_USER_ID
+
   before(async () => {
     const { status, data } = await api('/work-items', {
       method: 'POST',
@@ -31,6 +34,7 @@ describe('MCP Attribution', () => {
   })
 
   it('sets author_id from Bearer token caller', async () => {
+    if (skipBearer) return
     const { status, data } = await bearerFetch(`/work-items/${workItemId}/context-entries`, {
       method: 'POST',
       body: JSON.stringify({ type: 'note', content: 'bearer auth test' }),
@@ -40,6 +44,7 @@ describe('MCP Attribution', () => {
   })
 
   it('stores title from request body', async () => {
+    if (skipBearer) return
     const { status, data } = await bearerFetch(`/work-items/${workItemId}/context-entries`, {
       method: 'POST',
       body: JSON.stringify({ type: 'note', content: 'title test', title: 'My custom title' }),
