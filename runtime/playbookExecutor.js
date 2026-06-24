@@ -57,7 +57,7 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
     const playbook = await getPlaybookForStage(stageId, witTypeId)
     if (!playbook || !playbook.is_active) return
     if (playbook.execution_owner === 'agent') {
-      console.error(`[playbookExecutor] stage ${stageId}: execution_owner=agent, skipping in-server execution`)
+      console.log(`[playbookExecutor] stage ${stageId}: execution_owner=agent, skipping in-server execution`)
       return
     }
 
