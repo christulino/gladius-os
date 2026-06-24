@@ -70,10 +70,21 @@ export default function SearchPage({ onOpenWorkItem }) {
         if (assignee_me) next.assignee_id = 'me'
         setFilters(next)
         await run(next)
-      } catch {
-        const kw = { keyword: input.trim() }
-        setFilters(kw)
-        await run(kw)
+      } catch (err) {
+        const code = err.body?.error
+        if (code === 'TRANSLATOR_UNAVAILABLE') {
+          const kw = { keyword: input.trim() }
+          setFilters(kw)
+          await run(kw)
+        } else if (code === 'TRANSLATION_FAILED') {
+          setError("Couldn't understand that search — try rephrasing it.")
+        } else if (code === 'PROMPT_TOO_LONG') {
+          setError('Search query is too long — please shorten it.')
+        } else if (code === 'RATE_LIMITED' || code === 'BUDGET_EXHAUSTED') {
+          setError('Search limit reached — please try again later.')
+        } else {
+          setError('Search translation failed — please try again.')
+        }
       } finally {
         setTranslating(false)
       }

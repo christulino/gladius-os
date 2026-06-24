@@ -51,3 +51,45 @@ describe('Search API integration', () => {
     }
   })
 })
+
+describe('Translate endpoint — HTTP contract', () => {
+  it('rejects missing prompt field with 400 BAD_REQUEST', async () => {
+    const r = await api('/search/translate', { method: 'POST', body: JSON.stringify({}) })
+    assert.equal(r.status, 400)
+    assert.equal(r.data.error, 'BAD_REQUEST')
+  })
+
+  it('rejects non-string prompt with 400 BAD_REQUEST', async () => {
+    const r = await api('/search/translate', { method: 'POST', body: JSON.stringify({ prompt: 42 }) })
+    assert.equal(r.status, 400)
+    assert.equal(r.data.error, 'BAD_REQUEST')
+  })
+
+  it('rejects wrong field name (query instead of prompt) with 400', async () => {
+    const r = await api('/search/translate', { method: 'POST', body: JSON.stringify({ query: 'show me bugs' }) })
+    assert.equal(r.status, 400)
+    assert.equal(r.data.error, 'BAD_REQUEST')
+  })
+
+  it('sends prompt field and receives { filters, model } on success', async () => {
+    const fields = await api('/search/fields')
+    if (!fields.data.translator_available) return
+    const r = await api('/search/translate', { method: 'POST', body: JSON.stringify({ prompt: 'high priority items' }) })
+    assert.equal(r.status, 200)
+    assert.ok(r.data.filters !== undefined, 'response must have filters key')
+    assert.ok(typeof r.data.model === 'string', 'response must have model string')
+  })
+
+  it('translate result type_name flows through to search results', async () => {
+    const fields = await api('/search/fields')
+    if (!fields.data.translator_available) return
+    const tr = await api('/search/translate', { method: 'POST', body: JSON.stringify({ prompt: 'show me Tech Debt items' }) })
+    if (tr.status !== 200) return
+    const { filters } = tr.data
+    if (!filters.type_name) return
+    const sr = await api(`/search?type_name=${encodeURIComponent(filters.type_name)}&limit=5`)
+    assert.equal(sr.status, 200)
+    assert.ok(Array.isArray(sr.data.rows))
+    sr.data.rows.forEach(row => assert.equal(row.type_name, filters.type_name))
+  })
+})
