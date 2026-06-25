@@ -91,6 +91,22 @@ export async function notificationsHandler(event) {
     }
   }
 
+  // Filter out user_ids not present in blueprint.users (guards against orphaned relationship rows)
+  if (candidates.size > 0) {
+    const ids = [...candidates.keys()].filter(id => id != null)
+    const { rows: valid } = await query(
+      'SELECT id FROM blueprint.users WHERE id = ANY($1)',
+      [ids]
+    )
+    const validSet = new Set(valid.map(r => Number(r.id)))
+    for (const uid of [...candidates.keys()]) {
+      if (!validSet.has(Number(uid))) {
+        console.warn(`[notifications] dropping orphaned user_id ${uid} for work item ${workItem.id}`)
+        candidates.delete(uid)
+      }
+    }
+  }
+
   // Suppress the actor — they triggered the event, no self-notification
   if (event.actor_id) candidates.delete(event.actor_id)
 

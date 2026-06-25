@@ -195,6 +195,42 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
     assert.ok(rows[0].failure_count >= 1)
   })
 
+  it('dead-letters a poison event after DEAD_LETTER_THRESHOLD consecutive failures', async (t) => {
+    if (!isProcessorPrimary()) { t.skip('server holds advisory lock — run without server'); return }
+
+    registerSubscriber({
+      name: 'test-dead-letter',
+      handles: (type) => type === 'test.poison',
+      handler: async (_e) => { throw new Error('always fails') },
+    })
+
+    const client = await getClient()
+    let poisonEventId
+    try {
+      await client.query('BEGIN')
+      poisonEventId = await emitEvent(client, {
+        eventType: 'test.poison',
+        entityId:  1,
+        payload:   { x: 1 },
+      })
+      await client.query('COMMIT')
+    } finally { client.release() }
+
+    // Each drainNow() is one retry tick; threshold is 5
+    for (let i = 0; i < 5; i++) await drainNow()
+
+    const { rows } = await query(
+      'SELECT last_processed_event_id, failure_count, last_error FROM runtime.event_subscribers WHERE name = $1',
+      ['test-dead-letter']
+    )
+    assert.equal(Number(rows[0].last_processed_event_id), Number(poisonEventId),
+      'cursor must advance past the poison event after dead-lettering')
+    assert.equal(Number(rows[0].failure_count), 0,
+      'failure_count reset after dead-letter')
+    assert.match(rows[0].last_error, /always fails/,
+      'last_error preserved for dead-letter visibility')
+  })
+
   it('skips past events a subscriber does not handle (advances cursor without calling handler)', async (t) => {
     if (!isProcessorPrimary()) { t.skip('server holds advisory lock — run without server'); return }
     const handled = []
