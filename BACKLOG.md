@@ -2,6 +2,8 @@
 
 ## Active / Up Next
 
+[done 2026-06-25] test(mcp): DEBT.25726 — write_context_entry 400 bug: confirmed already fixed in 64537d5; added 2 regression tests (entry_type fidelity + schema assertion). PR #7 merged. Filed 3 dogfood observations as DEBT.25773, DEBT.25774, FEAT.25775 on Gladius board.
+
 [done 2026-06-24] fix(search): DEBT.25478 — NL search dead (translate request body field mismatch). Root cause: TRANSLATION_FAILED on sort queries (sort keys not in ALLOWED_KEYS) + type_name gap in searchApi.query(). Both fixed by FEAT.25454; this session added visible error surface on translate failure + 5 HTTP contract integration tests. Commit: 1d0ee35.
 
 [done 2026-06-23] feat(search): FEAT.25454 — sort/date NL support. `sort_by/sort_dir/created_after/created_before` wired translator→endpoint; code-fence stripping in extractText(); type_name frontend gap fixed. Commit: 9a4a772.
