@@ -2,6 +2,8 @@
 
 ## Active / Up Next
 
+[done 2026-06-24] fix(search): DEBT.25478 — NL search dead (translate request body field mismatch). Root cause: TRANSLATION_FAILED on sort queries (sort keys not in ALLOWED_KEYS) + type_name gap in searchApi.query(). Both fixed by FEAT.25454; this session added visible error surface on translate failure + 5 HTTP contract integration tests. Commit: 1d0ee35.
+
 [done 2026-06-23] feat(search): FEAT.25454 — sort/date NL support. `sort_by/sort_dir/created_after/created_before` wired translator→endpoint; code-fence stripping in extractText(); type_name frontend gap fixed. Commit: 9a4a772.
 
 [P3] Data cleanup (DEBT.25359, Backlog on dogfood board) — Data side **DONE** (Session 34): deleted 25,048 orphaned `requested_by` relationship rows pointing at non-existent `user_id=1` (all enterprise seed orgs; dogfood org 109 was clean). Remaining: fold any residual `runtime.notifications` / `blueprint.notification_defaults` orphan check into the DEBT.25476 hardening; close otherwise.

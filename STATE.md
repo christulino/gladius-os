@@ -4,12 +4,13 @@
 > This file tracks project-level context only: blockers, goals, open questions.
 
 ## Right Now
-Session 38 closed. MCP improvement sprint shipped — 4 features, 13 tools total (was 9):
-- FEAT.25602: `write_context_entry` Bearer attribution fixed (`author_id` from `req.userId`)
-- FEAT.25603: `write_context_entry` now accepts optional `title` param
-- FEAT.25804: `set_work_item_fields`, `get_exit_criteria`, `ack_exit_criterion` tools + `apiPatch`
-- FEAT.25805: `get_stage_playbook` tool + `GET /work-items/:id/stage-playbook` endpoint
-- FEAT.25806: `execution_owner` guard — migration 021, executor early-return, PlaybookEditor toggle
+Session 39 closed. DEBT.25478 (NL search dead) resolved via full dogfood workflow:
+- Root cause was already fixed by FEAT.25454; this session added visible error surface + 5 HTTP contract tests
+- Dogfood observations: in-server Discovery/Planning playbooks ran cleanly; `no_unresolved_decisions` gate caught the playbook-authored decision and blocked Planning transition correctly
+
+## Next Up
+- DEBT.25477 (rank-04, P1) — Journal renders AI output as raw escaped JSON; markdown not parsed. Currently in Discovery on dogfood board.
+- Board cleanup: ~10 "Field writes test" P2 artifact items from Session 38 testing + FEAT.25602–25606 need to be transitioned to Done
 
 ## Blockers
 - npm `gladius` name squat (open)
