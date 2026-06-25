@@ -189,4 +189,16 @@ export const TOOLS = [
       required: ['work_item_id', 'org_id'],
     },
   },
+  {
+    name: 'get_available_transitions',
+    description: 'Get the stages this work item can transition to from its current stage. Returns an empty array if the item is in a terminal stage or has no outbound transitions configured. Use to_stage_id values with transition_work_item.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item ID' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required — prevents cross-org access)' },
+      },
+      required: ['work_item_id', 'org_id'],
+    },
+  },
 ]

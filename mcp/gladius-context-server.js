@@ -161,6 +161,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] }
       }
 
+      case 'get_available_transitions': {
+        const wi = await apiGet(`/admin/api/work-items/${args.work_item_id}`)
+        if (!wi) throw new Error(`Work item ${args.work_item_id} not found`)
+        if (wi.owner_org_id !== args.org_id) {
+          throw new Error(`Work item ${args.work_item_id} not found in org ${args.org_id}`)
+        }
+        const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/transitions`)
+        return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? [], null, 2) }] }
+      }
+
       default:
         throw new Error(`Unknown tool: ${name}`)
     }
