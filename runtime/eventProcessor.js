@@ -18,9 +18,10 @@ import { auditLogHandler, handlesEventType as auditHandles } from './subscribers
 import { notificationsHandler, handlesEventType as notificationsHandles } from './subscribers/notifications.js'
 import { searchIndexHandler, handlesEventType as searchIndexHandles } from './subscribers/searchIndex.js'
 
-const LOCK_KEY        = 0x0F105053   // 'FlOS' — unique Gladius processor key (value frozen — changing breaks advisory lock continuity)
-const SAFETY_POLL_MS  = 30_000
-const BATCH_SIZE      = 100
+const LOCK_KEY              = 0x0F105053   // 'FlOS' — unique Gladius processor key (value frozen — changing breaks advisory lock continuity)
+const SAFETY_POLL_MS        = 30_000
+const BATCH_SIZE            = 100
+const DEAD_LETTER_THRESHOLD = 5           // advance past an event after this many consecutive failures
 
 // Module state
 let isPrimary       = false
@@ -213,6 +214,8 @@ async function drainOne(sub) {
   if (!state) return
 
   let cursor = Number(state.last_processed_event_id)
+  // Seed from persisted count so we don't restart the retry window across ticks.
+  let consecutiveFailures = Number(state.failure_count ?? 0)
 
   while (true) {
     const { rows: events } = await query(`
@@ -238,10 +241,20 @@ async function drainOne(sub) {
         await sub.handler(event)
         cursor = Number(event.id)
         await advanceCursor(sub.name, cursor)
+        consecutiveFailures = 0
       } catch (err) {
-        console.warn(`[events] subscriber "${sub.name}" failed on event ${event.id}: ${err.message}`)
+        consecutiveFailures++
+        console.warn(`[events] subscriber "${sub.name}" failed on event ${event.id} (attempt ${consecutiveFailures}): ${err.message}`)
         await recordFailure(sub.name, event.id, err)
-        return   // cursor not advanced; next tick retries this event
+        if (consecutiveFailures >= DEAD_LETTER_THRESHOLD) {
+          console.error(`[events] subscriber "${sub.name}" dead-lettering event ${event.id} after ${consecutiveFailures} consecutive failures — ${err.message}`)
+          cursor = Number(event.id)
+          await advanceCursorDeadLetter(sub.name, cursor)
+          consecutiveFailures = 0
+          // fall through — for loop continues to next event
+        } else {
+          return   // cursor not advanced; next tick retries this event
+        }
       }
     }
   }
@@ -267,6 +280,18 @@ async function advanceCursorSkipped(name, cursor) {
   await query(`
     UPDATE runtime.event_subscribers
     SET last_processed_event_id = $2,
+        updated_at = NOW()
+    WHERE name = $1
+  `, [name, cursor])
+}
+
+/** Advance cursor past a poison event after DEAD_LETTER_THRESHOLD consecutive failures.
+ *  Preserves last_error/last_error_at for admin visibility; resets failure_count. */
+async function advanceCursorDeadLetter(name, cursor) {
+  await query(`
+    UPDATE runtime.event_subscribers
+    SET last_processed_event_id = $2,
+        failure_count = 0,
         updated_at = NOW()
     WHERE name = $1
   `, [name, cursor])
