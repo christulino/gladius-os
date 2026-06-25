@@ -1,6 +1,7 @@
 import { describe, it, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
+import { TOOLS } from '../mcp/toolsManifest.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const BEARER = process.env.GLADIUS_API_KEY || ''
@@ -60,5 +61,26 @@ describe('MCP Attribution', () => {
     })
     assert.equal(status, 201)
     assert.ok(data.author_id !== null, `session auth should set author_id, got null`)
+  })
+
+  it('persists the requested entry type unchanged', async () => {
+    if (skipBearer) return
+    const { status, data } = await bearerFetch(`/work-items/${workItemId}/context-entries`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'discovery', content: 'type fidelity', title: 'Type check' }),
+    })
+    assert.equal(status, 201, `expected 201, got ${status}: ${JSON.stringify(data)}`)
+    assert.equal(data.type, 'discovery', `persisted type should be 'discovery', got '${data.type}'`)
+  })
+})
+
+describe('MCP Tool Schema', () => {
+  it('write_context_entry exposes entry_type (not type) as the parameter name', () => {
+    const tool = TOOLS.find(t => t.name === 'write_context_entry')
+    assert.ok(tool, 'write_context_entry tool not found in manifest')
+    const props = tool.inputSchema.properties
+    assert.ok('entry_type' in props, 'write_context_entry schema must have entry_type property')
+    assert.ok(!('type' in props), 'write_context_entry schema must not expose type — use entry_type')
+    assert.ok(tool.inputSchema.required.includes('entry_type'), 'entry_type must be required')
   })
 })
