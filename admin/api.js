@@ -2410,24 +2410,10 @@ router.get('/work-items/:id/transition/prepare', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// POST /admin/api/work-items/:id/transition — execute transition
-router.post('/work-items/:id/transition', async (req, res, next) => {
-  try {
-    const { to_stage_id, reason } = req.body
-    if (!to_stage_id) return res.status(400).json({ error: 'to_stage_id is required' })
-    const result = await executeTransition(
-      parseInt(req.params.id),
-      parseInt(to_stage_id),
-      req.userId,
-      { reason }
-    )
-    if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
-    res.json(result)
-  } catch (err) { next(err) }
-})
-
 // =============================================================================
 // BULK OPERATIONS
+// These routes must be declared before the parameterized /:id/transition route
+// so Express does not swallow /bulk/* paths as /:id = "bulk".
 // =============================================================================
 
 // POST /admin/api/work-items/bulk/transition
@@ -2460,6 +2446,22 @@ router.post('/work-items/bulk/transition', async (req, res, next) => {
       succeeded_count: results.filter(r => r.success).length,
       failed_count:    results.filter(r => !r.success).length,
     })
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/:id/transition — execute transition
+router.post('/work-items/:id/transition', async (req, res, next) => {
+  try {
+    const { to_stage_id, reason } = req.body
+    if (!to_stage_id) return res.status(400).json({ error: 'to_stage_id is required' })
+    const result = await executeTransition(
+      parseInt(req.params.id),
+      parseInt(to_stage_id),
+      req.userId,
+      { reason }
+    )
+    if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
+    res.json(result)
   } catch (err) { next(err) }
 })
 
