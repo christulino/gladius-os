@@ -255,7 +255,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
   const [comments, setComments] = useState([])
   const [relationships, setRelationships] = useState([])
   const [links, setLinks] = useState([])
-  const [tab, setTab] = useState('details')
+  const [tab, setTab] = useState('journal')
   const [loading, setLoading] = useState(false)
   const [elapsed, setElapsed] = useState('')
 
@@ -775,7 +775,7 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
             {/* Tabs */}
             <div className="flex border-b border-border px-4">
-              {['details', 'journal', 'activity', 'comments'].map(t => (
+              {['journal', 'details', 'activity', 'comments'].map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
