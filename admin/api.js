@@ -4844,7 +4844,7 @@ router.get('/organizations/:orgId/session-context', async (req, res, next) => {
         JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
         WHERE wi.owner_org_id = $1
           AND wi.spawn_state = 'active'
-          AND s.stage_class = 'active'
+          AND s.stage_class = 'in-progress'
         ORDER BY wi.priority ASC, wi.updated_at DESC
         LIMIT 20
       `, [orgId]),
@@ -4884,7 +4884,7 @@ router.get('/organizations/:orgId/session-context', async (req, res, next) => {
         WHERE wi.owner_org_id = $1
           AND ce.type = 'decision'
           AND ce.resolved = false
-          AND s.stage_class IN ('active', 'queued')
+          AND s.stage_class IN ('in-progress', 'queued')
         ORDER BY ce.created_at ASC
         LIMIT 20
       `, [orgId]),
