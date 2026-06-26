@@ -6,11 +6,11 @@
  *   - Parent chain (ancestors up to permission boundary or root)
  *   - Siblings (peer items sharing the same parent)
  *   - All descendants (any depth — decomposed + spawned)
- *   - Cross-org spawned items (both directions)
- *   - Blocking relationships
+ *   - Cross-org spawned items (both directions, via origin_work_item_id)
+ *   - Blocking relationships (via runtime.work_item_links)
  *
- * Neo4j resolves which items exist and how they relate.
- * PostgreSQL fetches full property data for each item.
+ * All traversals use PostgreSQL recursive CTEs against runtime.work_items
+ * and runtime.work_item_links — Neo4j removed.
  * Permission filtering applied at each node before returning.
  *
  * Usage:
@@ -19,12 +19,7 @@
  *   const tree = await getWorkItemHierarchy('flowos://org/work-items/uuid', userId)
  */
 
-import { query }    from '../db/postgres.js'
-import { canAccess } from '../core/access.js'
-
-// Neo4j removed — hierarchy traversal returns empty sets until a PostgreSQL
-// CTE-based replacement is implemented.
-async function runQuery(_cypher, _params) { return [] }
+import { query } from '../db/postgres.js'
 
 /**
  * Get the full hierarchy for a work item, permission-filtered.
@@ -38,16 +33,16 @@ export async function getWorkItemHierarchy(workItemUri, userId) {
   const focusItem = await getWorkItemByUri(workItemUri)
   if (!focusItem) throw new Error(`[hierarchy] Work item not found: ${workItemUri}`)
 
-  const canSeeFocus = await canAccess(userId, 'work_item', focusItem.id, 'view')
+  const canSeeFocus = await canViewWorkItem(userId, focusItem)
   if (!canSeeFocus) throw new Error(`[hierarchy] Access denied to work item: ${workItemUri}`)
 
   // Run all five hierarchy queries in parallel
   const [ancestors, siblings, descendants, spawned, blocking] = await Promise.all([
-    queryAncestors(workItemUri),
-    querySiblings(workItemUri),
-    queryDescendants(workItemUri),
-    querySpawned(workItemUri),
-    queryBlocking(workItemUri),
+    queryAncestors(focusItem.id),
+    querySiblings(focusItem.id, focusItem.parent_id),
+    queryDescendants(focusItem.id),
+    querySpawned(focusItem.id),
+    queryBlocking(focusItem.id),
   ])
 
   // Permission-filter each result set
@@ -76,129 +71,128 @@ export async function getWorkItemHierarchy(workItemUri, userId) {
 }
 
 // =============================================================================
-// NEO4J QUERIES (HN-1 through HN-5)
+// POSTGRESQL QUERIES (HP-1 through HP-5)
 // =============================================================================
 
 /**
- * HN-1: Parent chain — all ancestors ordered by distance.
+ * HP-1: Parent chain — all ancestors ordered by distance (root first).
+ *
+ * @param {number} workItemId - numeric PK of the focus item
+ * @returns {Promise<{uri: string, depth: number}[]>}
  */
-async function queryAncestors(workItemUri) {
-  return runQuery(`
-    MATCH path = (ancestor:WorkItem)-[:DECOMPOSES_INTO*]->(focus:WorkItem {uri: $uri})
-    WITH ancestor, length(path) AS depth
-    ORDER BY depth DESC
-    RETURN
-      ancestor.uri             AS uri,
-      ancestor.title           AS title,
-      ancestor.current_stage_class AS stage_class,
-      ancestor.sla_status      AS sla_status,
-      ancestor.spawn_state     AS spawn_state,
-      ancestor.owner_org_uri   AS owner_org_uri,
-      ancestor.service_class   AS service_class,
-      depth
-  `, { uri: workItemUri })
+async function queryAncestors(workItemId) {
+  const result = await query(`
+    WITH RECURSIVE ancestors AS (
+      SELECT p.id, p.uri, p.parent_id, 1 AS depth
+      FROM runtime.work_items focus
+      JOIN runtime.work_items p ON p.id = focus.parent_id
+      WHERE focus.id = $1
+
+      UNION ALL
+
+      SELECT p.id, p.uri, p.parent_id, a.depth + 1
+      FROM runtime.work_items p
+      JOIN ancestors a ON p.id = a.parent_id
+    )
+    SELECT uri, depth FROM ancestors ORDER BY depth DESC
+  `, [workItemId])
+  return result.rows
 }
 
 /**
- * HN-2: Siblings — peer items sharing the same parent.
+ * HP-2: Siblings — peer items sharing the same parent.
+ * Returns empty array if the focus item has no parent.
+ *
+ * @param {number} workItemId - numeric PK of the focus item
+ * @param {number|null} parentId - parent_id of the focus item (null = top-level)
+ * @returns {Promise<{uri: string}[]>}
  */
-async function querySiblings(workItemUri) {
-  return runQuery(`
-    MATCH (parent:WorkItem)-[:DECOMPOSES_INTO]->(focus:WorkItem {uri: $uri})
-    MATCH (parent)-[:DECOMPOSES_INTO]->(sibling:WorkItem)
-    WHERE sibling.uri <> $uri
-    RETURN
-      sibling.uri              AS uri,
-      sibling.title            AS title,
-      sibling.current_stage_class AS stage_class,
-      sibling.sla_status       AS sla_status,
-      sibling.spawn_state      AS spawn_state,
-      sibling.owner_org_uri    AS owner_org_uri,
-      sibling.service_class    AS service_class,
-      'sibling'                AS relationship_kind
-  `, { uri: workItemUri })
+async function querySiblings(workItemId, parentId) {
+  if (!parentId) return []
+  const result = await query(`
+    SELECT uri
+    FROM runtime.work_items
+    WHERE parent_id = $1 AND id <> $2
+  `, [parentId, workItemId])
+  return result.rows
 }
 
 /**
- * HN-3: All descendants — decomposed + spawned, any depth.
- * Returns relationship_kind to distinguish DECOMPOSES_INTO vs SPAWNED for UI styling.
+ * HP-3: All descendants — any depth, via parent_id chain.
+ *
+ * @param {number} workItemId - numeric PK of the focus item
+ * @returns {Promise<{uri: string, depth: number, relationship_kind: string}[]>}
  */
-async function queryDescendants(workItemUri) {
-  return runQuery(`
-    MATCH (focus:WorkItem {uri: $uri})-[r:DECOMPOSES_INTO|SPAWNED*]->(descendant:WorkItem)
-    RETURN
-      descendant.uri             AS uri,
-      descendant.title           AS title,
-      descendant.current_stage_class AS stage_class,
-      descendant.sla_status      AS sla_status,
-      descendant.spawn_state     AS spawn_state,
-      descendant.owner_org_uri   AS owner_org_uri,
-      descendant.service_class   AS service_class,
-      type(last(r))              AS relationship_kind,
-      length(r)                  AS depth
-  `, { uri: workItemUri })
+async function queryDescendants(workItemId) {
+  const result = await query(`
+    WITH RECURSIVE descendants AS (
+      SELECT wi.id, wi.uri, 1 AS depth
+      FROM runtime.work_items wi
+      WHERE wi.parent_id = $1
+
+      UNION ALL
+
+      SELECT wi.id, wi.uri, d.depth + 1
+      FROM runtime.work_items wi
+      JOIN descendants d ON wi.parent_id = d.id
+    )
+    SELECT uri, depth, 'child' AS relationship_kind FROM descendants
+  `, [workItemId])
+  return result.rows
 }
 
 /**
- * HN-4: Cross-org spawned items — both inbound and outbound.
+ * HP-4: Spawned items — cross-org relationships via origin_work_item_id.
+ *   outbound: items that were spawned FROM this item
+ *   inbound:  the item that spawned this item (if any)
+ *
+ * @param {number} workItemId - numeric PK of the focus item
+ * @returns {Promise<{uri: string, direction: string}[]>}
  */
-async function querySpawned(workItemUri) {
-  const outbound = await runQuery(`
-    MATCH (focus:WorkItem {uri: $uri})-[:SPAWNED]->(spawned:WorkItem)
-    RETURN
-      spawned.uri            AS uri,
-      spawned.title          AS title,
-      spawned.current_stage_class AS stage_class,
-      spawned.spawn_state    AS spawn_state,
-      spawned.owner_org_uri  AS owner_org_uri,
-      spawned.service_class  AS service_class,
-      'outbound'             AS direction
-  `, { uri: workItemUri })
-
-  const inbound = await runQuery(`
-    MATCH (origin:WorkItem)-[:SPAWNED]->(focus:WorkItem {uri: $uri})
-    RETURN
-      origin.uri             AS uri,
-      origin.title           AS title,
-      origin.current_stage_class AS stage_class,
-      origin.spawn_state     AS spawn_state,
-      origin.owner_org_uri   AS owner_org_uri,
-      origin.service_class   AS service_class,
-      'inbound'              AS direction
-  `, { uri: workItemUri })
-
-  return [...outbound, ...inbound]
+async function querySpawned(workItemId) {
+  const [outResult, inResult] = await Promise.all([
+    query(`
+      SELECT uri, 'outbound' AS direction
+      FROM runtime.work_items
+      WHERE origin_work_item_id = $1
+    `, [workItemId]),
+    query(`
+      SELECT origin.uri, 'inbound' AS direction
+      FROM runtime.work_items focus
+      JOIN runtime.work_items origin ON origin.id = focus.origin_work_item_id
+      WHERE focus.id = $1 AND focus.origin_work_item_id IS NOT NULL
+    `, [workItemId]),
+  ])
+  return [...outResult.rows, ...inResult.rows]
 }
 
 /**
- * HN-5: Blocking relationships — items blocking this one and items this one blocks.
- * Only returns active (non-terminal) blockers.
+ * HP-5: Blocking relationships via runtime.work_item_links (link_type = 'blocks').
+ *   blocking_me:   active items that block this item
+ *   i_am_blocking: items this item blocks (active or not)
+ *
+ * @param {number} workItemId - numeric PK of the focus item
+ * @returns {Promise<{uri: string, direction: string}[]>}
  */
-async function queryBlocking(workItemUri) {
-  const blockingMe = await runQuery(`
-    MATCH (blocker:WorkItem)-[:BLOCKS]->(focus:WorkItem {uri: $uri})
-    WHERE blocker.spawn_state <> 'done' AND blocker.spawn_state <> 'cancelled'
-    RETURN
-      blocker.uri            AS uri,
-      blocker.title          AS title,
-      blocker.current_stage_class AS stage_class,
-      blocker.sla_status     AS sla_status,
-      blocker.owner_org_uri  AS owner_org_uri,
-      'blocking_me'          AS direction
-  `, { uri: workItemUri })
-
-  const iAmBlocking = await runQuery(`
-    MATCH (focus:WorkItem {uri: $uri})-[:BLOCKS]->(blocked:WorkItem)
-    RETURN
-      blocked.uri            AS uri,
-      blocked.title          AS title,
-      blocked.current_stage_class AS stage_class,
-      blocked.sla_status     AS sla_status,
-      blocked.owner_org_uri  AS owner_org_uri,
-      'i_am_blocking'        AS direction
-  `, { uri: workItemUri })
-
-  return [...blockingMe, ...iAmBlocking]
+async function queryBlocking(workItemId) {
+  const [blockingMe, iAmBlocking] = await Promise.all([
+    query(`
+      SELECT wi.uri, 'blocking_me' AS direction
+      FROM runtime.work_item_links l
+      JOIN runtime.work_items wi ON wi.id = l.source_work_item_id
+      WHERE l.target_work_item_id = $1
+        AND l.link_type = 'blocks'
+        AND wi.spawn_state NOT IN ('done', 'cancelled')
+    `, [workItemId]),
+    query(`
+      SELECT wi.uri, 'i_am_blocking' AS direction
+      FROM runtime.work_item_links l
+      JOIN runtime.work_items wi ON wi.id = l.target_work_item_id
+      WHERE l.source_work_item_id = $1
+        AND l.link_type = 'blocks'
+    `, [workItemId]),
+  ])
+  return [...blockingMe.rows, ...iAmBlocking.rows]
 }
 
 // =============================================================================
@@ -206,9 +200,32 @@ async function queryBlocking(workItemUri) {
 // =============================================================================
 
 /**
- * For each node returned by Neo4j:
+ * Check whether a user can view a work item.
+ * Admins can see all items. Other users must be a member of the owner org.
+ *
+ * @param {number} userId
+ * @param {Object} workItem - must have owner_org_id
+ * @returns {Promise<boolean>}
+ */
+async function canViewWorkItem(userId, workItem) {
+  const userRow = await query(
+    'SELECT is_admin FROM blueprint.users WHERE id = $1',
+    [userId]
+  )
+  if (userRow.rows[0]?.is_admin) return true
+
+  const memberRow = await query(
+    'SELECT 1 FROM blueprint.org_memberships WHERE org_id = $1 AND user_id = $2 AND is_active = true',
+    [workItem.owner_org_id, userId]
+  )
+  return memberRow.rows.length > 0
+}
+
+/**
+ * For each node returned by the PG queries:
+ *   - Fetch full work item data from PostgreSQL by URI
  *   - Check canAccess()
- *   - If allowed: fetch full data from PostgreSQL and return
+ *   - If allowed: return full item data merged with traversal metadata
  *   - If denied: return a restricted placeholder
  *     { restricted: true, depth } — tells the UI "something is here but you can't see it"
  *
@@ -221,12 +238,12 @@ async function filterAndEnrich(nodes, userId, nodeRole) {
   return Promise.all(nodes.map(async node => {
     const workItem = await getWorkItemByUri(node.uri)
 
-    // Item not found in PostgreSQL (sync lag or deleted) — treat as restricted
+    // Item not found (deleted between query and enrichment) — treat as restricted
     if (!workItem) {
       return { restricted: true, reason: 'not_found', depth: node.depth, nodeRole }
     }
 
-    const allowed = await canAccess(userId, 'work_item', workItem.id, 'view')
+    const allowed = await canViewWorkItem(userId, workItem)
 
     if (!allowed) {
       // Return placeholder — tells UI "something exists here, you can't see it"
@@ -241,12 +258,11 @@ async function filterAndEnrich(nodes, userId, nodeRole) {
       }
     }
 
-    // Merge Neo4j traversal metadata with full PostgreSQL data
     return {
       ...workItem,
       depth:             node.depth,
-      relationship_kind: node.relationship_kind, // DECOMPOSES_INTO vs SPAWNED
-      direction:         node.direction,          // inbound/outbound for spawned
+      relationship_kind: node.relationship_kind,
+      direction:         node.direction,
       nodeRole,
       restricted:        false,
     }
@@ -266,7 +282,7 @@ async function getWorkItemByUri(uri) {
       wi.work_item_type_id, wi.owner_org_id,
       wi.current_stage_id, wi.current_substate,
       wi.spawn_state, wi.service_class_id,
-      wi.sla_status, wi.due_date,
+      wi.due_date,
       wi.parent_id, wi.origin_work_item_id,
       wi.field_values, wi.entered_current_stage_at,
       wi.created_at, wi.updated_at,
