@@ -85,7 +85,6 @@ async function main() {
     }
 
     const ids = targets.map(r => r.id);
-    const placeholder = ids.map((_, i) => `$${i + 1}`).join(', ');
 
     await client.query('BEGIN');
 
