@@ -1,7 +1,8 @@
 // tests/mcp-available-transitions.test.js
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
+import { deleteWorkItems } from './helpers/cleanup.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const ORG_ID = 109
@@ -24,6 +25,10 @@ describe('Available Transitions API', () => {
     })
     assert.equal(status, 201, `create work item failed: ${JSON.stringify(data)}`)
     workItemId = data.id
+  })
+
+  after(async () => {
+    await deleteWorkItems([workItemId])
   })
 
   it('returns 200 with transitions array for a valid work item', async () => {

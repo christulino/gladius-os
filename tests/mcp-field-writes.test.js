@@ -1,6 +1,7 @@
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
+import { deleteWorkItems } from './helpers/cleanup.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const BEARER = process.env.GLADIUS_API_KEY || ''
@@ -27,6 +28,10 @@ describe('MCP Field Writes + Exit Criteria', () => {
     })
     assert.equal(status, 201, `create work item failed: ${JSON.stringify(data)}`)
     workItemId = data.id
+  })
+
+  after(async () => {
+    await deleteWorkItems([workItemId])
   })
 
   describe('GET /work-items/:id/exit-criteria', () => {
