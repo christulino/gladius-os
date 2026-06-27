@@ -84,6 +84,16 @@ describe('Context Entries API', () => {
     await api(`/work-items/${workItemId}/context-entries/${e.id}`, { method: 'DELETE' })
   })
 
+  it('should reject an unknown entry type', async () => {
+    const { status, data } = await api(`/work-items/${workItemId}/context-entries`, {
+      method: 'POST',
+      body: JSON.stringify({ type: 'bogus', content: 'Should not be stored.' }),
+    })
+    assert.equal(status, 400, `Expected 400 for invalid type, got ${status}`)
+    assert.ok(data.error, 'Response should include an error message')
+    assert.ok(data.error.includes('bogus'), `Error should mention the bad type; got: ${data.error}`)
+  })
+
   it('should delete a context entry', async () => {
     const { status, data } = await api(
       `/work-items/${workItemId}/context-entries/${entryId}`,

@@ -5,6 +5,7 @@
 
 import { pool } from '../db/postgres.js'
 import { emitEvent } from '../core/events.js'
+import { assertValidEntryType } from './contextTypes.js'
 
 /**
  * List context entries for a work item, newest first.
@@ -51,6 +52,7 @@ export async function listContextEntries(workItemId, { types } = {}) {
 export async function createContextEntry(workItemId, {
   type, title, content, visibility = 'item', tags = [], authorId, isAgent = false,
 }, client = null) {
+  assertValidEntryType(type)
   const needsClient = !client
   const c = needsClient ? await pool.connect() : client
 
