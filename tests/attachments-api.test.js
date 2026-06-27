@@ -1,6 +1,7 @@
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi, getSessionCookie } from './helpers/auth.js'
+import { deleteWorkItems } from './helpers/cleanup.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const api = createAuthApi()
@@ -27,6 +28,10 @@ describe('Attachments API', () => {
 
   before(async () => {
     workItemId = await createWorkItem()
+  })
+
+  after(async () => {
+    await deleteWorkItems([workItemId])
   })
 
   it('lists attachments (initially possibly empty, always an array)', async () => {
