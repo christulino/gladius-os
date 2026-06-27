@@ -67,16 +67,20 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
     const trigger = meta?.trigger ?? 'on_enter'
     if (trigger !== 'on_enter' && trigger !== 'stage_entry') return
 
+    // Insert run record early so every execution path (including config errors)
+    // is visible in the UI via PlaybookRunIndicator.
+    runId = await insertRunRecord(workItemId, stageId, playbook.id)
+
     // 2. Resolve AI model config (includes decrypted API key)
     const modelName = meta?.model ?? 'default'
     const config = await resolveModelConfig(orgId, modelName)
     if (!config || !config.apiKey) {
-      console.warn(`[playbookExecutor] No AI model "${modelName}" configured for org ${orgId}`)
+      const errMsg = `No AI model named "${modelName}" is configured for this org. ` +
+        `Add a model with that name in Org Center → AI Models.`
+      console.warn(`[playbookExecutor] ${errMsg} (org ${orgId}, stage ${stageId})`)
+      await updateRunRecord(runId, { status: 'failed', errorMessage: errMsg })
       return
     }
-
-    // Insert run record with status=running before the LLM call
-    runId = await insertRunRecord(workItemId, stageId, playbook.id)
 
     // 3. Assemble context from item journal, ancestors, and org context
     const ctx = await assembleContext(workItemId, orgId, meta)

@@ -1,6 +1,6 @@
 /**
  * db/seeds/seed.js
- * Seeds ALL data into a fresh PostgreSQL database:
+ * Runs migrations (if not already applied) then seeds ALL data:
  *   1. System foundations (org types, system org, roles, permissions, service classes)
  *   2. Base WIT classes and workflows (7 classes, 5+4 workflows)
  *   3. System-default work item types
@@ -10,9 +10,11 @@
  *   7. Test user + org membership
  *
  * Run: node db/seeds/seed.js
+ *   or: npm run db:migrate && npm run seed
  */
 
 import 'dotenv/config'
+import { migrate } from '../migrate.js'
 import { getClient } from '../../db/postgres.js'
 import { generateSystemUri, generateUri } from '../../core/uri.js'
 
@@ -36,6 +38,10 @@ import { users }                from './enterprise/users.js'
 
 async function seed() {
   console.log('🌱 Starting seed...\n')
+
+  // Ensure all migrations are applied before seeding.
+  console.log('🗄️  Running migrations...')
+  await migrate()
 
   const client = await getClient()
 
@@ -63,7 +69,7 @@ async function seed() {
     const systemOrgResult = await client.query(`
       INSERT INTO blueprint.organizations
         (uri, slug, name, org_type, is_active)
-      VALUES ($1, 'system', 'Flow OS System', 'system', true)
+      VALUES ($1, 'system', 'Gladius System', 'system', true)
       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
       RETURNING id, uri
     `, [systemOrgUri])

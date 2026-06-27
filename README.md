@@ -86,7 +86,7 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 ## Quick start
 
 ```bash
-# Start PostgreSQL + Neo4j
+# Start PostgreSQL
 docker compose up -d
 
 # Install dependencies
@@ -97,7 +97,10 @@ cd admin-ui && npm install && cd ..
 cp .env.example .env
 # Edit .env — set GLADIUS_ENCRYPTION_KEY (32-byte hex) and database credentials
 
-# Run migrations and seed
+# Apply database migrations (creates all tables beyond the base schemas)
+npm run db:migrate
+
+# Seed reference data and sample work items
 npm run seed
 
 # Start the API (port 3000, auto-restart)
@@ -108,6 +111,9 @@ cd admin-ui && npm run dev
 ```
 
 Admin UI: `http://localhost:5173/admin/`
+
+`npm run seed` also runs any pending migrations automatically, so `npm run seed`
+alone works if you want a single command for a fresh database.
 
 Default seed credentials are printed to the console after `npm run seed`.
 

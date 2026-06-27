@@ -1913,6 +1913,8 @@ router.get('/edit/rules', (_req, res) => {
 // CLASS FIELDS CRUD
 // =============================================================================
 
+const ALLOWED_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'select', 'date'])
+
 router.get('/class-fields', async (req, res, next) => {
   try {
     const classId = parseInt(req.query.class_id)
@@ -1934,6 +1936,7 @@ router.post('/class-fields', async (req, res, next) => {
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    if (!ALLOWED_FIELD_TYPES.has(field_type.trim())) return res.status(400).json({ error: `field_type must be one of: ${[...ALLOWED_FIELD_TYPES].join(', ')}` })
     await assertNotReservedFieldKey(field_key.trim())
     const result = await query(`
       INSERT INTO blueprint.work_item_class_fields
@@ -2025,6 +2028,7 @@ router.post('/type-fields', async (req, res, next) => {
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    if (!ALLOWED_FIELD_TYPES.has(field_type.trim())) return res.status(400).json({ error: `field_type must be one of: ${[...ALLOWED_FIELD_TYPES].join(', ')}` })
     await assertNotReservedFieldKey(field_key.trim())
     const result = await query(`
       INSERT INTO blueprint.work_item_type_fields
@@ -2410,24 +2414,10 @@ router.get('/work-items/:id/transition/prepare', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// POST /admin/api/work-items/:id/transition — execute transition
-router.post('/work-items/:id/transition', async (req, res, next) => {
-  try {
-    const { to_stage_id, reason } = req.body
-    if (!to_stage_id) return res.status(400).json({ error: 'to_stage_id is required' })
-    const result = await executeTransition(
-      parseInt(req.params.id),
-      parseInt(to_stage_id),
-      req.userId,
-      { reason }
-    )
-    if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
-    res.json(result)
-  } catch (err) { next(err) }
-})
-
 // =============================================================================
 // BULK OPERATIONS
+// These routes must be declared before the parameterized /:id/transition route
+// so Express does not swallow /bulk/* paths as /:id = "bulk".
 // =============================================================================
 
 // POST /admin/api/work-items/bulk/transition
@@ -2460,6 +2450,22 @@ router.post('/work-items/bulk/transition', async (req, res, next) => {
       succeeded_count: results.filter(r => r.success).length,
       failed_count:    results.filter(r => !r.success).length,
     })
+  } catch (err) { next(err) }
+})
+
+// POST /admin/api/work-items/:id/transition — execute transition
+router.post('/work-items/:id/transition', async (req, res, next) => {
+  try {
+    const { to_stage_id, reason } = req.body
+    if (!to_stage_id) return res.status(400).json({ error: 'to_stage_id is required' })
+    const result = await executeTransition(
+      parseInt(req.params.id),
+      parseInt(to_stage_id),
+      req.userId,
+      { reason }
+    )
+    if (!result.success) return res.status(422).json({ error: result.error, details: result.details })
+    res.json(result)
   } catch (err) { next(err) }
 })
 
@@ -4844,7 +4850,7 @@ router.get('/organizations/:orgId/session-context', async (req, res, next) => {
         JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
         WHERE wi.owner_org_id = $1
           AND wi.spawn_state = 'active'
-          AND s.stage_class = 'active'
+          AND s.stage_class = 'in-progress'
         ORDER BY wi.priority ASC, wi.updated_at DESC
         LIMIT 20
       `, [orgId]),
@@ -4884,7 +4890,7 @@ router.get('/organizations/:orgId/session-context', async (req, res, next) => {
         WHERE wi.owner_org_id = $1
           AND ce.type = 'decision'
           AND ce.resolved = false
-          AND s.stage_class IN ('active', 'queued')
+          AND s.stage_class IN ('in-progress', 'queued')
         ORDER BY ce.created_at ASC
         LIMIT 20
       `, [orgId]),

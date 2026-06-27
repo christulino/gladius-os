@@ -1,6 +1,7 @@
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
+import { deleteWorkItems } from './helpers/cleanup.js'
 import { TOOLS } from '../mcp/toolsManifest.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
@@ -32,6 +33,10 @@ describe('MCP Attribution', () => {
     })
     assert.equal(status, 201, `create work item failed: ${JSON.stringify(data)}`)
     workItemId = data.id
+  })
+
+  after(async () => {
+    await deleteWorkItems([workItemId])
   })
 
   it('sets author_id from Bearer token caller', async () => {
