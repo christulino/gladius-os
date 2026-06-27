@@ -69,7 +69,7 @@ async function seed() {
     const systemOrgResult = await client.query(`
       INSERT INTO blueprint.organizations
         (uri, slug, name, org_type, is_active)
-      VALUES ($1, 'system', 'Flow OS System', 'system', true)
+      VALUES ($1, 'system', 'Gladius System', 'system', true)
       ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
       RETURNING id, uri
     `, [systemOrgUri])
