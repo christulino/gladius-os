@@ -2,7 +2,7 @@
  * FieldsEditor — Shared field definition editor for WIT Classes and WIT Types
  *
  * Used by both ClassFieldsEditor (on WitClasses page) and TypeFieldsEditor (on WitTypes page).
- * Supports all 10 field types, lookup list picker, inline options, constraints, and field key auto-gen.
+ * Supports 5 field types: text, textarea, number, select, date.
  */
 
 import { useState, useEffect, useCallback } from 'react'
@@ -11,19 +11,14 @@ import { Badge }  from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
 const FIELD_TYPE_OPTIONS = [
-  { label: 'Text',         value: 'text' },
-  { label: 'Text Area',    value: 'textarea' },
-  { label: 'Number',       value: 'number' },
-  { label: 'Boolean',      value: 'boolean' },
-  { label: 'Date',         value: 'date' },
-  { label: 'URL',          value: 'url' },
-  { label: 'Select',       value: 'select' },
-  { label: 'Multi Select', value: 'multi_select' },
-  { label: 'User',         value: 'user' },
-  { label: 'Org',          value: 'org' },
+  { label: 'Text',      value: 'text' },
+  { label: 'Text Area', value: 'textarea' },
+  { label: 'Number',    value: 'number' },
+  { label: 'Select',    value: 'select' },
+  { label: 'Date',      value: 'date' },
 ]
 
-const LIST_TYPES = ['select', 'multi_select']
+const LIST_TYPES = ['select']
 const CONSTRAINT_TYPES = { text: ['max_length'], textarea: ['max_length'], number: ['min', 'max'] }
 
 function labelToKey(label) {
