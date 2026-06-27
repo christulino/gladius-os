@@ -71,6 +71,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? data, null, 2) }] }
       }
 
+      case 'write_org_context': {
+        writeCount++
+        const entry = await apiPost(`/admin/api/organizations/${args.org_id}/context`, {
+          type:    args.type,
+          title:   args.title,
+          content: args.content,
+          tags:    args.tags ?? [],
+        })
+        return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
+      }
+
       case 'get_work_item': {
         const data = await apiGet(`/admin/api/work-items/${args.work_item_id}`)
         if (!data) throw new Error(`Work item ${args.work_item_id} not found`)
