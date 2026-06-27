@@ -49,12 +49,25 @@ export async function evaluateExitCriteria(workItemId, stageId) {
   `, [workItemId])
   const workItem = workItemResult.rows[0]
 
+  // Pre-load existing status rows so waivers are respected for all tiers
+  const existingStatusResult = await query(`
+    SELECT exit_criteria_id, status FROM runtime.exit_criteria_status
+    WHERE work_item_id = $1
+  `, [workItemId])
+  const waivedIds = new Set(
+    existingStatusResult.rows
+      .filter(r => r.status === 'waived')
+      .map(r => r.exit_criteria_id)
+  )
+
   const failed   = []
   const warnings = []
   const all      = []
 
   for (const criterion of criteria) {
-    const result = await evaluateSingleCriterion(criterion, workItem)
+    const result = waivedIds.has(criterion.id)
+      ? { passed: true }
+      : await evaluateSingleCriterion(criterion, workItem)
 
     const entry = {
       id:          criterion.id,
