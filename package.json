@@ -9,6 +9,7 @@
     "dev": "node --watch api/server.js",
     "db:migrate": "node db/migrate.js",
     "seed": "node db/seeds/seed.js",
+    "seed:solo": "node db/seeds/seed-solo.js",
     "test": "node --test"
   },
   "dependencies": {
