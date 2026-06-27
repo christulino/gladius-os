@@ -7,11 +7,23 @@ implement one item at a time in isolated worktrees and open PRs. Nothing merges 
 review the PR stack and merge yourself.
 
 ## How to run
-1. In the gladius-os repo, start a session: `claude --model opusplan` (or whatever you use).
-2. Make sure the PM2 dogfood instance is up on :3000 (`pm2 list` → `gladius-os` online).
-3. Paste the **Kickoff Prompt** below. Adjust `count` if you want more/fewer items.
-4. Watch via `/workflows`, the board at `localhost:3000/admin/`, and the GitHub PR tab.
-5. When it finishes, review the PR stack it hands you and merge the ones you want.
+1. **Pre-flight — clear the decks.** Run `gh pr list` and `git worktree list`. Merge (or
+   consciously note) any **open PRs from prior runs before starting a new one**. A PR left
+   open while the board says "Done" is how a branch silently drifts: it accumulates
+   duplicate commits and rots into conflicts against the PRs that merged around it. (This
+   is exactly how a one-line "chore" PR turned into an hour of conflict surgery — and it
+   carried a real unmerged fix nobody noticed.) Resolve the backlog of open PRs first.
+2. In the gladius-os repo, start a session: `claude --model opusplan` (or whatever you use).
+3. Make sure the PM2 dogfood instance is up on :3000 (`pm2 list` → `gladius-os` online).
+4. Paste the **Kickoff Prompt** below. Adjust `count` if you want more/fewer items.
+5. Watch via `/workflows`, the board at `localhost:3000/admin/`, and the GitHub PR tab.
+6. When it finishes, review the PR stack it hands you and merge the ones you want.
+7. **Post-merge cleanup.** Each item leaves a worktree + branch behind, and they pile up
+   every run (one supervised run can leave 5–10). Once you've merged, prune them:
+   `git worktree remove <path>` for each merged item, then `git branch -D <branch>`
+   (squash-merge means `git branch -d` will refuse with "not fully merged" — `-D` is
+   expected and correct here). The grinder session can do this sweep for you on request —
+   it verifies each branch maps to a merged PR and each worktree is clean before removing.
 
 ## Kickoff Prompt (paste this)
 
@@ -36,6 +48,9 @@ Then run the autonomous backlog grinder:
   PR size, files touched, any sibling PRs touching the same hot file (merge-order risk),
   and anything an agent did beyond its stated scope. Also list any new items agents
   discovered and wrote back to the board.
+- After I confirm I've merged, offer to sweep up: prune the merged worktrees + branches
+  (verify each branch maps to a merged PR and each worktree is clean first), and flag any
+  board items still sitting in Review — the marked-Done-but-unmerged gap (DEBT.26005).
 
 Rules (non-negotiable):
 - Do NOT merge anything. Merge is gated for me; settings deny + branch protection on main
