@@ -84,7 +84,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         keyword:     { type: 'string', description: 'Full-text search across title, description, and comments' },
-        stage_class: { type: 'string', enum: ['active','queued','done','cancelled'], description: 'Filter by stage class' },
+        stage_class: { type: 'string', enum: ['intake','queued','in-progress','done','cancelled'], description: 'Filter by stage class' },
         type_name:   { type: 'string', description: 'Filter by work item type name (e.g. "Bug", "Feature")' },
         priority:    { type: 'number', enum: [1,2,3,4], description: '1=critical, 2=high, 3=medium, 4=low' },
         assignee_id: { type: 'number', description: 'Filter by assignee user ID' },
