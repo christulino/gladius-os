@@ -122,6 +122,8 @@ describe('assembleContext', () => {
     await createContextEntry(workItemId, { type: 'discovery', title: 'Child disc', content: 'Child discovery.', authorId: AGENT_ID, isAgent: true })
     // Create a design entry on the child (should NOT appear when pulling 'discovery')
     await createContextEntry(workItemId, { type: 'design', title: 'Child design', content: 'Child design note.', authorId: AGENT_ID, isAgent: true })
+    // Create a note entry on the child (DEBT.25727 — Planning playbook must pull Worker analysis notes)
+    await createContextEntry(workItemId, { type: 'note', title: 'Worker analysis', content: 'Code-verified prior analysis.', authorId: AGENT_ID, isAgent: true })
     // Create an NFR entry on the parent (used for ancestor traversal)
     await createContextEntry(parentWorkItemId, { type: 'nfr', title: 'Parent NFR', content: 'Parent nfr.', authorId: AGENT_ID, isAgent: true })
 
@@ -173,6 +175,30 @@ describe('assembleContext', () => {
     })
     // No acceptance entries were created — result should be empty
     assert.equal(ctx.itemJournal.length, 0, 'should return no entries for a type not present')
+  })
+
+  // DEBT.25727 — Planning playbook context.pull excluded note, making prior Worker
+  // analysis (code-verified corrections to stale Discovery entries) invisible to the
+  // Planning AI. Regression test: note entries MUST be returned when pull includes 'note'.
+  it('includes note entries when pull contains note (DEBT.25727)', async () => {
+    const ctx = await assembleContext(workItemId, ORG_ID, {
+      context: { pull: ['note'], org: [] },
+    })
+    assert.ok(ctx.itemJournal.length >= 1, 'should return at least one note entry')
+    for (const e of ctx.itemJournal) {
+      assert.equal(e.type, 'note', `expected only note entries, got type '${e.type}'`)
+    }
+    const titles = ctx.itemJournal.map(e => e.title)
+    assert.ok(titles.includes('Worker analysis'), 'should include the Worker analysis note')
+  })
+
+  it('note entries are excluded when pull does not include note (DEBT.25727)', async () => {
+    const ctx = await assembleContext(workItemId, ORG_ID, {
+      context: { pull: ['discovery'], org: [] },
+    })
+    for (const e of ctx.itemJournal) {
+      assert.notEqual(e.type, 'note', 'note entries must not appear when pull omits note')
+    }
   })
 
   it('fetches ancestor journal entries when pull includes ancestors sentinel', async () => {
