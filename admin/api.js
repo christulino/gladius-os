@@ -1913,6 +1913,8 @@ router.get('/edit/rules', (_req, res) => {
 // CLASS FIELDS CRUD
 // =============================================================================
 
+const ALLOWED_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'select', 'date'])
+
 router.get('/class-fields', async (req, res, next) => {
   try {
     const classId = parseInt(req.query.class_id)
@@ -1934,6 +1936,7 @@ router.post('/class-fields', async (req, res, next) => {
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    if (!ALLOWED_FIELD_TYPES.has(field_type.trim())) return res.status(400).json({ error: `field_type must be one of: ${[...ALLOWED_FIELD_TYPES].join(', ')}` })
     await assertNotReservedFieldKey(field_key.trim())
     const result = await query(`
       INSERT INTO blueprint.work_item_class_fields
@@ -2025,6 +2028,7 @@ router.post('/type-fields', async (req, res, next) => {
     if (!field_key?.trim())   return res.status(400).json({ error: 'field_key is required' })
     if (!field_label?.trim()) return res.status(400).json({ error: 'field_label is required' })
     if (!field_type?.trim())  return res.status(400).json({ error: 'field_type is required' })
+    if (!ALLOWED_FIELD_TYPES.has(field_type.trim())) return res.status(400).json({ error: `field_type must be one of: ${[...ALLOWED_FIELD_TYPES].join(', ')}` })
     await assertNotReservedFieldKey(field_key.trim())
     const result = await query(`
       INSERT INTO blueprint.work_item_type_fields
