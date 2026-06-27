@@ -18,8 +18,19 @@ review the PR stack and merge yourself.
 4. Paste the **Kickoff Prompt** below. Adjust `count` if you want more/fewer items.
 5. Watch via `/workflows`, the board at `localhost:3000/admin/`, and the GitHub PR tab.
 6. When it finishes, review the PR stack it hands you and merge the ones you want.
-7. **Post-merge cleanup.** Each item leaves a worktree + branch behind, and they pile up
-   every run (one supervised run can leave 5–10). Once you've merged, prune them:
+7. **Post-merge sweep.** After merging, run the post-merge sweep to close out board items:
+   ```
+   node scripts/post-merge-sweep.js           # dry run — shows what will move
+   node scripts/post-merge-sweep.js --confirm  # sets pr_status=merged + transitions to Done
+   ```
+   Or: `npm run post-merge-sweep -- --confirm`
+
+   The script queries for items with `pr_url` set and `pr_status != merged`, checks each
+   PR's state via `gh`, then atomically sets `pr_status=merged` and transitions the item
+   to Done (respecting all exit criteria — if others are unmet it reports which ones block).
+
+8. **Worktree cleanup.** Each run leaves a worktree + branch behind (one per item).
+   Once you've merged, prune them:
    `git worktree remove <path>` for each merged item, then `git branch -D <branch>`
    (squash-merge means `git branch -d` will refuse with "not fully merged" — `-D` is
    expected and correct here). The grinder session can do this sweep for you on request —
@@ -48,9 +59,10 @@ Then run the autonomous backlog grinder:
   PR size, files touched, any sibling PRs touching the same hot file (merge-order risk),
   and anything an agent did beyond its stated scope. Also list any new items agents
   discovered and wrote back to the board.
-- After I confirm I've merged, offer to sweep up: prune the merged worktrees + branches
-  (verify each branch maps to a merged PR and each worktree is clean first), and flag any
-  board items still sitting in Review — the marked-Done-but-unmerged gap (DEBT.26005).
+- After I confirm I've merged, run the post-merge sweep: `node scripts/post-merge-sweep.js --confirm`
+  (sets pr_status=merged + transitions matching items to Done via the exit-criteria engine).
+  Then offer to prune the merged worktrees + branches (verify each branch maps to a merged PR
+  and each worktree is clean first before removing).
 
 Rules (non-negotiable):
 - Do NOT merge anything. Merge is gated for me; settings deny + branch protection on main
