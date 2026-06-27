@@ -37,7 +37,7 @@ const ALLOWED_KEYS = new Set([
   'keyword', 'stage_class', 'priority', 'assignee_me', 'type_name',
   'sort_by', 'sort_dir', 'created_after', 'created_before',
 ])
-const VALID_STAGE_CLASSES = new Set(['active', 'queued', 'done', 'cancelled'])
+const VALID_STAGE_CLASSES = new Set(['intake', 'queued', 'in-progress', 'done', 'cancelled'])
 const VALID_SORT_COLS     = new Set(['created_at', 'updated_at', 'priority', 'due_date'])
 const VALID_SORT_DIRS     = new Set(['asc', 'desc'])
 const RELATIVE_DATE_RE    = /^\d+d$/
@@ -103,7 +103,7 @@ const SYSTEM_PROMPT = `You translate natural language work item search requests 
 Return ONLY a valid JSON object with these optional keys:
 {
   "keyword": "words to full-text search across title, description, and comments",
-  "stage_class": "active" | "queued" | "done" | "cancelled",
+  "stage_class": "intake" | "queued" | "in-progress" | "done" | "cancelled",
   "priority": 1 | 2 | 3 | 4,
   "assignee_me": true,
   "type_name": "exact work item type name",
@@ -125,7 +125,7 @@ Return ONLY a valid JSON object with these optional keys:
 - Use relative shorthand (Nd) over absolute dates when the user says "last N days/week/month".
 
 ## Examples
-"my open bugs" -> {"stage_class": "active", "assignee_me": true, "type_name": "Bug"}
+"my open bugs" -> {"stage_class": "in-progress", "assignee_me": true, "type_name": "Bug"}
 "high priority items" -> {"priority": 1}
 "the oldest features" -> {"type_name": "Feature", "sort_by": "created_at", "sort_dir": "asc"}
 "recent bugs" -> {"type_name": "Bug", "sort_by": "created_at", "sort_dir": "desc"}
