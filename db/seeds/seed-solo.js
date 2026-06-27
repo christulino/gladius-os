@@ -158,6 +158,33 @@ Based on the discovery notes and acceptance criteria already in the journal, wri
 
 Keep the design pragmatic — clear enough to guide a developer, not an exhaustive specification.`
 
+const REVIEW_PLAYBOOK = `---
+trigger: stage_entry
+model: sonnet
+context:
+  pull:
+    - discovery
+    - acceptance
+    - design
+    - test-plan
+    - note
+  org:
+    - team-agreement
+  write:
+    - note
+---
+
+You are preparing a work item for code review.
+
+Based on the journal entries and team agreement context (especially PR description format and Definition of Done), write back a single **note** entry containing a ready-to-paste PR description. Include:
+
+1. A short summary of what changed and why (reference the discovery/acceptance entries)
+2. A test plan summary (drawn from test-plan journal entries)
+3. Any breaking changes or migration notes
+4. A reminder to set the pr_url field on the work item before requesting approval
+
+Keep it concise — a PR description is a handoff artifact, not a narrative.`
+
 // ─── Encryption helper ─────────────────────────────────────────────────────────
 // Inlined to avoid importing the full runtime module (which requires a live pool).
 function encryptApiKey(plaintext, keyHex) {
@@ -274,7 +301,7 @@ async function seed() {
     // ==================================================================
     // 1. ORG TYPES
     // ==================================================================
-    console.log('  [1/10] Org types...')
+    console.log('  [1/12] Org types...')
     for (const ot of orgTypes) {
       await client.query(`
         INSERT INTO blueprint.org_types (name, slug, sort_order)
@@ -287,7 +314,7 @@ async function seed() {
     // ==================================================================
     // 2. SYSTEM ORG
     // ==================================================================
-    console.log('  [2/10] System org...')
+    console.log('  [2/12] System org...')
     const systemOrgUri = generateSystemUri('orgs')
     const sysOrgR = await client.query(`
       INSERT INTO blueprint.organizations (uri, slug, name, org_type, is_active)
@@ -301,7 +328,7 @@ async function seed() {
     // ==================================================================
     // 3. ROLES
     // ==================================================================
-    console.log('  [3/10] Roles...')
+    console.log('  [3/12] Roles...')
     const roleIds = {}
     for (const role of roles) {
       const uri = generateSystemUri('roles')
@@ -318,7 +345,7 @@ async function seed() {
     // ==================================================================
     // 4. PERMISSIONS
     // ==================================================================
-    console.log('  [4/10] Permissions...')
+    console.log('  [4/12] Permissions...')
     const permissionIds = {}
     for (const perm of permissions) {
       const r = await client.query(`
@@ -347,7 +374,7 @@ async function seed() {
     // ==================================================================
     // 5. SERVICE CLASSES
     // ==================================================================
-    console.log('  [5/10] Service classes...')
+    console.log('  [5/12] Service classes...')
     for (const sc of serviceClasses) {
       const uri = generateSystemUri('service-classes')
       await client.query(`
@@ -370,7 +397,7 @@ async function seed() {
     // ==================================================================
     // 6. WIT CLASSES
     // ==================================================================
-    console.log('  [6/10] WIT classes...')
+    console.log('  [6/12] WIT classes...')
     const classIds = {}
     for (const cls of workItemTypeClasses) {
       const ex = await client.query(
@@ -395,7 +422,7 @@ async function seed() {
     // ==================================================================
     // 7. WORKFLOWS
     // ==================================================================
-    console.log('  [7/10] Workflows...')
+    console.log('  [7/12] Workflows...')
     const workflowIds = {}
     const stageIdMaps = {}
 
@@ -420,7 +447,7 @@ async function seed() {
     // ==================================================================
     // 8. SYSTEM WIT TYPES
     // ==================================================================
-    console.log('  [8/10] System WIT types...')
+    console.log('  [8/12] System WIT types...')
     for (const wit of workItemTypes) {
       const classId    = classIds[wit.class_name]
       const workflowId = workflowIds[wit.workflow_name]
@@ -462,7 +489,7 @@ async function seed() {
     // ==================================================================
     // 9. USER ORG, ADMIN USER, AGENT USER
     // ==================================================================
-    console.log('  [9/10] User org + users...')
+    console.log('  [9/12] User org + users...')
 
     // User org
     const userOrgSlug = 'my-workspace'
@@ -528,7 +555,7 @@ async function seed() {
     // ==================================================================
     // 10. ORG FEATURE TYPE + AI MODEL + PLAYBOOKS
     // ==================================================================
-    console.log('  [10/10] Org WIT type, AI model, playbooks...')
+    console.log('  [10/12] Org WIT type, AI model, playbooks...')
 
     const featureClassId = classIds['Feature']
     const featureDevWfId = workflowIds['Feature Development']
@@ -596,8 +623,192 @@ async function seed() {
           [planningStageId, 'Planning: Design & Task Breakdown', PLANNING_PLAYBOOK]
         )
       }
-      console.log('         + 2 playbooks (Discovery, Planning)')
+
+      // Review playbook — drafts PR description from journal + team agreements
+      const reviewStageId = stageIdMaps['Feature Development']['review']
+      const exReview = await client.query(
+        'SELECT id FROM blueprint.stage_playbooks WHERE stage_id = $1 AND name = $2',
+        [reviewStageId, 'Review: Draft PR Description']
+      )
+      if (!exReview.rows.length) {
+        await client.query(
+          `INSERT INTO blueprint.stage_playbooks (stage_id, name, content)
+           VALUES ($1, $2, $3)`,
+          [reviewStageId, 'Review: Draft PR Description', REVIEW_PLAYBOOK]
+        )
+      }
+      console.log('         + 3 playbooks (Discovery, Planning, Review)')
     }
+
+    // ==================================================================
+    // 11. TEAM AGREEMENTS (org context entries)
+    // ==================================================================
+    console.log('  [11/12] Team Agreements (org context)...')
+
+    const teamAgreements = [
+      {
+        type: 'team-agreement',
+        title: 'Branch Naming Convention',
+        content: `## Branch Naming Convention
+
+All development branches follow this pattern:
+\`<type>/<DISPLAY_KEY>-<short-slug>\`
+
+Examples:
+- \`feat/FEAT.25506-operating-model\`
+- \`fix/DEBT.25476-dead-letter-events\`
+
+Rules:
+- Type matches the work item type prefix in lowercase (feat, fix, debt, etc.)
+- Display key is the full key (e.g., FEAT.25506)
+- Slug is 2–5 hyphenated lowercase words describing what changed
+- No spaces, underscores, or uppercase in the slug portion`,
+      },
+      {
+        type: 'team-agreement',
+        title: 'PR Description Format',
+        content: `## PR Description Format
+
+Every PR must include:
+1. **Work item link** — the Gladius display key (e.g., \`FEAT.25506\`) in the title or body
+2. **Summary** — one paragraph describing what changed and why (not how)
+3. **Test plan** — what was tested and how to verify the change
+4. **Breaking changes** — if any API or DB schema changed, note it explicitly
+
+PR title format: \`type(scope): short description (DISPLAY_KEY)\`
+Example: \`feat(seed): add team-agreement org context entries (FEAT.25506)\``,
+      },
+      {
+        type: 'team-agreement',
+        title: 'Commit Message Convention',
+        content: `## Commit Message Convention
+
+Commits follow Conventional Commits format:
+\`type(scope): description (DISPLAY_KEY)\`
+
+Types: feat, fix, chore, docs, test, refactor, perf
+Scope: subsystem affected (seed, mcp, api, ui, runtime, db)
+
+Example: \`feat(seed): add team-agreement org context entries (FEAT.25506)\`
+
+Rules:
+- Subject line ≤ 72 characters
+- Body (optional) explains the why, not the what
+- Reference the Gladius display key in parentheses at the end
+- Agent-assisted commits include Co-Authored-By and Claude-Session trailers`,
+      },
+      {
+        type: 'team-agreement',
+        title: 'Test-Coverage Policy',
+        content: `## Test-Coverage Policy
+
+A test-plan journal entry documenting what was tested is required before moving any item to Review.
+
+Test tiers (in order of preference):
+- **Integration tests** — tests in \`tests/\` directory hitting the running API at :3000
+- **Unit tests** — for isolated business logic that doesn't need the full stack
+- **Manual verification** — acceptable for UI changes and seed scripts; must be documented in a test-plan journal entry
+
+Minimum requirements by change type:
+- New endpoints: happy path + at least one error case
+- New runtime logic: integration test or unit test covering the critical path
+- Bug fixes: a test that would have caught the bug
+- Seed/migration changes: manual verification documented in test-plan entry
+- UI changes: Playwright smoke test or manual verification with screenshots`,
+      },
+      {
+        type: 'team-agreement',
+        title: 'Definition of Done',
+        content: `## Definition of Done
+
+A work item is Done when ALL of the following are true:
+
+**Code quality**
+- \`npx eslint .\` passes with no errors
+- All relevant tests pass (\`npm test\`)
+- No new runtime warnings introduced
+
+**Scope and review**
+- The PR addresses only what the work item describes (no scope creep)
+- A PR is open with the work item display key in the title or body
+- The pr_url field is set on the work item
+- The PR has been reviewed and approved
+
+**Documentation**
+- A test-plan journal entry documents what was tested
+- CLAUDE.md updated if the change affects project architecture or key patterns
+- Journal entry (discovery, design, or note) explains the approach if non-obvious
+
+**Process**
+- The item is in Review stage (Done requires the human to merge the PR)
+- The work item transitions to Done only after pr_status is set to "merged"`,
+      },
+    ]
+
+    for (const agreement of teamAgreements) {
+      const existing = await client.query(
+        `SELECT id FROM blueprint.org_context WHERE org_id = $1 AND type = $2 AND title = $3`,
+        [userOrgId, agreement.type, agreement.title]
+      )
+      if (!existing.rows.length) {
+        await client.query(
+          `INSERT INTO blueprint.org_context (org_id, type, title, content)
+           VALUES ($1, $2, $3, $4)`,
+          [userOrgId, agreement.type, agreement.title, agreement.content]
+        )
+      }
+    }
+    console.log(`         + ${teamAgreements.length} team agreements (type: team-agreement)`)
+
+    // ==================================================================
+    // 12. EXIT CRITERIA GATES
+    // ==================================================================
+    console.log('  [12/12] Exit criteria gates...')
+
+    const devTestStageId = stageIdMaps['Feature Development']['dev_test']
+    const reviewStageIdForCriteria = stageIdMaps['Feature Development']['review']
+
+    // Dev/Test → Review: test plan must be documented
+    const exTestPlan = await client.query(
+      `SELECT id FROM blueprint.exit_criteria WHERE stage_id = $1 AND name = $2`,
+      [devTestStageId, 'Test plan documented']
+    )
+    if (!exTestPlan.rows.length) {
+      const testPlanUri = generateSystemUri('criteria')
+      await client.query(`
+        INSERT INTO blueprint.exit_criteria
+          (uri, stage_id, name, description, criteria_tier, codified_condition, is_blocking, display_order)
+        VALUES ($1, $2, $3, $4, 'codified', $5, true, 1)
+      `, [
+        testPlanUri,
+        devTestStageId,
+        'Test plan documented',
+        'A test-plan journal entry documenting what was tested and how to verify must exist before moving to Review.',
+        JSON.stringify({ type: 'context_entry_exists', entry_type: 'test-plan', min_count: 1 }),
+      ])
+    }
+
+    // Review → Done: PR link must be set
+    const exPrUrl = await client.query(
+      `SELECT id FROM blueprint.exit_criteria WHERE stage_id = $1 AND name = $2`,
+      [reviewStageIdForCriteria, 'PR link required']
+    )
+    if (!exPrUrl.rows.length) {
+      const prUrlUri = generateSystemUri('criteria')
+      await client.query(`
+        INSERT INTO blueprint.exit_criteria
+          (uri, stage_id, name, description, criteria_tier, codified_condition, is_blocking, display_order)
+        VALUES ($1, $2, $3, $4, 'codified', $5, true, 1)
+      `, [
+        prUrlUri,
+        reviewStageIdForCriteria,
+        'PR link required',
+        'The pr_url field must be set before this item can be approved and moved to Done.',
+        JSON.stringify({ type: 'field_value', field_key: 'pr_url', operator: 'exists' }),
+      ])
+    }
+
+    console.log('         + 2 exit criteria (Dev/Test: test plan, Review: PR link)')
 
     await client.query('COMMIT')
 
@@ -615,10 +826,13 @@ async function seed() {
     console.log(`  Agent user:    Gladius Agent <${agentEmail}> (id: ${agentId})`)
     console.log(`  Workflow:      Feature Development (8 stages)`)
     console.log(`  WIT type:      Feature (key_prefix: FEAT)`)
+    console.log('  Agreements:    5 team agreements (branch naming, PR format, commits, tests, DoD)')
+    console.log('  Exit criteria: Dev/Test → test plan required | Review → PR link required')
     if (seedAiModel) {
       console.log('  AI model:      sonnet → claude-sonnet-4-5')
       console.log('  Playbooks:     Discovery: Frame the Problem')
       console.log('                 Planning: Design & Task Breakdown')
+      console.log('                 Review: Draft PR Description')
     } else {
       console.log('  AI model:      skipped (set GLADIUS_ENCRYPTION_KEY + ANTHROPIC_API_KEY)')
     }
