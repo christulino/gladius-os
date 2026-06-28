@@ -90,6 +90,6 @@ export async function apiPatch(path, body = {}) {
 }
 
 export const WRITE_TOOLS = new Set([
-  'write_context_entry', 'add_comment', 'transition_work_item',
+  'write_context_entry', 'write_org_context', 'add_comment', 'transition_work_item',
   'set_work_item_fields', 'ack_exit_criterion',
 ])

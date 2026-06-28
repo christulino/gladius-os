@@ -4917,7 +4917,7 @@ router.post('/organizations/:orgId/context', async (req, res, next) => {
   try {
     const { type, title, content, tags } = req.body
     if (!type || !title || !content) return res.status(400).json({ error: 'type, title, content required' })
-    const row = await createOrgContext(parseInt(req.params.orgId), { type, title, content, tags, authorId: req.session?.userId })
+    const row = await createOrgContext(parseInt(req.params.orgId), { type, title, content, tags, authorId: req.userId })
     res.status(201).json(row)
   } catch (err) { next(err) }
 })

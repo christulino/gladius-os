@@ -66,6 +66,21 @@ export const TOOLS = [
     },
   },
   {
+    name: 'write_org_context',
+    description: 'Create a new org-level context entry (architecture standards, team agreements, security policies, etc.). Org context is shared knowledge available to all agents and playbooks in the org.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        org_id:  { type: 'number', description: 'Organization ID (required — cross-tenant guard)' },
+        type:    { type: 'string', description: 'Context type (e.g. architecture, domain, process, security, standards, team-agreement, policy)' },
+        title:   { type: 'string', description: 'Short descriptive title (max ~120 chars)' },
+        content: { type: 'string', description: 'Markdown content' },
+        tags:    { type: 'array', items: { type: 'string' }, description: 'Optional tags for filtering' },
+      },
+      required: ['org_id', 'type', 'title', 'content'],
+    },
+  },
+  {
     name: 'get_work_item',
     description: 'Get work item details: title, description, display_key, stage, type, timestamps',
     inputSchema: {
