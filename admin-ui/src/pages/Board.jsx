@@ -24,6 +24,19 @@ const COL_WIDTH = 220
 const LABEL_WIDTH = 80
 const COL_GAP = 1 // px gap — thin visible column dividers
 
+// ─── Semantic Stage Class Colors ────────────────────────────────────────────
+const STAGE_CLASS_COLORS = {
+  'intake':      { bg: '#DBEAFE', text: '#1E40AF' },  // blue
+  'triage':      { bg: '#FEF3C7', text: '#92400E' },  // amber
+  'queued':      { bg: '#EDE9FE', text: '#5B21B6' },  // violet
+  'in-progress': { bg: '#D1FAE5', text: '#065F46' },  // green
+  'blocked':     { bg: '#FEE2E2', text: '#991B1B' },  // red
+  'review':      { bg: '#CCFBF1', text: '#115E59' },  // teal
+  'approved':    { bg: '#E0E7FF', text: '#3730A3' },  // indigo
+  'delivery':    { bg: '#E0E7FF', text: '#3730A3' },  // indigo
+  'done':        { bg: '#ECFCCB', text: '#3F6212' },  // lime
+  'cancelled':   { bg: '#F1F5F9', text: '#475569' },  // slate
+}
 
 // ─── WIP Indicator ────────────────────────────────────────────────────────────
 
@@ -106,13 +119,6 @@ export default function Board({ setTab }) {
   const [scrollToItemId, setScrollToItemId] = useState(null)
   const [selectMode,     setSelectMode]    = useState(false)
   const [selectedItemIds, setSelectedItemIds] = useState(new Set())
-  // Board display preferences — default: flat (no swimlanes), hide empty columns
-  const [showSwimlanes, setShowSwimlanes] = useState(() => {
-    try { return localStorage.getItem('board_show_swimlanes') === 'true' } catch { return false }
-  })
-  const [showEmptyColumns, setShowEmptyColumns] = useState(() => {
-    try { return localStorage.getItem('board_show_empty_cols') === 'true' } catch { return false }
-  })
 
   const { data: orgsData } = useApi(() => api.organizations(), [])
 
@@ -240,29 +246,15 @@ export default function Board({ setTab }) {
     return count
   }
 
-  // Visible columns: skip empty ones unless the user has turned on "show empty"
-  const visibleColumns = useMemo(() => {
-    if (showEmptyColumns) return flatColumns
-    return flatColumns.filter(col => columnItemCount(col.key) > 0)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flatColumns, showEmptyColumns, itemGrid])
-
-  // Check if a column has any waiting items (for queue-split decision)
-  function columnHasWaiting(colKey) {
-    const colData = itemGrid[colKey]
-    if (!colData) return false
-    return SWIMLANE_ORDER.some(cls => (colData[cls]?.waiting?.length ?? 0) > 0)
-  }
-
-  // Determine which swimlanes have items among visible columns (hide empty lanes)
+  // Determine which swimlanes have items (hide empty)
   const activeSwimlanes = useMemo(() => {
     return SWIMLANE_ORDER.filter(cls =>
-      visibleColumns.some(col => {
+      flatColumns.some(col => {
         const cell = itemGrid[col.key]?.[cls]
         return cell && (cell.waiting.length > 0 || cell.active.length > 0)
       })
     )
-  }, [visibleColumns, itemGrid])
+  }, [flatColumns, itemGrid])
 
   const displaySwimlanes = activeSwimlanes.length > 0 ? activeSwimlanes : ['standard']
 
@@ -315,18 +307,6 @@ export default function Board({ setTab }) {
     setSelectedItemIds(new Set())
   }
 
-  function toggleSwimlanes() {
-    const next = !showSwimlanes
-    setShowSwimlanes(next)
-    try { localStorage.setItem('board_show_swimlanes', String(next)) } catch { /* ignore */ }
-  }
-
-  function toggleEmptyColumns() {
-    const next = !showEmptyColumns
-    setShowEmptyColumns(next)
-    try { localStorage.setItem('board_show_empty_cols', String(next)) } catch { /* ignore */ }
-  }
-
   function handleCardClick(item) {
     if (selectMode) {
       setSelectedItemIds(prev => {
@@ -352,6 +332,25 @@ export default function Board({ setTab }) {
     return [...names].sort()
   }, [allItems])
 
+  // Compute L1 header spans: which columns start a new class group, and how wide
+  const classHeaderSpans = useMemo(() => {
+    const spans = []
+    let i = 0
+    while (i < flatColumns.length) {
+      const col = flatColumns[i]
+      // Count how many consecutive columns share this stage_class
+      let count = 0
+      let totalWidth = 0
+      while (i + count < flatColumns.length && flatColumns[i + count].stage_class === col.stage_class) {
+        const c = flatColumns[i + count]
+        totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
+        count++
+      }
+      spans.push({ stage_class: col.stage_class, label: col.class_label, colCount: count, width: totalWidth, startIdx: i })
+      i += count
+    }
+    return spans
+  }, [flatColumns])
 
   const hasColumns = flatColumns.length > 0
 
@@ -497,30 +496,6 @@ export default function Board({ setTab }) {
           {selectMode ? `Select (${selectedItemIds.size})` : 'Select'}
         </button>
 
-        <button
-          onClick={toggleSwimlanes}
-          className={`px-2 py-1.5 text-xs rounded border transition-colors ${
-            showSwimlanes
-              ? 'bg-primary/10 border-primary/30 text-primary'
-              : 'bg-card border-border text-muted-foreground hover:border-primary/50'
-          }`}
-          title={showSwimlanes ? 'Hide service class swimlanes' : 'Show service class swimlanes'}
-        >
-          Swimlanes
-        </button>
-
-        <button
-          onClick={toggleEmptyColumns}
-          className={`px-2 py-1.5 text-xs rounded border transition-colors ${
-            showEmptyColumns
-              ? 'bg-primary/10 border-primary/30 text-primary'
-              : 'bg-card border-border text-muted-foreground hover:border-primary/50'
-          }`}
-          title={showEmptyColumns ? 'Hide empty columns' : 'Show all columns including empty ones'}
-        >
-          {showEmptyColumns ? 'All cols' : 'Active cols'}
-        </button>
-
         {!boardLoading && boardData && (
           <span className="text-xs text-muted-foreground">
             {filteredItems.length} active
@@ -583,37 +558,41 @@ export default function Board({ setTab }) {
           </div>
         )}
 
-        {!boardLoading && !boardError && hasColumns && visibleColumns.length === 0 && (
-          <div className="flex items-center justify-center h-full">
-            <span className="text-xs text-muted-foreground">
-              No active items.{' '}
-              <button
-                onClick={toggleEmptyColumns}
-                className="underline hover:text-primary transition-colors"
-              >
-                Show all columns
-              </button>
-              {' '}to see empty stages.
-            </span>
-          </div>
-        )}
-
-        {!boardLoading && !boardError && hasColumns && visibleColumns.length > 0 && (
+        {!boardLoading && !boardError && hasColumns && (
           <div className="min-w-max">
-            {/* Stage headers (sticky) */}
+            {/* ─── Column Headers (sticky) ─── */}
             <div className="sticky top-0 z-10 px-4 pt-3 bg-background">
-              {/* Stage header row — no L1 class-spanning headers (noise) */}
+              {/* Row 1: L1 stage_class headers — semantic colors */}
               <div className="flex flex-row">
-                {/* Swimlane label spacer — only when swimlanes are visible */}
-                {showSwimlanes && <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />}
-                {visibleColumns.map((col, colIdx) => {
+                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
+                {classHeaderSpans.map(span => {
+                  const classColor = STAGE_CLASS_COLORS[span.stage_class] || { bg: '#F1F5F9', text: '#475569' }
+                  return (
+                    <div
+                      key={span.stage_class}
+                      className="flex-shrink-0"
+                      style={{ width: span.width + (span.colCount - 1) * COL_GAP }}
+                    >
+                      <div
+                        className="text-xs font-medium uppercase tracking-wide text-center py-1.5 rounded-t"
+                        style={{ backgroundColor: classColor.bg, color: classColor.text }}
+                      >
+                        {span.label}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Row 2: L2 stage headers + L3 waiting sub-headers */}
+              <div className="flex flex-row">
+                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
+                {flatColumns.map((col, colIdx) => {
                   const count = columnItemCount(col.key)
                   const orgWip = wipLimits[col.name]
                   const wipLimit = orgWip?.wip_limit ?? null
                   const wipOver = wipLimit && count > wipLimit
-                  // Only widen for waiting queue when there are actual waiting items and swimlanes are on
-                  const showQueueSplit = showSwimlanes && col.has_waiting_queue && columnHasWaiting(col.key)
-                  const colWidth = showQueueSplit ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
+                  const colWidth = col.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
 
                   return (
                     <div key={col.key} className="flex-shrink-0" style={{ width: colWidth, borderLeft: colIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
@@ -630,8 +609,8 @@ export default function Board({ setTab }) {
                           onEdit={(val) => handleWipEdit(col.name, val)}
                         />
                       </div>
-                      {/* L3: waiting queue sub-header — only in swimlane mode when items are waiting */}
-                      {showQueueSplit && (
+                      {/* L3: waiting queue sub-header */}
+                      {col.has_waiting_queue && (
                         <div className="flex flex-row bg-card">
                           <div className="text-xs text-muted-foreground/60 px-2 py-0.5" style={{ width: COL_WIDTH }}>
                             Ready for...
@@ -645,38 +624,8 @@ export default function Board({ setTab }) {
               </div>
             </div>
 
-            {/* Flat view (default): single row, all items, no swimlane labels */}
-            {!showSwimlanes && (
-              <div className="flex flex-row px-4">
-                {visibleColumns.map((col, colIdx) => {
-                  const allColItems = SWIMLANE_ORDER.flatMap(cls => {
-                    const cell = itemGrid[col.key]?.[cls]
-                    return [...(cell?.waiting ?? []), ...(cell?.active ?? [])]
-                  })
-                  const colBorder = colIdx > 0 ? { borderLeft: '1px solid #D4D4D4' } : {}
-                  return (
-                    <div key={col.key} className="flex-shrink-0 py-2 px-1 min-h-[24px]" style={{ width: COL_WIDTH, ...colBorder }}>
-                      <div className="flex flex-col gap-1.5">
-                        {allColItems.map(item => (
-                          <WorkItemCard
-                            key={item.id}
-                            item={item}
-                            isSelected={!selectMode && detailOpen && detailItemId === item.id}
-                            isChecked={selectMode && selectedItemIds.has(item.id)}
-                            selectMode={selectMode}
-                            onClick={handleCardClick}
-                            onPull={() => handlePull(item.id)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Swimlane view: one row per service class */}
-            {showSwimlanes && displaySwimlanes.map((cls, laneIdx) => {
+            {/* ─── Swimlane Rows ─── */}
+            {displaySwimlanes.map((cls, laneIdx) => {
               const config = SWIMLANE_CONFIG[cls]
               return (
                 <div key={cls} className="flex flex-row px-4" style={{ borderTop: laneIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
@@ -695,14 +644,13 @@ export default function Board({ setTab }) {
                     </div>
                   </div>
                   {/* Cells */}
-                  {visibleColumns.map((col, colIdx) => {
+                  {flatColumns.map((col, colIdx) => {
                     const cell = itemGrid[col.key]?.[cls]
                     const waitingItems = cell?.waiting ?? []
                     const activeItems = cell?.active ?? []
                     const colBorder = colIdx > 0 ? { borderLeft: '1px solid #D4D4D4' } : {}
-                    const showQueueSplit = col.has_waiting_queue && columnHasWaiting(col.key)
 
-                    if (showQueueSplit) {
+                    if (col.has_waiting_queue) {
                       // Split cell: waiting | active with dashed divider
                       return (
                         <div key={col.key} className="flex-shrink-0 py-2 px-1 flex flex-row relative" style={{ width: COL_WIDTH * 2 + COL_GAP, ...colBorder }}>
@@ -743,7 +691,7 @@ export default function Board({ setTab }) {
                       )
                     }
 
-                    // Single cell (no waiting queue or no waiting items)
+                    // Single cell (no waiting queue)
                     const allCellItems = [...waitingItems, ...activeItems]
                     return (
                       <div key={col.key} className="flex-shrink-0 py-2 px-1 min-h-[24px]" style={{ width: COL_WIDTH, ...colBorder }}>
