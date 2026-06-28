@@ -11,6 +11,7 @@ import AttachmentsList from '@/components/AttachmentsList'
 import AttachmentUpload from '@/components/AttachmentUpload'
 import { JournalTab } from '@/components/JournalTab'
 import PlaybookRunIndicator from '@/components/PlaybookRunIndicator'
+import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
 
 // ─── Custom Fields Renderer ─────────────────────────────────────────────────
@@ -870,18 +871,51 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
                   {/* Description */}
                   <div className="flex flex-col gap-1.5 pt-3 mt-1 border-t border-border">
-                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</span>
-                    <textarea
-                      value={descDraft}
-                      onChange={e => { setDescDraft(e.target.value); setDescDirty(true) }}
-                      placeholder="Add a description..."
-                      rows={3}
-                      className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary resize-y"
-                    />
-                    {descDirty && (
-                      <Button size="sm" className="self-end" onClick={saveDescription} disabled={saving}>
-                        Save
-                      </Button>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</span>
+                      {!descDirty && (
+                        <button
+                          onClick={() => setDescDirty(true)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground"
+                        >
+                          ✏ Edit
+                        </button>
+                      )}
+                    </div>
+                    {descDirty ? (
+                      <>
+                        <textarea
+                          value={descDraft}
+                          onChange={e => setDescDraft(e.target.value)}
+                          placeholder="Add a description..."
+                          rows={3}
+                          className="text-xs text-foreground/80 leading-relaxed bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:border-primary resize-y"
+                          autoFocus
+                        />
+                        <div className="flex gap-2 self-end">
+                          <Button size="sm" variant="outline" onClick={() => { setDescDraft(item.description || ''); setDescDirty(false) }}>
+                            Cancel
+                          </Button>
+                          <Button size="sm" onClick={saveDescription} disabled={saving}>
+                            Save
+                          </Button>
+                        </div>
+                      </>
+                    ) : descDraft ? (
+                      <div
+                        className="cursor-pointer rounded px-1 py-0.5 -mx-1 hover:bg-black/[0.02] transition-colors"
+                        onClick={() => setDescDirty(true)}
+                        title="Click to edit"
+                      >
+                        <MarkdownRenderer content={descDraft} />
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDescDirty(true)}
+                        className="text-xs text-muted-foreground/50 text-left hover:text-muted-foreground transition-colors"
+                      >
+                        Add a description...
+                      </button>
                     )}
                   </div>
 
@@ -1402,10 +1436,12 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                                 >cancel</button>
                               </div>
                             </div>
-                          ) : (
-                            <p className={`text-xs leading-relaxed whitespace-pre-wrap ${c.is_system_generated ? 'italic text-muted-foreground' : 'text-foreground/80'}`}>
+                          ) : c.is_system_generated ? (
+                            <p className="text-xs leading-relaxed italic text-muted-foreground whitespace-pre-wrap">
                               {c.body}
                             </p>
+                          ) : (
+                            <MarkdownRenderer content={c.body} className="text-foreground/80" />
                           )}
                           {!isEditing && (
                             <div className="flex gap-3">
