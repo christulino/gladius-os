@@ -89,7 +89,17 @@ export async function apiPatch(path, body = {}) {
   })
 }
 
+export async function apiDelete(path, params = {}) {
+  const url = new URL(`${BASE_URL}${path}`)
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) {
+      url.searchParams.set(key, String(value))
+    }
+  }
+  return request(url.toString(), { method: 'DELETE', headers: BASE_HEADERS })
+}
+
 export const WRITE_TOOLS = new Set([
   'write_context_entry', 'write_org_context', 'add_comment', 'transition_work_item',
-  'set_work_item_fields', 'ack_exit_criterion',
+  'set_work_item_fields', 'ack_exit_criterion', 'link_work_items', 'unlink_work_items',
 ])

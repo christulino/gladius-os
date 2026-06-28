@@ -4,7 +4,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { apiGet, apiPost, apiPatch, WRITE_TOOLS } from './http-client.js'
+import { apiGet, apiPost, apiPatch, apiDelete, WRITE_TOOLS } from './http-client.js'
 import { TOOLS } from './toolsManifest.js'
 
 const WRITE_LIMIT = process.env.GLADIUS_MCP_WRITE_RATE_LIMIT
@@ -180,6 +180,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         const data = await apiGet(`/admin/api/work-items/${args.work_item_id}/transitions`)
         return { content: [{ type: 'text', text: JSON.stringify(data?.rows ?? [], null, 2) }] }
+      }
+
+      case 'link_work_items': {
+        writeCount++
+        const result = await apiPost(
+          `/admin/api/work-items/${args.source_work_item_id}/links`,
+          { target_work_item_id: args.target_work_item_id, link_type: args.link_type }
+        )
+        if (!result) throw new Error(`Work item ${args.source_work_item_id} not found`)
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+      }
+
+      case 'unlink_work_items': {
+        writeCount++
+        const result = await apiDelete(
+          `/admin/api/work-items/${args.source_work_item_id}/links/${args.target_work_item_id}`,
+          { link_type: args.link_type }
+        )
+        if (!result) throw new Error(`Link not found: ${args.source_work_item_id} -[${args.link_type}]-> ${args.target_work_item_id}`)
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
       default:
