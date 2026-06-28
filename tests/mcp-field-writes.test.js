@@ -10,6 +10,9 @@ const WIT_TYPE_ID = parseInt(process.env.GLADIUS_TEST_WIT_TYPE_ID || '138', 10)
 
 const api = createAuthApi()
 
+// Skip Bearer-specific tests when no API key is configured
+const skipBearer = !BEARER
+
 async function bearerFetch(path, options = {}) {
   const res = await fetch(`${BASE}/admin/api${path}`, {
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${BEARER}`, ...options.headers },
@@ -68,6 +71,7 @@ describe('MCP Field Writes + Exit Criteria', () => {
 
   describe('set_work_item_fields via PATCH /work-items/:id', () => {
     it('updates priority via Bearer auth', async () => {
+      if (skipBearer) return
       const { status, data } = await bearerFetch(`/work-items/${workItemId}`, {
         method: 'PATCH',
         body: JSON.stringify({ priority: 2 }),
@@ -77,6 +81,7 @@ describe('MCP Field Writes + Exit Criteria', () => {
     })
 
     it('updates field_values via Bearer auth', async () => {
+      if (skipBearer) return
       const { status, data } = await bearerFetch(`/work-items/${workItemId}`, {
         method: 'PATCH',
         body: JSON.stringify({ field_values: { pr_url: 'https://github.com/test/pr/1', pr_status: 'open' } }),
