@@ -3102,6 +3102,59 @@ router.get('/work-items/:id/links', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+router.delete('/work-items/:id/links/:targetId', async (req, res, next) => {
+  const sourceId = parseInt(req.params.id)
+  const targetId = parseInt(req.params.targetId)
+  const { link_type } = req.query
+  if (!link_type) return res.status(400).json({ error: 'link_type query param is required' })
+
+  const client = await getClient()
+  try {
+    await client.query('BEGIN')
+    const { rows: src } = await client.query(
+      'SELECT uri FROM runtime.work_items WHERE id = $1', [sourceId])
+    const { rows: tgt } = await client.query(
+      'SELECT uri FROM runtime.work_items WHERE id = $1', [targetId])
+    if (!src.length || !tgt.length) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Work item not found' })
+    }
+
+    const { rowCount } = await client.query(`
+      DELETE FROM runtime.work_item_links
+      WHERE source_work_item_id = $1 AND target_work_item_id = $2 AND link_type = $3
+    `, [sourceId, targetId, link_type])
+
+    if (rowCount === 0) {
+      await client.query('ROLLBACK')
+      return res.status(404).json({ error: 'Link not found' })
+    }
+
+    await emitEvent(client, {
+      eventType: 'work_item.unlinked',
+      entityId:  sourceId,
+      entityUri: src[0].uri,
+      actorId:   req.userId ?? null,
+      payload: {
+        source_id:  sourceId,
+        source_uri: src[0].uri,
+        target_id:  targetId,
+        target_uri: tgt[0].uri,
+        link_type,
+      },
+    })
+
+    await client.query('COMMIT')
+    nudgeAfterCommit()
+    res.json({ deleted: true, source_work_item_id: sourceId, target_work_item_id: targetId, link_type })
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    next(err)
+  } finally {
+    client.release()
+  }
+})
+
 // =============================================================================
 // REPORTS
 // =============================================================================

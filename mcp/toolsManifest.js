@@ -216,4 +216,32 @@ export const TOOLS = [
       required: ['work_item_id', 'org_id'],
     },
   },
+  {
+    name: 'link_work_items',
+    description: 'Create a typed link between two work items. Use link_type "related" for general associations, "blocks" when source_work_item_id blocks target_work_item_id (creates a dependency edge), or "duplicates" when source duplicates target. Returns the created link record.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source_work_item_id: { type: 'number', description: 'ID of the source work item (e.g. the blocker)' },
+        target_work_item_id: { type: 'number', description: 'ID of the target work item (e.g. the blocked item)' },
+        link_type:           { type: 'string', enum: ['related', 'blocks', 'duplicates'], description: '"blocks": source blocks target. "related": bidirectional. "duplicates": source duplicates target.' },
+        org_id:              { type: 'number', description: 'Org both work items belong to (required — cross-tenant guard)' },
+      },
+      required: ['source_work_item_id', 'target_work_item_id', 'link_type', 'org_id'],
+    },
+  },
+  {
+    name: 'unlink_work_items',
+    description: 'Remove a typed link between two work items. Requires the exact source, target, and link_type that was used to create the link.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        source_work_item_id: { type: 'number', description: 'ID of the source work item' },
+        target_work_item_id: { type: 'number', description: 'ID of the target work item' },
+        link_type:           { type: 'string', enum: ['related', 'blocks', 'duplicates'], description: 'Type of the link to remove' },
+        org_id:              { type: 'number', description: 'Org both work items belong to (required — cross-tenant guard)' },
+      },
+      required: ['source_work_item_id', 'target_work_item_id', 'link_type', 'org_id'],
+    },
+  },
 ]
