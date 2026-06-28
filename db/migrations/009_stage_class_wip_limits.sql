@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS blueprint.org_wip_limits_by_class (
     UNIQUE (org_id, stage_class)
 );
 
-CREATE INDEX idx_org_wip_class_org ON blueprint.org_wip_limits_by_class(org_id);
+CREATE INDEX IF NOT EXISTS idx_org_wip_class_org ON blueprint.org_wip_limits_by_class(org_id);
