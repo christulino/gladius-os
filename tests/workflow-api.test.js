@@ -258,7 +258,7 @@ describe('Workflow — generic vs org-specific', () => {
 
 describe('Auth — unauthenticated access', () => {
   it('should reject unauthenticated requests with 401', async () => {
-    const res = await fetch((process.env.API_URL || 'http://localhost:3000/admin/api') + '/workflows')
+    const res = await fetch((process.env.API_URL || 'http://localhost:3000') + '/admin/api/workflows')
     assert.equal(res.status, 401, 'Unauthenticated request should get 401')
   })
 })
