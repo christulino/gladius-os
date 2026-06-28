@@ -40,6 +40,7 @@ import { listOrgContext, createOrgContext, updateOrgContext, deleteOrgContext } 
 import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
 import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook, getPlaybookForStage } from '../runtime/stagePlaybooks.js'
 import { listOrgAiModels, createOrgAiModel, updateOrgAiModel, deleteOrgAiModel, resolveModelConfig } from '../runtime/orgAiModels.js'
+import { checkContextStaleness } from '../runtime/stalenessDetector.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -5104,6 +5105,21 @@ router.get('/work-items/:id/playbook-runs', async (req, res, next) => {
       [workItemId, req.userId]
     )
     res.json({ runs: result.rows })
+  } catch (err) { next(err) }
+})
+
+// GET /admin/api/work-items/:id/staleness — on-demand staleness check
+router.get('/work-items/:id/staleness', async (req, res, next) => {
+  try {
+    const workItemId = parseInt(req.params.id, 10)
+    const { rows: wiRows } = await query(
+      'SELECT id, owner_org_id FROM runtime.work_items WHERE id = $1',
+      [workItemId],
+    )
+    if (!wiRows.length) return res.status(404).json({ error: 'Work item not found' })
+    const orgId = wiRows[0].owner_org_id
+    const result = await checkContextStaleness(workItemId, orgId)
+    res.json({ workItemId, ...result, checkedAt: new Date().toISOString() })
   } catch (err) { next(err) }
 })
 
