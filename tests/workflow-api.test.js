@@ -1,21 +1,24 @@
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
+import { createTestOrg } from './helpers/testOrg.js'
 
 const api = createAuthApi()
+
+// Ephemeral org provisioned once for the whole test file; torn down in after().
+let testOrg
+before(async () => { testOrg = await createTestOrg() })
+after(async ()  => { await testOrg.teardown() })
 
 // ─── Workflow CRUD ──────────────────────────────────────────────────────────
 
 describe('Workflow API', () => {
   let createdWorkflowId
   let createdStageId
-  let orgId
 
   before(async () => {
-    // Get an org to use for creating workflows
-    const { data } = await api('/organizations')
-    assert.ok(data.rows.length > 0, 'Need at least one org to run tests')
-    orgId = data.rows[0].id
+    // orgId is provided by the top-level ephemeral test org
+    assert.ok(testOrg.orgId, 'Need a test org to run workflow tests')
   })
 
   // ── Create ──
@@ -23,7 +26,7 @@ describe('Workflow API', () => {
   it('should create a workflow with default stages', async () => {
     const { status, data } = await api('/workflows', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Test Workflow ' + Date.now(), owner_org_id: orgId }),
+      body: JSON.stringify({ name: 'Test Workflow ' + Date.now(), owner_org_id: testOrg.orgId }),
     })
     assert.equal(status, 201)
     assert.ok(data.id, 'Should return workflow id')
@@ -52,7 +55,7 @@ describe('Workflow API', () => {
   it('should create a workflow for a specific org', async () => {
     const { status, data } = await api('/workflows', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Org-Specific Workflow ' + Date.now(), owner_org_id: orgId }),
+      body: JSON.stringify({ name: 'Org-Specific Workflow ' + Date.now(), owner_org_id: testOrg.orgId }),
     })
     assert.equal(status, 201)
     assert.ok(data.id)
@@ -70,7 +73,7 @@ describe('Workflow API', () => {
   it('should reject workflow creation without name', async () => {
     const { status } = await api('/workflows', {
       method: 'POST',
-      body: JSON.stringify({ owner_org_id: orgId }),
+      body: JSON.stringify({ owner_org_id: testOrg.orgId }),
     })
     assert.ok(status >= 400, 'Should fail without name')
   })
@@ -241,15 +244,12 @@ describe('Workflow — generic vs org-specific', () => {
   })
 
   it('should create org-specific workflow with unique name', async () => {
-    const { data: orgs } = await api('/organizations')
-    const orgId = orgs.rows[0].id
-
     const { status, data } = await api('/workflows', {
       method: 'POST',
-      body: JSON.stringify({ name: 'Org-Only Workflow ' + Date.now(), owner_org_id: orgId }),
+      body: JSON.stringify({ name: 'Org-Only Workflow ' + Date.now(), owner_org_id: testOrg.orgId }),
     })
     assert.equal(status, 201)
-    assert.equal(data.owner_org_id, orgId)
+    assert.equal(data.owner_org_id, testOrg.orgId)
     assert.equal(data.is_system_default, false)
   })
 })

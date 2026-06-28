@@ -11,20 +11,23 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
-
-const ORG_ID  = 109  // Gladius Development
-const TYPE_ID = 140  // Tech Debt (workflow 138, entry stage = Backlog)
+import { createTestOrg } from './helpers/testOrg.js'
 
 const api = createAuthApi()
 
-// Helper: create a work item in the dogfood org, return the full item object.
+// Ephemeral org provisioned once for the whole test file; torn down in after().
+let testOrg
+before(async () => { testOrg = await createTestOrg() })
+after(async ()  => { await testOrg.teardown() })
+
+// Helper: create a work item in the ephemeral test org, return the full item object.
 async function createItem(suffix = '') {
   const { status, data } = await api('/work-items', {
     method: 'POST',
     body: JSON.stringify({
       title: `bulk-ops test ${suffix} ${Date.now()}`,
-      work_item_type_id: TYPE_ID,
-      owner_org_id: ORG_ID,
+      work_item_type_id: testOrg.typeId,
+      owner_org_id: testOrg.orgId,
     }),
   })
   assert.equal(status, 201, `createItem failed (${suffix}): ${JSON.stringify(data)}`)
@@ -134,7 +137,7 @@ describe('Bulk Transition — partial success (unmet exit criteria)', () => {
   })
 
   after(async () => {
-    // Soft-delete the criterion to restore normal stage exit behavior
+    // Soft-delete the criterion to restore normal stage exit behavior for this org
     if (criterionId) {
       await api(`/exit-criteria/${criterionId}`, { method: 'DELETE' })
     }
