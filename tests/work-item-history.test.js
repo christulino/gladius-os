@@ -1,25 +1,26 @@
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
+import { createTestOrg } from './helpers/testOrg.js'
 
 const api = createAuthApi()
+
+// Ephemeral org provisioned once for the whole test file; torn down in after().
+let testOrg
+before(async () => { testOrg = await createTestOrg() })
+after(async ()  => { await testOrg.teardown() })
 
 describe('Work item history (audit trail)', () => {
   let workItemId
   let userId
 
   before(async () => {
-    const { data: orgs }  = await api('/organizations')
-    const { data: types } = await api('/work-item-types')
-    assert.ok(orgs.rows.length, 'Need at least one org')
-    assert.ok(types.rows.length, 'Need at least one work item type')
-
     const { data: wi } = await api('/work-items', {
       method: 'POST',
       body: JSON.stringify({
         title: 'History Test ' + Date.now(),
-        work_item_type_id: types.rows[0].id,
-        owner_org_id:      orgs.rows[0].id,
+        work_item_type_id: testOrg.typeId,
+        owner_org_id:      testOrg.orgId,
       }),
     })
     workItemId = wi.id

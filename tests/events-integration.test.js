@@ -5,12 +5,19 @@
 // processor unit tests that take the lock themselves, see
 // tests/events-processor.test.js.
 
-import { describe, it, before } from 'node:test'
+import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { createAuthApi } from './helpers/auth.js'
+import { createTestOrg } from './helpers/testOrg.js'
 
 const api = createAuthApi()
+
+// Ephemeral org provisioned once for the whole test file; torn down in after().
+// Used by the E2E test that creates a work item.
+let testOrg
+before(async () => { testOrg = await createTestOrg() })
+after(async ()  => { await testOrg.teardown() })
 
 describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows', () => {
   let workItemId
@@ -263,18 +270,12 @@ describe('End-to-end — work item creation flows through event system to subscr
     )
     const before = Number(cursorBefore.rows[0].last_processed_event_id)
 
-    const { rows: types } = await query(
-      "SELECT id FROM blueprint.work_item_types WHERE is_active = true LIMIT 1"
-    )
-    const { rows: orgs } = await query(
-      "SELECT id FROM blueprint.organizations WHERE is_active = true LIMIT 1"
-    )
     const res = await api('/work-items', {
       method: 'POST',
       body: JSON.stringify({
         title: 'Event system e2e ' + Date.now(),
-        work_item_type_id: types[0].id,
-        owner_org_id: orgs[0].id,
+        work_item_type_id: testOrg.typeId,
+        owner_org_id: testOrg.orgId,
       }),
     })
     assert.equal(res.status, 201)
