@@ -119,14 +119,14 @@ export function WorkItemCard({ item, onClick, onPull, isSelected, isChecked, sel
         )}
       </div>
 
-      {/* Row 2: merged timer + display key */}
+      {/* Row 2: total time (BL) · stage time (BR) */}
       <div className="flex items-center justify-between">
-        <span className="text-xs tabular-nums text-muted-foreground" title={`${stageTime} in stage · ${totalTime} total`}>
-          {stageTime} <span className="text-muted-foreground/40">·</span> <span className="text-muted-foreground/50">{totalTime}</span>
+        <span className="text-xs tabular-nums text-muted-foreground" title="Total time in workflow">
+          {totalTime}
         </span>
-        {item.display_key && (
-          <span className="text-xs text-muted-foreground/50">{item.display_key}</span>
-        )}
+        <span className="text-xs tabular-nums text-muted-foreground" title="Time in current stage">
+          {stageTime}
+        </span>
       </div>
 
       {/* Row 3: due date (only for fixed-date items) */}
