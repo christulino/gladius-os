@@ -10,7 +10,8 @@
     "db:migrate": "node db/migrate.js",
     "seed": "node db/seeds/seed.js",
     "seed:solo": "node db/seeds/seed-solo.js",
-    "test": "node --test"
+    "test": "node --test",
+    "post-merge-sweep": "node scripts/post-merge-sweep.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
