@@ -1063,6 +1063,14 @@ router.get('/dashboard', async (req, res, next) => {
     const orgId  = req.query.org_id ? parseInt(req.query.org_id, 10) : null
     const userId = req.userId
 
+    if (orgId) {
+      const m = await query(
+        'SELECT 1 FROM blueprint.org_memberships WHERE org_id = $1 AND user_id = $2 AND is_active = true',
+        [orgId, userId],
+      )
+      if (m.rowCount === 0) return res.status(403).json({ error: 'forbidden' })
+    }
+
     // Scope to a specific org or to all orgs the user belongs to.
     // Single parameter $1 avoids PostgreSQL type-inference issues.
     const orgFilter = orgId
