@@ -7,6 +7,15 @@
  *   - "transitions test <epoch>"
  *   - "Playbook read test <epoch>"
  *   - "bulk-ops test <anything> <epoch>"
+ *   - "Event system e2e ..."
+ *   - "assembler test parent/child <epoch>"
+ *   - "context_entry_exists test <epoch>"
+ *   - "waiver / api-tier / no-decisions test <epoch>"
+ *   - "executor test <epoch>"
+ *   - "__staleness test item / endpoint test <epoch>"
+ *   - "History Test <epoch>"
+ *   - "Link test A/B <epoch>"
+ *   - "Decision Resolution Test <epoch>"
  *
  * Usage:
  *   node scripts/deleteTestItems.js              # dry run — list matches, no deletes
@@ -39,6 +48,16 @@ const TEST_TITLE_PATTERNS = [
   /^Playbook read test \d+$/i,
   /^bulk-ops test .+ \d+$/i,
   /^Event system e2e/i,
+  // Additional patterns from tests that still hardcode org 109 (safety net for
+  // cases where their after() teardown hooks did not run cleanly):
+  /^assembler test (parent|child) \d+$/i,
+  /^context_entry_exists test \d+$/i,
+  /^(waiver|api-tier|no-decisions) test \d+$/i,
+  /^executor test \d+$/i,
+  /^__staleness (test item|endpoint test) \d+$/i,
+  /^History Test \d+$/i,
+  /^Link test [AB] \d+$/i,
+  /^Decision Resolution Test \d+$/i,
 ];
 
 const pool = new pg.Pool({
