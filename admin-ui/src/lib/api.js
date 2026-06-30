@@ -43,6 +43,7 @@ export const auth = {
 
 export const api = {
   summary:           () => apiFetch('/summary'),
+  dashboard:         (orgId) => apiFetch(`/dashboard${orgId ? `?org_id=${orgId}` : ''}`),
 
   // Organizations
   organizations:      () => apiFetch('/organizations'),

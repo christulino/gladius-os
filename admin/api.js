@@ -1051,6 +1051,112 @@ router.get('/summary', async (req, res, next) => {
 })
 
 // =============================================================================
+// DASHBOARD
+// =============================================================================
+
+// GET /admin/api/dashboard?org_id=<id>
+// Returns recent journal activity, open decisions, and recent playbook runs.
+// Optional org_id scopes results to one org (user must be a member).
+// When no org_id is given, returns data across all orgs the user belongs to.
+router.get('/dashboard', async (req, res, next) => {
+  try {
+    const orgId  = req.query.org_id ? parseInt(req.query.org_id, 10) : null
+    const userId = req.userId
+
+    if (orgId) {
+      const m = await query(
+        'SELECT 1 FROM blueprint.org_memberships WHERE org_id = $1 AND user_id = $2 AND is_active = true',
+        [orgId, userId],
+      )
+      if (m.rowCount === 0) return res.status(403).json({ error: 'forbidden' })
+    }
+
+    // Scope to a specific org or to all orgs the user belongs to.
+    // Single parameter $1 avoids PostgreSQL type-inference issues.
+    const orgFilter = orgId
+      ? 'AND wi.owner_org_id = $1'
+      : 'AND wi.owner_org_id IN (SELECT org_id FROM blueprint.org_memberships WHERE user_id = $1 AND is_active = true)'
+
+    const filterParam = orgId ?? userId
+
+    const [journalResult, decisionsResult, runsResult] = await Promise.all([
+      // Recent journal activity — latest 15 entries across work items
+      query(
+        `SELECT
+           ce.id,
+           ce.type,
+           ce.title,
+           ce.content,
+           ce.is_agent,
+           ce.created_at,
+           wi.id             AS work_item_id,
+           wi.display_key,
+           wi.title          AS work_item_title,
+           u.display_name    AS author_name
+         FROM runtime.context_entries ce
+         JOIN runtime.work_items wi ON wi.id = ce.work_item_id
+         LEFT JOIN blueprint.users u ON u.id = ce.author_id
+         WHERE 1=1 ${orgFilter}
+         ORDER BY ce.created_at DESC
+         LIMIT 15`,
+        [filterParam],
+      ),
+
+      // Open decisions — unresolved decision-type entries
+      query(
+        `SELECT
+           ce.id,
+           ce.title,
+           ce.content,
+           ce.created_at,
+           wi.id          AS work_item_id,
+           wi.display_key,
+           wi.title       AS work_item_title
+         FROM runtime.context_entries ce
+         JOIN runtime.work_items wi ON wi.id = ce.work_item_id
+         WHERE ce.type = 'decision'
+           AND ce.resolved = false
+           ${orgFilter}
+         ORDER BY ce.created_at ASC
+         LIMIT 30`,
+        [filterParam],
+      ),
+
+      // Recent playbook runs
+      query(
+        `SELECT
+           pr.id,
+           pr.status,
+           pr.model,
+           pr.input_tokens,
+           pr.output_tokens,
+           pr.entries_written,
+           pr.error_message,
+           pr.started_at,
+           pr.completed_at,
+           s.name         AS stage_name,
+           wi.id          AS work_item_id,
+           wi.display_key,
+           wi.title       AS work_item_title
+         FROM runtime.playbook_runs pr
+         JOIN blueprint.stages s ON s.id = pr.stage_id
+         JOIN runtime.work_items wi ON wi.id = pr.work_item_id
+         WHERE 1=1 ${orgFilter}
+         ORDER BY pr.started_at DESC
+         LIMIT 15`,
+        [filterParam],
+      ),
+    ])
+
+    res.json({
+      recent_journal:      journalResult.rows,
+      open_decisions:      decisionsResult.rows,
+      recent_playbook_runs: runsResult.rows,
+    })
+  } catch (err) { next(err) }
+})
+
+// =============================================================================
 // LOG VIEWER
 // =============================================================================
 

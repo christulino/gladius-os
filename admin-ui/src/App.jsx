@@ -20,6 +20,7 @@ import {
   BellRing,
   Search as SearchIcon,
   Terminal as TerminalIcon,
+  Gauge,
 } from 'lucide-react'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationsDrawer from '@/components/NotificationsDrawer'
@@ -48,8 +49,10 @@ import EventSubscribers from '@/pages/EventSubscribers'
 import SettingsNotifications from '@/pages/SettingsNotifications'
 import SearchPage    from '@/pages/SearchPage'
 import MCPTools      from '@/pages/MCPTools'
+import Dashboard    from '@/pages/Dashboard'
 
 const NAV = [
+  { id: 'dashboard',     label: 'Dashboard',        section: null,       icon: Gauge },
   { id: 'board',         label: 'Board',            section: null,       icon: LayoutDashboard },
   { id: 'search',        label: 'Search',           section: null,       icon: SearchIcon },
 
@@ -78,6 +81,7 @@ const NAV = [
 ]
 
 const PAGES = {
+  dashboard:     Dashboard,
   board:         Board,
   search:        SearchPage,
   summary:       Summary,
@@ -102,7 +106,7 @@ const PAGES = {
 }
 
 export default function App() {
-  const [tab, setTab]           = useState('board')
+  const [tab, setTab]           = useState('dashboard')
   const [authState, setAuthState] = useState('loading')  // 'loading' | 'setup' | 'login' | 'authenticated'
   const [user, setUser]         = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -182,7 +186,9 @@ export default function App() {
       {/* Main */}
       <main className={[
         'flex-1 flex flex-col min-h-0',
-        tab === 'board' || tab === 'workflows' || tab === 'organizations' ? 'overflow-hidden' : 'overflow-auto p-4 gap-4',
+        tab === 'board' || tab === 'workflows' || tab === 'organizations' ? 'overflow-hidden'
+        : tab === 'dashboard' ? 'overflow-auto'
+        : 'overflow-auto p-4 gap-4',
       ].join(' ')}>
         <Page setTab={setTab} />
       </main>
