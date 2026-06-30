@@ -8,6 +8,7 @@ import { FormDrawer } from '@/components/FormDrawer'
 import { OrgSelector } from '@/components/OrgSelector'
 import { BulkActionBar } from '@/components/BulkActionBar'
 import { Button } from '@/components/ui/button'
+import { Zap } from 'lucide-react'
 
 // ─── Service Class Swimlane Config ──────────────────────────────────────────
 
@@ -602,6 +603,12 @@ export default function Board({ setTab }) {
                         <span className="text-sm font-semibold text-foreground truncate flex-1">
                           {col.name}
                         </span>
+                        {col.has_active_playbook && (
+                          <Zap
+                            className="h-3 w-3 flex-shrink-0 text-amber-500"
+                            title="Stage has an active AI playbook"
+                          />
+                        )}
                         <WipIndicator
                           count={count}
                           limit={wipLimit}
