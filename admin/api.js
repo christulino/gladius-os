@@ -1742,7 +1742,11 @@ router.get('/board', async (req, res, next) => {
       query(`
         SELECT DISTINCT s.id, s.name, s.stage_class, s.display_order,
                s.has_waiting_queue, s.is_entry_stage, s.is_terminal,
-               s.workflow_id, w.name AS workflow_name
+               s.workflow_id, w.name AS workflow_name,
+               EXISTS (
+                 SELECT 1 FROM blueprint.stage_playbooks sp
+                 WHERE sp.stage_id = s.id AND sp.is_active = true
+               ) AS has_active_playbook
         FROM blueprint.stages s
         JOIN blueprint.workflows w ON w.id = s.workflow_id
         WHERE s.workflow_id IN (
@@ -1788,6 +1792,7 @@ router.get('/board', async (req, res, next) => {
         const existing = mergeMap.get(key)
         existing.stage_ids.push(s.id)
         if (!existing.workflow_ids.includes(s.workflow_id)) existing.workflow_ids.push(s.workflow_id)
+        if (s.has_active_playbook) existing.has_active_playbook = true
       } else {
         mergeMap.set(key, {
           key,
@@ -1796,6 +1801,7 @@ router.get('/board', async (req, res, next) => {
           stage_ids: [s.id],
           workflow_ids: [s.workflow_id],
           has_waiting_queue: s.has_waiting_queue,
+          has_active_playbook: s.has_active_playbook ?? false,
           display_order: s.display_order,
           is_entry_stage: s.is_entry_stage,
           is_terminal: s.is_terminal,
