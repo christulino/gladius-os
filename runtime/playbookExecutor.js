@@ -7,12 +7,46 @@
  */
 
 import Anthropic                         from '@anthropic-ai/sdk'
+
+// ── Retry helper ─────────────────────────────────────────────────────────────
+
+const MAX_RETRY_ATTEMPTS = 3   // max total attempts (1 initial + 2 retries)
+const BASE_RETRY_DELAY_MS = 1_000
+
+/**
+ * Wrap an async API call with exponential backoff for transient errors.
+ *
+ * Only 429 (rate-limit) and 529 (overload) are retried; any other status is
+ * a hard failure and is re-thrown immediately.
+ *
+ * @param {() => Promise<any>} fn
+ * @returns {Promise<any>}
+ */
 import { getPlaybookForStage, parsePlaybook } from './stagePlaybooks.js'
 import { resolveModelConfig }            from './orgAiModels.js'
 import { assembleContext, formatContextForPrompt } from './contextAssembler.js'
 import { createContextEntry }            from './contextEntries.js'
 import { parseAgentEntries }             from './parseAgentEntries.js'
 import { pool }                          from '../db/postgres.js'
+
+async function callWithRetry(fn) {
+  let attempt = 0
+  while (true) {
+    try {
+      return await fn()
+    } catch (err) {
+      const status = err.status ?? err.statusCode
+      const isRetryable = status === 429 || status === 529
+      attempt++
+      if (!isRetryable || attempt >= MAX_RETRY_ATTEMPTS) throw err
+      const delay = BASE_RETRY_DELAY_MS * (2 ** (attempt - 1)) // 1 s, 2 s
+      console.warn(
+        `[playbookExecutor] HTTP ${status} — retrying in ${delay}ms (attempt ${attempt}/${MAX_RETRY_ATTEMPTS})`,
+      )
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+}
 
 async function insertRunRecord(workItemId, stageId, playbookId) {
   const result = await pool.query(
@@ -120,24 +154,39 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
       body,
     ].filter(Boolean).join('\n')
 
-    // 6. Call the AI model
+    // 6. Call the AI model — retries on 429/529 with exponential backoff.
     const maxTokens = meta?.max_tokens ?? 4096
     const client = new Anthropic({ apiKey: config.apiKey })
-    const response = await client.messages.create(
+    const response = await callWithRetry(() => client.messages.create(
       {
         model:      config.model,
         max_tokens: maxTokens,
         system:     systemPrompt,
         messages:   [{ role: 'user', content: userPrompt }],
       },
-      { timeout: 90_000 }
-    )
+      { timeout: 90_000 },
+    ))
 
-    const rawText = response.content[0]?.text ?? ''
+    // Collect text from ALL content blocks — the API may return more than one.
+    const rawText = response.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('\n')
+
     const inputTokens  = response.usage?.input_tokens  ?? null
     const outputTokens = response.usage?.output_tokens ?? null
     const stopReason   = response.stop_reason           ?? null
     const resolvedModel = config.model
+
+    // Warn when the model hit its token ceiling — even if the parser salvages
+    // output, the response is structurally incomplete and max_tokens may need
+    // raising in the playbook frontmatter.
+    if (stopReason === 'max_tokens') {
+      console.warn(
+        `[playbookExecutor] Response stopped at max_tokens for work item ${workItemId} (stage ${stageId}). ` +
+        `Consider raising max_tokens in the playbook frontmatter (current: ${maxTokens}).`,
+      )
+    }
 
     // 7. Parse the response into entries — tolerant of code fences and of
     //    truncation (a token-limited array is salvaged object-by-object). The
