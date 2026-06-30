@@ -33,7 +33,7 @@ search-page-after-save.png
 search-with-detail-drawer.png
 /*.png
 
-# Claude Code — commit settings.json (shared), ignore local overrides + runtime state
+# Claude Code — commit workflows/ (automation harness), ignore everything else
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
@@ -61,4 +61,5 @@ docs/superpowers/
 docs/plans/
 docs/strategy/
 feature_plans/
-.claude/
+.claude/*
+!.claude/workflows

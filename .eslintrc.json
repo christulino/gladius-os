@@ -10,7 +10,8 @@
   "ignorePatterns": [
     "node_modules/",
     "admin-ui/",
-    "runtime/search/jql.parser.js"
+    "runtime/search/jql.parser.js",
+    ".claude/"
   ],
   "rules": {
     "no-undef": "error",
