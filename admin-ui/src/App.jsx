@@ -21,6 +21,8 @@ import {
   Search as SearchIcon,
   Terminal as TerminalIcon,
   Gauge,
+  BookOpen,
+  Cpu,
 } from 'lucide-react'
 import NotificationsBell from '@/components/NotificationsBell'
 import NotificationsDrawer from '@/components/NotificationsDrawer'
@@ -50,6 +52,8 @@ import SettingsNotifications from '@/pages/SettingsNotifications'
 import SearchPage    from '@/pages/SearchPage'
 import MCPTools      from '@/pages/MCPTools'
 import Dashboard    from '@/pages/Dashboard'
+import ContextLibraryPage from '@/pages/ContextLibraryPage'
+import AiModelsPage  from '@/pages/AiModelsPage'
 
 const NAV = [
   { id: 'dashboard',     label: 'Dashboard',        section: null,       icon: Gauge },
@@ -62,6 +66,10 @@ const NAV = [
   { id: 'witclasses',    label: 'Type Classes',     section: 'Configure', icon: FolderTree },
   { id: 'workflows',     label: 'Workflows',        section: null,       icon: GitBranch },
   { id: 'lookuplists',   label: 'Lists',            section: null,       icon: List },
+
+  { id: 'context-library', label: 'Context Library', section: 'Context / AI', icon: BookOpen },
+  { id: 'ai-models',       label: 'AI Models',        section: null,           icon: Cpu },
+  { id: 'mcp-tools',       label: 'MCP Tools',        section: null,           icon: TerminalIcon },
 
   { id: 'users',         label: 'Users',            section: 'Admin',     icon: UsersIcon },
   { id: 'roles',         label: 'Roles',            section: null,       icon: Shield },
@@ -77,7 +85,6 @@ const NAV = [
   { id: 'logs',          label: 'Log Viewer',       section: null,       icon: ScrollText },
   { id: 'db',            label: 'DB Console',       section: null,       icon: Database },
   { id: 'events',        label: 'Events',           section: null,       icon: Activity },
-  { id: 'mcp-tools',     label: 'MCP Tools',        section: null,       icon: TerminalIcon },
 ]
 
 const PAGES = {
@@ -103,6 +110,8 @@ const PAGES = {
   events:        EventSubscribers,
   settingsnotifications: SettingsNotifications,
   'mcp-tools':          MCPTools,
+  'context-library':    ContextLibraryPage,
+  'ai-models':          AiModelsPage,
 }
 
 export default function App() {
