@@ -14,14 +14,10 @@ import { query }                  from '../db/postgres.js'
 import { extractKeywords, findOverlap, checkContextStaleness } from '../runtime/stalenessDetector.js'
 import { createWorkItem }         from '../runtime/workItems.js'
 import { createAuthApi }          from './helpers/auth.js'
-import { deleteWorkItems }        from './helpers/cleanup.js'
+import { createTestOrg }          from './helpers/testOrg.js'
+import { createTestStage }        from './helpers/testStage.js'
 
-const ORG_ID   = 109   // Gladius Development
-const TYPE_ID  = 140   // Tech Debt
 const AGENT_ID = 309   // agent@flowos.internal
-
-// Triage stage (Planning) for workflow 138: look it up at test time
-let planningStageId = null
 
 const api = createAuthApi()
 
@@ -99,24 +95,26 @@ describe('findOverlap', () => {
 // ── checkContextStaleness (DB integration) ──────────────────────────────────
 
 describe('checkContextStaleness', () => {
+  let testOrg
+  let planningStageId
   let itemId
   let shippedId
 
   before(async () => {
-    // Find the planning (triage) stage for workflow 138
-    const stageRes = await query(`
-      SELECT id FROM blueprint.stages
-      WHERE  workflow_id = 138 AND stage_class = 'triage'
-      LIMIT  1
-    `)
-    planningStageId = stageRes.rows[0]?.id ?? null
+    testOrg = await createTestOrg()
+
+    // Dedicated throwaway triage-class stage — used purely as an FK target
+    // for the synthetic stage_transition_history rows below; the query in
+    // stalenessDetector.js only cares about stage_class = 'triage', not
+    // which workflow the stage actually belongs to.
+    ;({ stageId: planningStageId } = await createTestStage(testOrg.orgId, { stageClass: 'triage' }))
 
     // Create the main work item
     const item = await createWorkItem(
       {
         title: '__staleness test item ' + Date.now(),
-        work_item_type_id: TYPE_ID,
-        owner_org_id: ORG_ID,
+        work_item_type_id: testOrg.typeId,
+        owner_org_id: testOrg.orgId,
       },
       AGENT_ID,
     )
@@ -127,8 +125,8 @@ describe('checkContextStaleness', () => {
       {
         title: '__staleness shipped authentication service ' + Date.now(),
         description: 'Fixed token expiry in the authentication module',
-        work_item_type_id: TYPE_ID,
-        owner_org_id: ORG_ID,
+        work_item_type_id: testOrg.typeId,
+        owner_org_id: testOrg.orgId,
       },
       AGENT_ID,
     )
@@ -144,11 +142,11 @@ describe('checkContextStaleness', () => {
   })
 
   after(async () => {
-    await deleteWorkItems([itemId, shippedId].filter(Boolean))
+    await testOrg.teardown()
   })
 
   it('returns checked=false when no planning stage history exists', async () => {
-    const result = await checkContextStaleness(itemId, ORG_ID)
+    const result = await checkContextStaleness(itemId, testOrg.orgId)
     assert.equal(result.checked, false, 'no planning history → checked should be false')
     assert.equal(result.staleCount, 0)
   })
@@ -168,7 +166,7 @@ describe('checkContextStaleness', () => {
               $3)
     `, [itemId, planningStageId, AGENT_ID])
 
-    const result = await checkContextStaleness(itemId, ORG_ID)
+    const result = await checkContextStaleness(itemId, testOrg.orgId)
     assert.equal(result.checked, true)
     assert.equal(result.staleCount, 0, 'no planning entries → staleCount should be 0')
   })
@@ -218,7 +216,7 @@ describe('checkContextStaleness', () => {
               now() - INTERVAL '2 hours', $2, true)
     `, [itemId, AGENT_ID])
 
-    const result = await checkContextStaleness(itemId, ORG_ID)
+    const result = await checkContextStaleness(itemId, testOrg.orgId)
     assert.equal(result.checked, true, 'should have run the check')
     assert.ok(result.staleCount > 0, `expected staleCount > 0, got ${result.staleCount}`)
 
@@ -238,14 +236,17 @@ describe('checkContextStaleness', () => {
 // ── GET /work-items/:id/staleness endpoint ───────────────────────────────────
 
 describe('GET /work-items/:id/staleness', () => {
+  let testOrg
   let endpointItemId
 
   before(async () => {
+    testOrg = await createTestOrg()
+
     const item = await createWorkItem(
       {
         title: '__staleness endpoint test ' + Date.now(),
-        work_item_type_id: TYPE_ID,
-        owner_org_id: ORG_ID,
+        work_item_type_id: testOrg.typeId,
+        owner_org_id: testOrg.orgId,
       },
       AGENT_ID,
     )
@@ -253,7 +254,7 @@ describe('GET /work-items/:id/staleness', () => {
   })
 
   after(async () => {
-    await deleteWorkItems([endpointItemId].filter(Boolean))
+    await testOrg.teardown()
   })
 
   it('returns 200 with checked and staleCount for a valid work item', async () => {

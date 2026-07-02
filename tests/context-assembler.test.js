@@ -14,9 +14,8 @@ import { query } from '../db/postgres.js'
 import { assembleContext, formatContextForPrompt, MAX_CONTEXT_CHARS } from '../runtime/contextAssembler.js'
 import { createWorkItem } from '../runtime/workItems.js'
 import { createContextEntry } from '../runtime/contextEntries.js'
+import { createTestOrg } from './helpers/testOrg.js'
 
-const ORG_ID   = 109   // Gladius Development
-const TYPE_ID  = 140   // Tech Debt
 const AGENT_ID = 309   // agent@flowos.internal
 
 // ── formatContextForPrompt ────────────────────────────────────────────────────
@@ -179,14 +178,16 @@ describe('formatContextForPrompt', () => {
 // ── assembleContext ───────────────────────────────────────────────────────────
 
 describe('assembleContext', () => {
+  let testOrg
   let workItemId
   let parentWorkItemId
-  let orgContextId
 
   before(async () => {
+    testOrg = await createTestOrg()
+
     // Create a parent work item
     const parent = await createWorkItem(
-      { title: 'assembler test parent ' + Date.now(), work_item_type_id: TYPE_ID, owner_org_id: ORG_ID },
+      { title: 'assembler test parent ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
       AGENT_ID,
     )
     parentWorkItemId = parent.id
@@ -196,8 +197,8 @@ describe('assembleContext', () => {
     const child = await createWorkItem(
       {
         title: 'assembler test child ' + Date.now(),
-        work_item_type_id: TYPE_ID,
-        owner_org_id: ORG_ID,
+        work_item_type_id: testOrg.typeId,
+        owner_org_id: testOrg.orgId,
         parent_id: parentWorkItemId,
       },
       AGENT_ID,
@@ -214,40 +215,27 @@ describe('assembleContext', () => {
     // Create an NFR entry on the parent (used for ancestor traversal)
     await createContextEntry(parentWorkItemId, { type: 'nfr', title: 'Parent NFR', content: 'Parent nfr.', authorId: AGENT_ID, isAgent: true })
 
-    // Create a throwaway org context entry
-    const { rows } = await query(`
+    // Create a throwaway org context entry (cleaned up by testOrg.teardown()'s
+    // organizations CASCADE — no need to track its id separately)
+    await query(`
       INSERT INTO blueprint.org_context (org_id, type, title, content, author_id)
       VALUES ($1, 'nfr', $2, 'Org NFR content.', $3)
-      RETURNING id
-    `, [ORG_ID, '__test org context ' + Date.now(), AGENT_ID])
-    orgContextId = rows[0].id
+    `, [testOrg.orgId, '__test org context ' + Date.now(), AGENT_ID])
   })
 
   after(async () => {
-    if (orgContextId) {
-      await query('DELETE FROM blueprint.org_context WHERE id = $1', [orgContextId]).catch(() => {})
-    }
-    for (const id of [workItemId, parentWorkItemId]) {
-      if (!id) continue
-      for (const sql of [
-        'DELETE FROM runtime.exit_criteria_status WHERE work_item_id = $1',
-        'DELETE FROM runtime.context_entries WHERE work_item_id = $1',
-        'DELETE FROM runtime.work_item_user_relationships WHERE work_item_id = $1',
-        'DELETE FROM runtime.work_item_search WHERE work_item_id = $1',
-      ]) await query(sql, [id]).catch(() => {})
-      await query('DELETE FROM runtime.work_items WHERE id = $1', [id]).catch(() => {})
-    }
+    await testOrg.teardown()
   })
 
   it('returns empty arrays when meta has no pull or org types configured', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {})
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {})
     assert.deepEqual(ctx.itemJournal, [], 'itemJournal should be empty')
     assert.deepEqual(ctx.ancestors,   [], 'ancestors should be empty')
     assert.deepEqual(ctx.orgContext,  [], 'orgContext should be empty')
   })
 
   it('fetches only journal entries matching the pull type', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: ['discovery'], org: [] },
     })
     assert.ok(ctx.itemJournal.length >= 1, 'should have at least one discovery entry')
@@ -257,7 +245,7 @@ describe('assembleContext', () => {
   })
 
   it('does not include entries of non-requested types', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: ['acceptance'], org: [] },
     })
     // No acceptance entries were created — result should be empty
@@ -268,7 +256,7 @@ describe('assembleContext', () => {
   // analysis (code-verified corrections to stale Discovery entries) invisible to the
   // Planning AI. Regression test: note entries MUST be returned when pull includes 'note'.
   it('includes note entries when pull contains note (DEBT.25727)', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: ['note'], org: [] },
     })
     assert.ok(ctx.itemJournal.length >= 1, 'should return at least one note entry')
@@ -280,7 +268,7 @@ describe('assembleContext', () => {
   })
 
   it('note entries are excluded when pull does not include note (DEBT.25727)', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: ['discovery'], org: [] },
     })
     for (const e of ctx.itemJournal) {
@@ -289,7 +277,7 @@ describe('assembleContext', () => {
   })
 
   it('fetches ancestor journal entries when pull includes ancestors sentinel', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: ['ancestors'], org: [] },
     })
     // The parent has an NFR entry that should appear in ancestors
@@ -301,7 +289,7 @@ describe('assembleContext', () => {
   })
 
   it('fetches org context when org types are specified', async () => {
-    const ctx = await assembleContext(workItemId, ORG_ID, {
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: [], org: ['nfr'] },
     })
     assert.ok(ctx.orgContext.length >= 1, 'should have at least one org context entry')

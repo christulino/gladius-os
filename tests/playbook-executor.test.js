@@ -7,7 +7,8 @@
 //   executePlaybookForStageEntry — early-return paths that create no run record,
 //     and the model-not-configured failure path that writes a 'failed' run record.
 //
-// DB integration tests use the dogfood postgres instance directly.
+// DB integration tests use a dedicated ephemeral test org + throwaway stage
+// (see helpers/testOrg.js, helpers/testStage.js) — never the dogfood org.
 // No Anthropic SDK calls are triggered — all paths tested stop before the AI call.
 
 import { describe, it, before, after } from 'node:test'
@@ -16,10 +17,9 @@ import { query } from '../db/postgres.js'
 import { parsePlaybook } from '../runtime/stagePlaybooks.js'
 import { executePlaybookForStageEntry } from '../runtime/playbookExecutor.js'
 import { createWorkItem } from '../runtime/workItems.js'
+import { createTestOrg } from './helpers/testOrg.js'
+import { createTestStage } from './helpers/testStage.js'
 
-const ORG_ID   = 109   // Gladius Development
-const TYPE_ID  = 140   // Tech Debt (workflow 138, entry stage = Backlog 636)
-const STAGE_ID = 636   // Backlog — no active playbooks by default; safe for isolation
 const AGENT_ID = 309   // agent@flowos.internal
 
 // ── parsePlaybook ─────────────────────────────────────────────────────────────
@@ -90,9 +90,9 @@ describe('parsePlaybook', () => {
 // ── executePlaybookForStageEntry ──────────────────────────────────────────────
 
 describe('executePlaybookForStageEntry', () => {
+  let testOrg
+  let stageId
   let workItemId
-  // Tracks IDs of test playbooks created so after() can clean them up
-  const testPlaybookIds = []
 
   const countRunRecords = async () => {
     const { rows } = await query(
@@ -103,8 +103,11 @@ describe('executePlaybookForStageEntry', () => {
   }
 
   before(async () => {
+    testOrg = await createTestOrg()
+    ;({ stageId } = await createTestStage(testOrg.orgId))
+
     const wi = await createWorkItem(
-      { title: 'executor test ' + Date.now(), work_item_type_id: TYPE_ID, owner_org_id: ORG_ID },
+      { title: 'executor test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
       AGENT_ID,
     )
     workItemId = wi.id
@@ -112,26 +115,13 @@ describe('executePlaybookForStageEntry', () => {
   })
 
   after(async () => {
-    // Delete test playbooks
-    for (const id of testPlaybookIds) {
-      await query('DELETE FROM blueprint.stage_playbooks WHERE id = $1', [id]).catch(() => {})
-    }
-    if (workItemId) {
-      for (const sql of [
-        'DELETE FROM runtime.playbook_runs WHERE work_item_id = $1',
-        'DELETE FROM runtime.exit_criteria_status WHERE work_item_id = $1',
-        'DELETE FROM runtime.context_entries WHERE work_item_id = $1',
-        'DELETE FROM runtime.work_item_user_relationships WHERE work_item_id = $1',
-        'DELETE FROM runtime.work_item_search WHERE work_item_id = $1',
-      ]) await query(sql, [workItemId]).catch(() => {})
-      await query('DELETE FROM runtime.work_items WHERE id = $1', [workItemId]).catch(() => {})
-    }
+    await testOrg.teardown()
   })
 
   it('no-op when no active playbook exists for the stage', async () => {
     // stage 99999 is a non-existent stage ID — getPlaybookForStage returns null,
     // executor returns early before insertRunRecord is called.
-    await executePlaybookForStageEntry(workItemId, 99999, ORG_ID, TYPE_ID)
+    await executePlaybookForStageEntry(workItemId, 99999, testOrg.orgId, testOrg.typeId)
     const runs = await countRunRecords()
     assert.equal(runs.length, 0, 'no run record should be created when there is no playbook')
   })
@@ -141,18 +131,16 @@ describe('executePlaybookForStageEntry', () => {
       INSERT INTO blueprint.stage_playbooks (stage_id, name, content, is_active, execution_owner)
       VALUES ($1, $2, $3, true, 'agent')
       RETURNING id
-    `, [STAGE_ID, '__test agent-owner ' + Date.now(),
+    `, [stageId, '__test agent-owner ' + Date.now(),
         '---\nmodel: sonnet\ntrigger: on_enter\n---\nTest body.'])
     const pbId = rows[0].id
-    testPlaybookIds.push(pbId)
 
-    await executePlaybookForStageEntry(workItemId, STAGE_ID, ORG_ID, TYPE_ID)
+    await executePlaybookForStageEntry(workItemId, stageId, testOrg.orgId, testOrg.typeId)
     const runs = await countRunRecords()
     assert.equal(runs.length, 0, 'no run record when execution_owner=agent')
 
     // Clean up this playbook so the next test gets a clean slate
     await query('DELETE FROM blueprint.stage_playbooks WHERE id = $1', [pbId])
-    testPlaybookIds.splice(testPlaybookIds.indexOf(pbId), 1)
   })
 
   it('no-op when playbook trigger does not match stage entry', async () => {
@@ -160,17 +148,15 @@ describe('executePlaybookForStageEntry', () => {
       INSERT INTO blueprint.stage_playbooks (stage_id, name, content, is_active, execution_owner)
       VALUES ($1, $2, $3, true, 'in_server')
       RETURNING id
-    `, [STAGE_ID, '__test on-exit trigger ' + Date.now(),
+    `, [stageId, '__test on-exit trigger ' + Date.now(),
         '---\nmodel: sonnet\ntrigger: on_exit\n---\nTest body.'])
     const pbId = rows[0].id
-    testPlaybookIds.push(pbId)
 
-    await executePlaybookForStageEntry(workItemId, STAGE_ID, ORG_ID, TYPE_ID)
+    await executePlaybookForStageEntry(workItemId, stageId, testOrg.orgId, testOrg.typeId)
     const runs = await countRunRecords()
     assert.equal(runs.length, 0, 'no run record when playbook trigger is on_exit')
 
     await query('DELETE FROM blueprint.stage_playbooks WHERE id = $1', [pbId])
-    testPlaybookIds.splice(testPlaybookIds.indexOf(pbId), 1)
   })
 
   it('writes a failed run record when the model name is not configured for the org', async () => {
@@ -180,12 +166,11 @@ describe('executePlaybookForStageEntry', () => {
       INSERT INTO blueprint.stage_playbooks (stage_id, name, content, is_active, execution_owner)
       VALUES ($1, $2, $3, true, 'in_server')
       RETURNING id
-    `, [STAGE_ID, '__test model-missing ' + Date.now(),
+    `, [stageId, '__test model-missing ' + Date.now(),
         `---\nmodel: ${modelName}\ntrigger: on_enter\n---\nTest body.`])
     const pbId = rows[0].id
-    testPlaybookIds.push(pbId)
 
-    await executePlaybookForStageEntry(workItemId, STAGE_ID, ORG_ID, TYPE_ID)
+    await executePlaybookForStageEntry(workItemId, stageId, testOrg.orgId, testOrg.typeId)
 
     const runs = await countRunRecords()
     assert.equal(runs.length, 1, 'exactly one run record should be created')
@@ -198,6 +183,5 @@ describe('executePlaybookForStageEntry', () => {
     )
 
     await query('DELETE FROM blueprint.stage_playbooks WHERE id = $1', [pbId])
-    testPlaybookIds.splice(testPlaybookIds.indexOf(pbId), 1)
   })
 })

@@ -1,14 +1,12 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { query } from '../db/postgres.js'
 import { createAuthApi } from './helpers/auth.js'
-import { deleteWorkItems } from './helpers/cleanup.js'
+import { createTestOrg } from './helpers/testOrg.js'
+import { createTestStage } from './helpers/testStage.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const BEARER = process.env.GLADIUS_API_KEY || ''
-const ORG_ID = 109
-const WIT_TYPE_ID = 138
-// Stage 638 = Discovery (has active playbook in dogfood)
-// Stage 636 = Backlog (no playbook)
 
 const api = createAuthApi()
 
@@ -21,26 +19,52 @@ async function bearerFetch(path, options = {}) {
 }
 
 describe('MCP Playbook Read', () => {
+  let testOrg
   let workItemInBacklog
+  let playbookStageItemId
+  let playbookStageId
 
   before(async () => {
-    // Create a test work item (will land in Backlog — entry stage)
+    testOrg = await createTestOrg()
+
+    // Create a test work item (lands in the entry stage, which has no playbook)
     const { status, data } = await api('/work-items', {
       method: 'POST',
-      body: JSON.stringify({ title: 'Playbook read test ' + Date.now(), work_item_type_id: WIT_TYPE_ID, owner_org_id: ORG_ID }),
+      body: JSON.stringify({ title: 'Playbook read test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId }),
     })
     assert.equal(status, 201, `create work item failed: ${JSON.stringify(data)}`)
     workItemInBacklog = data.id
+
+    // Dedicated throwaway stage with an active playbook, owned by the test org —
+    // isolates the positive case from dogfood's real Discovery-stage playbook,
+    // which would otherwise require reading the live board to find a matching item.
+    ;({ stageId: playbookStageId } = await createTestStage(testOrg.orgId, { stageClass: 'in-progress' }))
+    await query(`
+      INSERT INTO blueprint.stage_playbooks (stage_id, name, content, is_active, execution_owner)
+      VALUES ($1, $2, $3, true, 'in_server')
+    `, [playbookStageId, '__test playbook-read stage ' + Date.now(),
+        '---\nmodel: sonnet\ntrigger: on_enter\n---\nTest playbook body.'])
+
+    const { status: s2, data: item2 } = await api('/work-items', {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Playbook read test (active) ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId }),
+    })
+    assert.equal(s2, 201, `create work item failed: ${JSON.stringify(item2)}`)
+    playbookStageItemId = item2.id
+
+    // Point the item at the throwaway stage directly — it isn't reachable via a
+    // normal transition since it doesn't belong to the item's own workflow.
+    await query('UPDATE runtime.work_items SET current_stage_id = $1 WHERE id = $2', [playbookStageId, playbookStageItemId])
   })
 
   after(async () => {
-    await deleteWorkItems([workItemInBacklog])
+    await testOrg.teardown()
   })
 
   it('returns 404 when no active playbook for current stage', async () => {
-    // New items start in Backlog (stage 636) which has no playbook
+    // New items start in the entry stage, which has no playbook
     const { status } = await api(`/work-items/${workItemInBacklog}/stage-playbook`)
-    assert.equal(status, 404, `expected 404 for Backlog stage (no playbook)`)
+    assert.equal(status, 404, `expected 404 for entry stage (no playbook)`)
   })
 
   it('returns 404 for unknown work item', async () => {
@@ -49,15 +73,7 @@ describe('MCP Playbook Read', () => {
   })
 
   it('returns 200 with playbook content when active playbook exists', async () => {
-    // Find a work item currently in Discovery (stage 638) — has active playbook in dogfood
-    const { data: searchData } = await api('/search?stage_class=in-progress&org_id=' + ORG_ID + '&limit=10')
-    const discovery = (searchData?.rows ?? []).filter(wi => wi.current_stage_name === 'Discovery' || wi.stage_name === 'Discovery')
-    if (!discovery.length) {
-      // No items in Discovery — skip the positive case
-      console.log('  (skipping: no items in Discovery stage to test against)')
-      return
-    }
-    const { status, data } = await api(`/work-items/${discovery[0].id}/stage-playbook`)
+    const { status, data } = await api(`/work-items/${playbookStageItemId}/stage-playbook`)
     assert.equal(status, 200, `expected 200, got ${status}: ${JSON.stringify(data)}`)
     assert.ok(data.id, 'missing id')
     assert.ok(data.content, 'missing content')
@@ -66,7 +82,7 @@ describe('MCP Playbook Read', () => {
 
   it('returns playbook via Bearer auth', async () => {
     const { status } = await bearerFetch(`/work-items/${workItemInBacklog}/stage-playbook`)
-    // 404 is correct (Backlog has no playbook), but NOT 401
+    // 404 is correct (entry stage has no playbook), but NOT 401
     assert.notEqual(status, 401, 'Bearer auth should work')
   })
 })
