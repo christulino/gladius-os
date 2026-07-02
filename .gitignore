@@ -33,7 +33,8 @@ search-page-after-save.png
 search-with-detail-drawer.png
 /*.png
 
-# Claude Code — commit workflows/ (automation harness), ignore everything else
+# Claude Code — commit workflows/ (automation harness) and settings.json
+# (shared deny-list / permissions config), ignore everything else
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
@@ -63,3 +64,4 @@ docs/strategy/
 feature_plans/
 .claude/*
 !.claude/workflows
+!.claude/settings.json
