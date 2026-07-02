@@ -4,6 +4,8 @@
 //
 // Coverage:
 //   parsePlaybook  — pure-function frontmatter extraction (no DB needed)
+//   isValidContextBudget / validateContextBudget — pure-function context_budget
+//     validation (no DB needed) — FEAT.26493
 //   executePlaybookForStageEntry — early-return paths that create no run record,
 //     and the model-not-configured failure path that writes a 'failed' run record.
 //
@@ -14,7 +16,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
-import { parsePlaybook } from '../runtime/stagePlaybooks.js'
+import { parsePlaybook, isValidContextBudget, validateContextBudget } from '../runtime/stagePlaybooks.js'
 import { executePlaybookForStageEntry } from '../runtime/playbookExecutor.js'
 import { createWorkItem } from '../runtime/workItems.js'
 import { createTestOrg } from './helpers/testOrg.js'
@@ -84,6 +86,57 @@ describe('parsePlaybook', () => {
     const content = '---\nmodel: sonnet\nexecution_owner: agent\n---\nInstructions.'
     const { meta } = parsePlaybook(content)
     assert.equal(meta.execution_owner, 'agent')
+  })
+
+  it('extracts context_budget from frontmatter', () => {
+    const content = '---\nmodel: sonnet\ncontext_budget: 8000\n---\nInstructions.'
+    const { meta } = parsePlaybook(content)
+    assert.equal(meta.context_budget, 8000)
+  })
+})
+
+// ── isValidContextBudget / validateContextBudget (FEAT.26493) ─────────────────
+
+describe('isValidContextBudget', () => {
+  it('accepts positive finite numbers', () => {
+    assert.equal(isValidContextBudget(1), true)
+    assert.equal(isValidContextBudget(2000), true)
+    assert.equal(isValidContextBudget(0.5), true)
+  })
+
+  it('rejects zero, negative, non-numeric, and non-finite values', () => {
+    assert.equal(isValidContextBudget(0), false)
+    assert.equal(isValidContextBudget(-5), false)
+    assert.equal(isValidContextBudget('2000'), false)
+    assert.equal(isValidContextBudget('lots'), false)
+    assert.equal(isValidContextBudget(null), false)
+    assert.equal(isValidContextBudget(undefined), false)
+    assert.equal(isValidContextBudget(NaN), false)
+    assert.equal(isValidContextBudget(Infinity), false)
+  })
+})
+
+describe('validateContextBudget', () => {
+  it('is valid when context_budget is absent — the global default applies', () => {
+    assert.deepEqual(validateContextBudget({}), { valid: true })
+    assert.deepEqual(validateContextBudget({ model: 'sonnet' }), { valid: true })
+    assert.deepEqual(validateContextBudget(null), { valid: true })
+  })
+
+  it('is valid for a positive numeric context_budget', () => {
+    assert.deepEqual(validateContextBudget({ context_budget: 2000 }), { valid: true })
+    assert.deepEqual(validateContextBudget({ context_budget: 8000 }), { valid: true })
+  })
+
+  it('is invalid for a non-numeric context_budget, with a clear error message', () => {
+    const result = validateContextBudget({ context_budget: 'lots' })
+    assert.equal(result.valid, false)
+    assert.ok(result.error.includes('context_budget'), 'error message must mention context_budget')
+  })
+
+  it('is invalid for zero or negative context_budget', () => {
+    assert.equal(validateContextBudget({ context_budget: 0 }).valid, false)
+    assert.equal(validateContextBudget({ context_budget: -100 }).valid, false)
   })
 })
 

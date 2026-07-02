@@ -173,6 +173,40 @@ describe('formatContextForPrompt', () => {
     assert.ok(result.length <= MAX_CONTEXT_CHARS + 200, 'output must be bounded near MAX_CONTEXT_CHARS')
     assert.ok(result.includes('context truncated to budget'), 'must append truncation notice')
   })
+
+  // ── Per-playbook budgetChars override (FEAT.26493) ─────────────────────────
+
+  it('honors a budgetChars override smaller than MAX_CONTEXT_CHARS', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{ type: 'note', title: 'T', content: 'x'.repeat(500), is_agent: false }],
+    }
+    const result = formatContextForPrompt(ctx, 100)
+    assert.ok(result.length <= 100 + 200, 'output must be bounded near the override budget')
+    assert.ok(result.includes('context truncated to budget'), 'must append truncation notice when the override is exceeded')
+  })
+
+  it('honors a budgetChars override larger than MAX_CONTEXT_CHARS', () => {
+    // Content sized above the global default but below the override — must NOT truncate.
+    const content = 'x'.repeat(MAX_CONTEXT_CHARS + 1_000)
+    const ctx = {
+      ...EMPTY,
+      orgContext: [{ type: 'nfr', title: 'Big entry', content }],
+    }
+    const result = formatContextForPrompt(ctx, MAX_CONTEXT_CHARS + 5_000)
+    assert.ok(!result.includes('context truncated to budget'), 'must not truncate when under the larger override budget')
+  })
+
+  it('falls back to MAX_CONTEXT_CHARS when budgetChars is omitted', () => {
+    const longContent = 'x'.repeat(MAX_CONTEXT_CHARS)
+    const ctx = {
+      ...EMPTY,
+      orgContext: [{ type: 'nfr', title: 'Giant entry', content: longContent }],
+    }
+    const withOmitted = formatContextForPrompt(ctx)
+    const withExplicitDefault = formatContextForPrompt(ctx, MAX_CONTEXT_CHARS)
+    assert.equal(withOmitted, withExplicitDefault, 'omitting budgetChars must behave identically to passing MAX_CONTEXT_CHARS')
+  })
 })
 
 // ── assembleContext ───────────────────────────────────────────────────────────
