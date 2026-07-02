@@ -48,6 +48,10 @@ Then run the autonomous backlog grinder:
   PR size, files touched, any sibling PRs touching the same hot file (merge-order risk),
   and anything an agent did beyond its stated scope. Also list any new items agents
   discovered and wrote back to the board.
+- In the results report, include a "Blocked / stopped" section: every item that could
+  NOT be completed within its playbook + exit criteria, with the blocking reason (which
+  criterion or step, and what's needed to unblock — e.g. a Gladius decision to resolve).
+  These are items where the agent left a comment and stopped rather than forcing progress.
 - After I confirm I've merged, offer to sweep up: prune the merged worktrees + branches
   (verify each branch maps to a merged PR and each worktree is clean first), and flag any
   board items still sitting in Review — the marked-Done-but-unmerged gap (DEBT.26005).
@@ -55,6 +59,17 @@ Then run the autonomous backlog grinder:
 Rules (non-negotiable):
 - Do NOT merge anything. Merge is gated for me; settings deny + branch protection on main
   enforce it. Hand me the PRs; I merge.
+- Follow the playbook and exit criteria for each work item exactly. The agent+human
+  driving Gladius is the Worker: it executes and verifies, Gladius frames and gates.
+  NEVER bypass, falsify, ignore, or waive an exit criterion to make progress. Do not
+  mark a criterion satisfied unless it genuinely is, and do not skip playbook steps.
+- If a work item cannot be completed within its playbook and exit criteria — the criteria
+  can't be honestly satisfied, a playbook step can't be followed, or a Gladius decision
+  must be resolved first — then: (1) write a comment on that work item explaining exactly
+  what blocked progress (which criterion/step, and what's needed to unblock, e.g. a
+  decision to resolve in Gladius), (2) stop working on that item — leave it where it is,
+  do not force it forward, and (3) move on to the next item. Surface every such blocked
+  item in the final results report with the blocking reason.
 - Wait for my explicit "go" before any consequential or outward-facing action. Orient and
   recommend first, then wait. Read-only investigation is fine.
 - Keep updates tight and specific (PR numbers, file names, item keys).
