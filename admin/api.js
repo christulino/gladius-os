@@ -38,7 +38,7 @@ import {
 } from '../runtime/contextEntries.js'
 import { listOrgContext, createOrgContext, updateOrgContext, deleteOrgContext } from '../runtime/orgContext.js'
 import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
-import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook, getPlaybookForStage } from '../runtime/stagePlaybooks.js'
+import { listPlaybooks, createPlaybook, updatePlaybook, deletePlaybook, getPlaybookForStage, parsePlaybook, validateContextBudget } from '../runtime/stagePlaybooks.js'
 import { listOrgAiModels, createOrgAiModel, updateOrgAiModel, deleteOrgAiModel, resolveModelConfig } from '../runtime/orgAiModels.js'
 import { checkContextStaleness } from '../runtime/stalenessDetector.js'
 
@@ -5113,6 +5113,11 @@ router.post('/stages/:stageId/playbook', async (req, res, next) => {
   try {
     const { name, content } = req.body
     if (!name || !content) return res.status(400).json({ error: 'name and content required' })
+    // Load-time validation: reject a bad context_budget frontmatter value now,
+    // rather than letting it fail silently when the playbook eventually runs.
+    const { meta } = parsePlaybook(content)
+    const budgetCheck = validateContextBudget(meta)
+    if (!budgetCheck.valid) return res.status(400).json({ error: budgetCheck.error })
     const row = await createPlaybook({ stageId: parseInt(req.params.stageId), name, content })
     res.status(201).json(row)
   } catch (err) { next(err) }
@@ -5122,6 +5127,11 @@ router.patch('/organizations/:orgId/playbooks/:id', async (req, res, next) => {
     const { name, content, isActive, execution_owner } = req.body
     if (execution_owner !== undefined && !['in_server', 'agent'].includes(execution_owner)) {
       return res.status(400).json({ error: 'execution_owner must be "in_server" or "agent"' })
+    }
+    if (content !== undefined) {
+      const { meta } = parsePlaybook(content)
+      const budgetCheck = validateContextBudget(meta)
+      if (!budgetCheck.valid) return res.status(400).json({ error: budgetCheck.error })
     }
     const row = await updatePlaybook(
       parseInt(req.params.id),

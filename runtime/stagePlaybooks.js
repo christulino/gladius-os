@@ -82,3 +82,27 @@ export function parsePlaybook(content) {
     return { meta: {}, body: content }
   }
 }
+
+// True when `value` is usable as a context_budget: a finite positive number.
+// Used both for strict load-time rejection (validateContextBudget) and for
+// defensive resolution at execution time (contextAssembler/playbookExecutor).
+export function isValidContextBudget(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+// Validate the optional `context_budget` frontmatter key on already-parsed
+// playbook meta. Absence is valid — the global default (MAX_CONTEXT_CHARS)
+// applies. Presence requires a finite positive number (same character unit
+// as the global default); anything else is a load-time rejection so a
+// misconfigured playbook fails loud when it's saved, not silently at
+// execution time.
+export function validateContextBudget(meta) {
+  if (meta == null || meta.context_budget === undefined) return { valid: true }
+  if (!isValidContextBudget(meta.context_budget)) {
+    return {
+      valid: false,
+      error: `context_budget must be a positive number (got ${JSON.stringify(meta.context_budget)})`,
+    }
+  }
+  return { valid: true }
+}

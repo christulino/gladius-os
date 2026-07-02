@@ -84,13 +84,15 @@ export async function assembleContext(workItemId, orgId, meta) {
  * LLM can distinguish authoritative human input from prior agent-generated output
  * (which may contain hallucinations and should not be treated as ground truth).
  *
- * The total output is capped at MAX_CONTEXT_CHARS; any material beyond the budget
- * is replaced with a truncation notice.
+ * The total output is capped at `budgetChars` (defaults to MAX_CONTEXT_CHARS);
+ * any material beyond the budget is replaced with a truncation notice. Pass an
+ * explicit `budgetChars` to honor a playbook's `context_budget` frontmatter key.
  *
  * @param {Object} ctx - result from assembleContext()
+ * @param {number} [budgetChars] - character budget override; defaults to MAX_CONTEXT_CHARS
  * @returns {string}
  */
-export function formatContextForPrompt(ctx) {
+export function formatContextForPrompt(ctx, budgetChars = MAX_CONTEXT_CHARS) {
   const parts = []
 
   if (ctx.orgContext?.length) {
@@ -115,9 +117,9 @@ export function formatContextForPrompt(ctx) {
   }
 
   const full = parts.join('\n\n')
-  if (full.length <= MAX_CONTEXT_CHARS) return full
+  if (full.length <= budgetChars) return full
 
   // Budget exceeded — truncate and append a visible notice so the prompt
   // reader (human or LLM) can see that material was dropped.
-  return full.slice(0, MAX_CONTEXT_CHARS) + '\n\n_[context truncated to budget]_'
+  return full.slice(0, budgetChars) + '\n\n_[context truncated to budget]_'
 }

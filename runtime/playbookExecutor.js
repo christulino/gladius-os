@@ -22,7 +22,7 @@ const BASE_RETRY_DELAY_MS = 1_000
  * @param {() => Promise<any>} fn
  * @returns {Promise<any>}
  */
-import { getPlaybookForStage, parsePlaybook } from './stagePlaybooks.js'
+import { getPlaybookForStage, parsePlaybook, isValidContextBudget } from './stagePlaybooks.js'
 import { resolveModelConfig }            from './orgAiModels.js'
 import { assembleContext, formatContextForPrompt } from './contextAssembler.js'
 import { createContextEntry }            from './contextEntries.js'
@@ -116,9 +116,15 @@ export async function executePlaybookForStageEntry(workItemId, stageId, orgId, w
       return
     }
 
-    // 3. Assemble context from item journal, ancestors, and org context
+    // 3. Assemble context from item journal, ancestors, and org context.
+    // Honor a per-playbook `context_budget` frontmatter override if present
+    // and valid; otherwise formatContextForPrompt falls back to the global
+    // default (MAX_CONTEXT_CHARS). Save-time validation (admin/api.js) should
+    // already guarantee a stored value is valid, but this stays defensive
+    // since this path must never throw.
     const ctx = await assembleContext(workItemId, orgId, meta)
-    const contextBlock = formatContextForPrompt(ctx)
+    const contextBudget = isValidContextBudget(meta?.context_budget) ? meta.context_budget : undefined
+    const contextBlock = formatContextForPrompt(ctx, contextBudget)
 
     // 4. Fetch work item summary fields for the prompt
     const wiRow = await pool.query(
