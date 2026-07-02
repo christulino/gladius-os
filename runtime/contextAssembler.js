@@ -11,6 +11,18 @@ import { pool }           from '../db/postgres.js'
 import { listOrgContext } from './orgContext.js'
 
 /**
+ * Character budget for the assembled context block.
+ *
+ * Caps the total text sent to the LLM so a large journal or org-context library
+ * cannot silently bloat a prompt beyond what the model handles well.  The limit
+ * is applied in formatContextForPrompt after all sections are rendered; material
+ * is truncated at the limit with a clearly labelled notice.
+ *
+ * ~24 000 chars ≈ 6 000 tokens — generous for context, well inside any Claude window.
+ */
+export const MAX_CONTEXT_CHARS = 24_000
+
+/**
  * Pull context for a work item based on playbook meta.
  *
  * @param {number} workItemId
@@ -23,11 +35,12 @@ export async function assembleContext(workItemId, orgId, meta) {
 
   const pullTypes = meta?.context?.pull ?? []
 
-  // Pull item journal entries by type (exclude the special 'ancestors' sentinel)
+  // Pull item journal entries by type (exclude the special 'ancestors' sentinel).
+  // Include is_agent so formatContextForPrompt can apply provenance fencing.
   const itemTypes = pullTypes.filter(t => t !== 'ancestors')
   if (itemTypes.length) {
     const rows = await pool.query(`
-      SELECT type, title, content, created_at
+      SELECT type, title, content, created_at, is_agent
       FROM runtime.context_entries
       WHERE work_item_id = $1 AND type = ANY($2::text[])
       ORDER BY created_at DESC
@@ -35,7 +48,8 @@ export async function assembleContext(workItemId, orgId, meta) {
     ctx.itemJournal = rows.rows
   }
 
-  // Pull ancestor journal entries if 'ancestors' is in pull
+  // Pull ancestor journal entries if 'ancestors' is in pull.
+  // Include is_agent for consistent provenance tagging.
   if (pullTypes.includes('ancestors')) {
     const rows = await pool.query(`
       WITH RECURSIVE ancestors AS (
@@ -44,7 +58,7 @@ export async function assembleContext(workItemId, orgId, meta) {
         SELECT wi.id, wi.parent_id FROM runtime.work_items wi
         JOIN ancestors a ON wi.id = a.parent_id
       )
-      SELECT ce.type, ce.title, ce.content, ce.created_at, a.id AS work_item_id
+      SELECT ce.type, ce.title, ce.content, ce.created_at, ce.is_agent, a.id AS work_item_id
       FROM ancestors a
       JOIN runtime.context_entries ce ON ce.work_item_id = a.id
       WHERE a.id != $1
@@ -66,6 +80,13 @@ export async function assembleContext(workItemId, orgId, meta) {
 /**
  * Format assembled context into a text block suitable for an AI system prompt.
  *
+ * Each item-journal and ancestor entry is tagged with [human] or [agent] so the
+ * LLM can distinguish authoritative human input from prior agent-generated output
+ * (which may contain hallucinations and should not be treated as ground truth).
+ *
+ * The total output is capped at MAX_CONTEXT_CHARS; any material beyond the budget
+ * is replaced with a truncation notice.
+ *
  * @param {Object} ctx - result from assembleContext()
  * @returns {string}
  */
@@ -73,22 +94,30 @@ export function formatContextForPrompt(ctx) {
   const parts = []
 
   if (ctx.orgContext?.length) {
+    // Org context is always human-curated; no per-entry provenance tag needed.
     parts.push('## Org Context\n' + ctx.orgContext.map(e =>
       `### ${e.type}: ${e.title}\n${e.content}`
     ).join('\n\n'))
   }
 
   if (ctx.ancestors?.length) {
-    parts.push('## Ancestor Context\n' + ctx.ancestors.map(e =>
-      `[${e.type}] ${e.title || ''}: ${e.content}`
-    ).join('\n'))
+    parts.push('## Ancestor Context\n' + ctx.ancestors.map(e => {
+      const provenance = e.is_agent ? '[agent]' : '[human]'
+      return `${provenance} [${e.type}] ${e.title || ''}: ${e.content}`
+    }).join('\n'))
   }
 
   if (ctx.itemJournal?.length) {
-    parts.push('## Item Journal\n' + ctx.itemJournal.map(e =>
-      `[${e.type}] ${e.title || ''}: ${e.content}`
-    ).join('\n'))
+    parts.push('## Item Journal\n' + ctx.itemJournal.map(e => {
+      const provenance = e.is_agent ? '[agent]' : '[human]'
+      return `${provenance} [${e.type}] ${e.title || ''}: ${e.content}`
+    }).join('\n'))
   }
 
-  return parts.join('\n\n')
+  const full = parts.join('\n\n')
+  if (full.length <= MAX_CONTEXT_CHARS) return full
+
+  // Budget exceeded — truncate and append a visible notice so the prompt
+  // reader (human or LLM) can see that material was dropped.
+  return full.slice(0, MAX_CONTEXT_CHARS) + '\n\n_[context truncated to budget]_'
 }

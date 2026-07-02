@@ -11,7 +11,7 @@
 import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
-import { assembleContext, formatContextForPrompt } from '../runtime/contextAssembler.js'
+import { assembleContext, formatContextForPrompt, MAX_CONTEXT_CHARS } from '../runtime/contextAssembler.js'
 import { createWorkItem } from '../runtime/workItems.js'
 import { createContextEntry } from '../runtime/contextEntries.js'
 
@@ -86,6 +86,93 @@ describe('formatContextForPrompt', () => {
     assert.ok(!result.includes('## Org Context'),     'should omit Org Context section')
     assert.ok(!result.includes('## Ancestor Context'), 'should omit Ancestor Context section')
     assert.ok(result.includes('## Item Journal'),      'should include Item Journal section')
+  })
+
+  // ── Provenance fencing (DEBT.25498) ────────────────────────────────────────
+
+  it('tags human journal entries with [human] provenance label', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{ type: 'discovery', title: 'Scope', content: 'human-written', is_agent: false }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.includes('[human]'), 'human entries must be tagged [human]')
+    assert.ok(!result.includes('[agent]'), 'no agent tag expected for human-only journal')
+  })
+
+  it('tags agent journal entries with [agent] provenance label', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{ type: 'note', title: 'Brief', content: 'agent-written', is_agent: true }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.includes('[agent]'), 'agent entries must be tagged [agent]')
+    assert.ok(!result.includes('[human]'), 'no human tag expected for agent-only journal')
+  })
+
+  it('correctly fences a mix of human and agent journal entries', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [
+        { type: 'discovery', title: 'Human disc', content: 'from human', is_agent: false },
+        { type: 'note',      title: 'Agent note', content: 'from agent', is_agent: true },
+      ],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.includes('[human]'), 'must include [human] tag')
+    assert.ok(result.includes('[agent]'), 'must include [agent] tag')
+    // Human tag must precede agent tag (most-recent-first order means human disc entry was added second)
+    // — just assert both labels are present and both contents are included
+    assert.ok(result.includes('from human'), 'human content must be present')
+    assert.ok(result.includes('from agent'), 'agent content must be present')
+  })
+
+  it('tags ancestor entries with [human] or [agent] based on is_agent', () => {
+    const ctx = {
+      ...EMPTY,
+      ancestors: [
+        { type: 'nfr', title: 'Human NFR', content: 'human ancestor', is_agent: false, work_item_id: 1 },
+        { type: 'note', title: 'Agent note', content: 'agent ancestor', is_agent: true, work_item_id: 1 },
+      ],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.includes('[human]'), 'human ancestor must be tagged [human]')
+    assert.ok(result.includes('[agent]'), 'agent ancestor must be tagged [agent]')
+  })
+
+  it('defaults to [human] when is_agent is missing (legacy entries)', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{ type: 'discovery', title: 'Old entry', content: 'no flag set' }],
+    }
+    const result = formatContextForPrompt(ctx)
+    // is_agent undefined → falsy → treated as human
+    assert.ok(result.includes('[human]'), 'entries without is_agent flag must default to [human]')
+    assert.ok(!result.includes('[agent]'), 'should not inject spurious [agent] tag')
+  })
+
+  // ── Character budget (DEBT.25498) ───────────────────────────────────────────
+
+  it('returns context unchanged when within MAX_CONTEXT_CHARS', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{ type: 'note', title: 'T', content: 'short', is_agent: false }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.length < MAX_CONTEXT_CHARS, 'short context must not be truncated')
+    assert.ok(!result.includes('context truncated to budget'), 'no truncation notice for short context')
+  })
+
+  it('truncates to MAX_CONTEXT_CHARS and appends a notice when budget is exceeded', () => {
+    const longContent = 'x'.repeat(MAX_CONTEXT_CHARS)
+    const ctx = {
+      ...EMPTY,
+      orgContext: [{ type: 'nfr', title: 'Giant entry', content: longContent }],
+    }
+    const result = formatContextForPrompt(ctx)
+    // Truncation notice adds a small suffix — allow up to 200 chars of overhead
+    assert.ok(result.length <= MAX_CONTEXT_CHARS + 200, 'output must be bounded near MAX_CONTEXT_CHARS')
+    assert.ok(result.includes('context truncated to budget'), 'must append truncation notice')
   })
 })
 
