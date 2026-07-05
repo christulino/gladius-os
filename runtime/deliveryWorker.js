@@ -51,9 +51,7 @@ export async function stopDeliveryWorker() {
 async function tick() {
   if (!running) return
   try {
-    if (!holdingLock && !(await acquireLock())) {
-      timer = setTimeout(tick, pollMs); return
-    }
+    if (!holdingLock && !(await acquireLock())) return
     await drainOnce()
   } catch (e) {
     console.error('[deliveryWorker] tick failed:', e)
