@@ -185,6 +185,32 @@ Tools: `list_context_entries`, `write_context_entry`, `get_assembled_context`, `
 
 Configure `GLADIUS_AGENT_USER_ID` in `.env` to set the actor identity for write operations.
 
+### Connecting an MCP client (e.g. Claude Code) locally
+
+Put your server definition — including your `GLADIUS_API_KEY` (Bearer token, `fos_ak_` prefix) —
+in a project-root `.mcp.json`, **not** in `.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "gladius": {
+      "command": "node",
+      "args": ["mcp/gladius-context-server.js"],
+      "env": {
+        "GLADIUS_API_KEY": "fos_ak_...",
+        "GLADIUS_API_BASE_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
+```
+
+`.mcp.json` is gitignored, so your key never leaves your machine. `.claude/settings.json` is
+committed to the repo and shared with the team — it holds permissions, not secrets or MCP
+server definitions (Claude Code only reads `mcpServers` from `.mcp.json` or `~/.claude.json`,
+never from `.claude/settings.json`). If your key is ever exposed (e.g. pasted into a committed
+file or visible in shared session output), rotate it immediately.
+
 ---
 
 ## Contributing
