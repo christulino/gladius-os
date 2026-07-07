@@ -100,7 +100,8 @@ cp .env.example .env
 # Apply database migrations (creates all tables beyond the base schemas)
 npm run db:migrate
 
-# Seed reference data and sample work items
+# Seed reference data — one org ("My Workspace"), the Feature Development
+# workflow, an admin user, and the canonical stage playbooks
 npm run seed
 
 # Start the API (port 3000, auto-restart)
@@ -115,7 +116,10 @@ Admin UI: `http://localhost:5173/admin/`
 `npm run seed` also runs any pending migrations automatically, so `npm run seed`
 alone works if you want a single command for a fresh database.
 
-Default seed credentials are printed to the console after `npm run seed`.
+Admin login credentials are printed to the console after `npm run seed`.
+
+Want to explore multi-org features instead of the solo starter? Run
+`npm run seed:sim` for a 12-org enterprise simulation with sample work items.
 
 ---
 

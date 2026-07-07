@@ -14,7 +14,12 @@
  *   7. Canonical Discovery + Planning stage playbooks
  *
  * Usage:
- *   npm run seed:solo
+ *   npm run seed
+ *   or: node db/seeds/seed-solo.js
+ *
+ * Runs any pending migrations automatically before seeding, so this is a
+ * single command for a fresh database (same behavior as the old default
+ * seed.js, now available as `npm run seed:sim`).
  *
  * Environment variables (all optional — sensible defaults apply):
  *   GLADIUS_SOLO_EMAIL      admin email       (default: admin@example.com)
@@ -27,6 +32,7 @@
 import 'dotenv/config'
 import crypto from 'node:crypto'
 import bcrypt from 'bcrypt'
+import { migrate } from '../migrate.js'
 import { getClient } from '../../db/postgres.js'
 import { generateSystemUri, generateUri } from '../../core/uri.js'
 
@@ -270,6 +276,10 @@ async function seedWorkflow(client, wf, systemOrgId) {
 
 async function seed() {
   console.log('Gladius solo seed starting...\n')
+
+  // Ensure all migrations are applied before seeding.
+  console.log('Running migrations...')
+  await migrate()
 
   // ── Admin credentials ─────────────────────────────────────────────────────
   const adminEmail = (process.env.GLADIUS_SOLO_EMAIL || 'admin@example.com').toLowerCase().trim()
