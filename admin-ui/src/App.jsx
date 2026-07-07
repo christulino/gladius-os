@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { auth } from '@/lib/api'
+import { setMultiOrgEnabled } from '@/lib/appConfig'
 import {
   LayoutDashboard,
   Building2,
@@ -138,7 +139,8 @@ export default function App() {
   // Check auth status on mount
   useEffect(() => {
     auth.status()
-      .then(({ needsSetup, authenticated, user }) => {
+      .then(({ needsSetup, authenticated, user, multiOrgEnabled }) => {
+        setMultiOrgEnabled(multiOrgEnabled)
         if (needsSetup)       setAuthState('setup')
         else if (authenticated && user) { setUser(user); setAuthState('authenticated') }
         else                  setAuthState('login')

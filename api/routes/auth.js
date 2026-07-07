@@ -40,10 +40,18 @@ router.get('/status', async (req, res, next) => {
       }
     }
 
+    // Single-org public experience (FEAT.26604): fresh installs show a single
+    // org with no org-tree navigation by default. Set GLADIUS_MULTI_ORG=true
+    // to keep the full multi-org UI (dogfood does this to stay unchanged).
+    const multiOrgEnabled = ['true', '1'].includes(
+      String(process.env.GLADIUS_MULTI_ORG || '').toLowerCase()
+    )
+
     res.json({
       needsSetup: !hasUsers,
       authenticated,
       user,
+      multiOrgEnabled,
     })
   } catch (err) { next(err) }
 })
