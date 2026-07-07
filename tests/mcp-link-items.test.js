@@ -2,11 +2,10 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { deleteWorkItems } from './helpers/cleanup.js'
+import { createTestOrg } from './helpers/testOrg.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const BEARER = process.env.GLADIUS_API_KEY || ''
-const ORG_ID = parseInt(process.env.GLADIUS_TEST_ORG_ID || '109', 10)
-const WIT_TYPE_ID = parseInt(process.env.GLADIUS_TEST_WIT_TYPE_ID || '138', 10)
 
 const api = createAuthApi()
 const skipBearer = !BEARER
@@ -22,17 +21,19 @@ async function bearerFetch(path, options = {}) {
 
 describe('Work-item link/unlink API', () => {
   let itemA, itemB
+  let testOrg
 
   before(async () => {
+    testOrg = await createTestOrg()
     const stamp = Date.now()
     const [resA, resB] = await Promise.all([
       api('/work-items', {
         method: 'POST',
-        body: JSON.stringify({ title: `Link test A ${stamp}`, work_item_type_id: WIT_TYPE_ID, owner_org_id: ORG_ID }),
+        body: JSON.stringify({ title: `Link test A ${stamp}`, work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId }),
       }),
       api('/work-items', {
         method: 'POST',
-        body: JSON.stringify({ title: `Link test B ${stamp}`, work_item_type_id: WIT_TYPE_ID, owner_org_id: ORG_ID }),
+        body: JSON.stringify({ title: `Link test B ${stamp}`, work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId }),
       }),
     ])
     assert.equal(resA.status, 201, `create A failed: ${JSON.stringify(resA.data)}`)
@@ -43,6 +44,7 @@ describe('Work-item link/unlink API', () => {
 
   after(async () => {
     await deleteWorkItems([itemA, itemB])
+    await testOrg.teardown()
   })
 
   describe('POST /work-items/:id/links', () => {
