@@ -12,6 +12,7 @@
 import { Router } from 'express'
 import { query } from '../../db/postgres.js'
 import { generateUri } from '../../core/uri.js'
+import { DEV_TOOLS_ENABLED } from '../../core/devTools.js'
 import {
   hashPassword,
   verifyPassword,
@@ -44,6 +45,7 @@ router.get('/status', async (req, res, next) => {
       needsSetup: !hasUsers,
       authenticated,
       user,
+      devToolsEnabled: DEV_TOOLS_ENABLED,
     })
   } catch (err) { next(err) }
 })

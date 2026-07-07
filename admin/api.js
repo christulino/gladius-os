@@ -10,6 +10,7 @@
 import { Router }     from 'express'
 import { query, getClient } from '../db/postgres.js'
 import { getBuffer, sseHandler } from './logger.js'
+import { requireDevTools } from '../core/devTools.js'
 import { generateUri } from '../core/uri.js'
 import { createWorkItem, ValidationError } from '../runtime/workItems.js'
 import { getWorkItemHistory } from '../runtime/workItemHistory.js'
@@ -987,13 +988,13 @@ router.get('/transition-history', async (req, res, next) => {
 // RAW TABLE BROWSER
 // =============================================================================
 
-router.get('/tables', async (req, res, next) => {
+router.get('/tables', requireDevTools, async (req, res, next) => {
   try {
     res.json({ tables: Object.keys(ALLOWED_TABLES) })
   } catch (err) { next(err) }
 })
 
-router.get('/tables/:schema/:table', async (req, res, next) => {
+router.get('/tables/:schema/:table', requireDevTools, async (req, res, next) => {
   try {
     const tableName = `${req.params.schema}.${req.params.table}`
     if (!ALLOWED_TABLES[tableName]) {
@@ -1161,14 +1162,14 @@ router.get('/dashboard', async (req, res, next) => {
 // =============================================================================
 
 // GET /admin/api/logs — return buffer snapshot
-router.get('/logs', (req, res) => {
+router.get('/logs', requireDevTools, (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 200, 500)
   const buf   = getBuffer()
   res.json({ entries: buf.slice(-limit), total: buf.length })
 })
 
 // GET /admin/api/logs/stream — SSE live stream
-router.get('/logs/stream', sseHandler)
+router.get('/logs/stream', requireDevTools, sseHandler)
 
 // =============================================================================
 // DB CONSOLE
@@ -1177,7 +1178,7 @@ router.get('/logs/stream', sseHandler)
 // Allowed statement prefixes — read-only only
 const ALLOWED_PREFIXES = ['select', 'explain', 'with']
 
-router.post('/query', async (req, res, next) => {
+router.post('/query', requireDevTools, async (req, res, next) => {
   try {
     const sql = (req.body.sql || '').trim()
     if (!sql) return res.status(400).json({ error: 'sql is required' })
