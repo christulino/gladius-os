@@ -1,5 +1,9 @@
 /**
  * db/seeds/seed.js
+ * Enterprise simulation seed — a 12-org demo dataset for exercising
+ * multi-org features. NOT the default seed; use `npm run seed` (solo
+ * starter, db/seeds/seed-solo.js) for a fresh install or the quickstart.
+ *
  * Runs migrations (if not already applied) then seeds ALL data:
  *   1. System foundations (org types, system org, roles, permissions, service classes)
  *   2. Base WIT classes and workflows (7 classes, 5+4 workflows)
@@ -10,7 +14,7 @@
  *   7. Test user + org membership
  *
  * Run: node db/seeds/seed.js
- *   or: npm run db:migrate && npm run seed
+ *   or: npm run db:migrate && npm run seed:sim
  */
 
 import 'dotenv/config'
