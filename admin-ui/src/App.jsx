@@ -29,7 +29,6 @@ import NotificationsDrawer from '@/components/NotificationsDrawer'
 
 import Login         from '@/pages/Login'
 import Setup         from '@/pages/Setup'
-import IntakeForm    from '@/pages/IntakeForm'
 import Board         from '@/pages/Board'
 import Summary       from '@/pages/Summary'
 import OrgTypes      from '@/pages/OrgTypes'
@@ -160,12 +159,6 @@ export default function App() {
     try { await auth.logout() } catch {}
     setUser(null)
     setAuthState('login')
-  }
-
-  // ─── Public intake form (no auth, no sidebar) ───
-  const formsMatch = window.location.pathname.match(/^\/intake\/([a-z0-9-]+)\/?$/)
-  if (formsMatch) {
-    return <IntakeForm slug={formsMatch[1]} />
   }
 
   // ─── Loading ───

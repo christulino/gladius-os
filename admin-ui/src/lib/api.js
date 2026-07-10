@@ -312,23 +312,6 @@ export const notificationsApi = {
   retryDelivery:       (id)     => apiFetch(`/notification-deliveries/${id}/retry`, { method: 'POST' }),
 }
 
-// ─── Public forms API (no auth) ─────────────────────────────────────────────
-
-async function formsFetch(path, options = {}) {
-  const res = await fetch('/forms' + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`)
-  return data
-}
-
-export const forms = {
-  getForm:  (slug) => formsFetch(`/${slug}`),
-  submit:   (slug, data) => formsFetch(`/${slug}`, { method: 'POST', body: JSON.stringify(data) }),
-}
-
 // ─── Search v1 ──────────────────────────────────────────────────────────────
 
 export const searchApi = {
