@@ -17,6 +17,7 @@ import 'dotenv/config'
 import { initLogger }                 from '../admin/logger.js'
 import { healthCheck as pgHealth }    from '../db/postgres.js'
 import { createSessionMiddleware, requireAuth } from '../core/auth.js'
+import { DEV_TOOLS_ENABLED, requireDevTools }   from '../core/devTools.js'
 import authRoutes       from './routes/auth.js'
 import workItemRoutes   from './routes/workItems.js'
 import orgRoutes        from './routes/organizations.js'
@@ -30,8 +31,9 @@ import { startRetentionJob, stopRetentionJob } from '../runtime/jobs/notificatio
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
-// Patch console before anything else logs
-initLogger()
+// Patch console before anything else logs — only when Dev Tools are enabled.
+// Default install: plain console, nothing captured, nothing intercepted.
+if (DEV_TOOLS_ENABLED) initLogger()
 
 const app  = express()
 const PORT = process.env.PORT || 3000
@@ -69,7 +71,7 @@ app.use('/v1/work-items',        requireAuth, workItemRoutes)
 app.use('/v1/organizations',     requireAuth, orgRoutes)
 app.use('/v1/catalog',           requireAuth, catalogRoutes)
 app.use('/v1/board',             requireAuth, boardRoutes)
-app.use('/admin/api/simulation', requireAuth, simulationRoutes)
+app.use('/admin/api/simulation', requireDevTools, requireAuth, simulationRoutes)
 app.use('/admin/api',            requireAuth, adminApiRoutes)
 
 // Serve uploaded files (avatars, etc.)

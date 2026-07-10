@@ -87,6 +87,9 @@ const NAV = [
   { id: 'events',        label: 'Events',           section: null,       icon: Activity },
 ]
 
+// Dev-only surfaces — nav ids hidden unless the server reports GLADIUS_DEV_TOOLS=true.
+const DEV_TOOLS_NAV_IDS = ['simulation', 'raw', 'logs', 'db']
+
 const PAGES = {
   dashboard:     Dashboard,
   board:         Board,
@@ -119,6 +122,7 @@ export default function App() {
   const [authState, setAuthState] = useState('loading')  // 'loading' | 'setup' | 'login' | 'authenticated'
   const [user, setUser]         = useState(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [devToolsEnabled, setDevToolsEnabled] = useState(false)
 
   // '/' keybinding to jump to Search (when not editing).
   useEffect(() => {
@@ -138,7 +142,8 @@ export default function App() {
   // Check auth status on mount
   useEffect(() => {
     auth.status()
-      .then(({ needsSetup, authenticated, user, multiOrgEnabled }) => {
+      .then(({ needsSetup, authenticated, user, devToolsEnabled, multiOrgEnabled }) => {
+        setDevToolsEnabled(!!devToolsEnabled)
         setMultiOrgEnabled(multiOrgEnabled)
         if (needsSetup)       setAuthState('setup')
         else if (authenticated && user) { setUser(user); setAuthState('authenticated') }
@@ -214,27 +219,29 @@ export default function App() {
         </div>
         <NotificationsDrawer open={drawerOpen} onOpenChange={setDrawerOpen} />
         <div className="py-3 flex-1 overflow-y-auto">
-          {NAV.map(item => (
-            <div key={item.id}>
-              {item.section && (
-                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-3 pt-4 pb-1">
-                  {item.section}
-                </div>
-              )}
-              <button
-                onClick={() => setTab(item.id)}
-                className={[
-                  'flex items-center gap-2 w-full px-4 py-1.5 text-xs text-left transition-colors',
-                  tab === item.id
-                    ? 'text-primary bg-primary/10'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-black/[0.04]',
-                ].join(' ')}
-              >
-                <item.icon className={`w-3.5 h-3.5 flex-shrink-0 ${tab === item.id ? 'text-primary' : 'text-muted-foreground'}`} />
-                {item.label}
-              </button>
-            </div>
-          ))}
+          {NAV
+            .filter(item => devToolsEnabled || !DEV_TOOLS_NAV_IDS.includes(item.id))
+            .map(item => (
+              <div key={item.id}>
+                {item.section && (
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide px-3 pt-4 pb-1">
+                    {item.section}
+                  </div>
+                )}
+                <button
+                  onClick={() => setTab(item.id)}
+                  className={[
+                    'flex items-center gap-2 w-full px-4 py-1.5 text-xs text-left transition-colors',
+                    tab === item.id
+                      ? 'text-primary bg-primary/10'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-black/[0.04]',
+                  ].join(' ')}
+                >
+                  <item.icon className={`w-3.5 h-3.5 flex-shrink-0 ${tab === item.id ? 'text-primary' : 'text-muted-foreground'}`} />
+                  {item.label}
+                </button>
+              </div>
+            ))}
         </div>
 
         {/* User footer */}
