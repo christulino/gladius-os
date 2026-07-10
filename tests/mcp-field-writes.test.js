@@ -2,11 +2,10 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { deleteWorkItems } from './helpers/cleanup.js'
+import { createTestOrg } from './helpers/testOrg.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const BEARER = process.env.GLADIUS_API_KEY || ''
-const ORG_ID = parseInt(process.env.GLADIUS_TEST_ORG_ID || '109', 10)
-const WIT_TYPE_ID = parseInt(process.env.GLADIUS_TEST_WIT_TYPE_ID || '138', 10)
 
 const api = createAuthApi()
 
@@ -23,11 +22,13 @@ async function bearerFetch(path, options = {}) {
 
 describe('MCP Field Writes + Exit Criteria', () => {
   let workItemId
+  let testOrg
 
   before(async () => {
+    testOrg = await createTestOrg()
     const { status, data } = await api('/work-items', {
       method: 'POST',
-      body: JSON.stringify({ title: 'Field writes test ' + Date.now(), work_item_type_id: WIT_TYPE_ID, owner_org_id: ORG_ID }),
+      body: JSON.stringify({ title: 'Field writes test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId }),
     })
     assert.equal(status, 201, `create work item failed: ${JSON.stringify(data)}`)
     workItemId = data.id
@@ -35,6 +36,7 @@ describe('MCP Field Writes + Exit Criteria', () => {
 
   after(async () => {
     await deleteWorkItems([workItemId])
+    await testOrg.teardown()
   })
 
   describe('GET /work-items/:id/exit-criteria', () => {
@@ -46,7 +48,7 @@ describe('MCP Field Writes + Exit Criteria', () => {
 
     it('each criterion has required fields', async () => {
       // Find any work item currently in-progress
-      const { data: searchData } = await api('/search?stage_class=in-progress&org_id=' + ORG_ID + '&limit=5')
+      const { data: searchData } = await api('/search?stage_class=in-progress&org_id=' + testOrg.orgId + '&limit=5')
       const inProgress = searchData?.rows ?? []
       if (!inProgress.length) return // skip if none in progress
 

@@ -7,6 +7,8 @@
  * On subsequent runs, logs in with the test account.
  */
 
+import { assertNotDogfoodWrite } from './dogfoodGuard.js'
+
 const BASE = process.env.API_URL || 'http://localhost:3000'
 
 const TEST_USER = {
@@ -63,6 +65,7 @@ export async function getSessionCookie() {
  */
 export function createAuthApi(basePath = `${BASE}/admin/api`) {
   return async function api(path, options = {}) {
+    assertNotDogfoodWrite(path, options)
     const cookie = await getSessionCookie()
     const res = await fetch(basePath + path, {
       headers: {

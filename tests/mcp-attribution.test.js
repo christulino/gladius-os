@@ -2,13 +2,12 @@ import { describe, it, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { deleteWorkItems } from './helpers/cleanup.js'
+import { createTestOrg } from './helpers/testOrg.js'
 import { TOOLS } from '../mcp/toolsManifest.js'
 
 const BASE = process.env.API_URL || 'http://localhost:3000'
 const BEARER = process.env.GLADIUS_API_KEY || ''
 const AGENT_USER_ID = parseInt(process.env.GLADIUS_AGENT_USER_ID || '0', 10)
-const ORG_ID = parseInt(process.env.GLADIUS_TEST_ORG_ID || '109', 10)
-const WIT_TYPE_ID = parseInt(process.env.GLADIUS_TEST_WIT_TYPE_ID || '138', 10)
 
 const api = createAuthApi()
 
@@ -22,14 +21,16 @@ async function bearerFetch(path, options = {}) {
 
 describe('MCP Attribution', () => {
   let workItemId
+  let testOrg
 
   // Skip Bearer-specific tests when no API key is configured
   const skipBearer = !BEARER || !AGENT_USER_ID
 
   before(async () => {
+    testOrg = await createTestOrg()
     const { status, data } = await api('/work-items', {
       method: 'POST',
-      body: JSON.stringify({ title: 'Attribution test ' + Date.now(), work_item_type_id: WIT_TYPE_ID, owner_org_id: ORG_ID }),
+      body: JSON.stringify({ title: 'Attribution test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId }),
     })
     assert.equal(status, 201, `create work item failed: ${JSON.stringify(data)}`)
     workItemId = data.id
@@ -37,6 +38,7 @@ describe('MCP Attribution', () => {
 
   after(async () => {
     await deleteWorkItems([workItemId])
+    await testOrg.teardown()
   })
 
   it('sets author_id from Bearer token caller', async () => {
