@@ -253,7 +253,6 @@ function CatalogSection({ orgId, setTab }) {
   const { data, loading, error, reload } = useApi(() => api.serviceLibrary(orgId), [orgId])
   const { data: workflowsData } = useApi(() => api.workflows())
   const { data: classesData } = useApi(() => api.witClasses())
-  const { data: catalogData, reload: reloadCatalog } = useApi(() => api.catalogItems(orgId), [orgId])
   const [adding, setAdding] = useState(false)
   const [addClassId, setAddClassId] = useState('')
   const [addName, setAddName] = useState('')
@@ -265,11 +264,6 @@ function CatalogSection({ orgId, setTab }) {
   const rows = data?.rows || []
   const workflows = workflowsData?.rows || []
   const classes = classesData?.rows || []
-  const catalogItems = catalogData?.rows || []
-
-  // Map type_id → catalog item for quick lookup
-  const catalogByTypeId = {}
-  for (const ci of catalogItems) catalogByTypeId[ci.work_item_type_id] = ci
 
   const grouped = {}
   for (const r of rows) {
@@ -369,8 +363,6 @@ function CatalogSection({ orgId, setTab }) {
                 onSuspend={suspendType}
                 onChangeWorkflow={changeWorkflow}
                 setTab={setTab}
-                catalogItem={catalogByTypeId[t.id]}
-                onCatalogUpdate={() => { reload(); reloadCatalog() }}
               />
             ))}
           </div>
@@ -380,48 +372,9 @@ function CatalogSection({ orgId, setTab }) {
   )
 }
 
-function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTab, catalogItem, onCatalogUpdate }) {
+function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTab }) {
   const [expanded, setExpanded] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [slugDraft, setSlugDraft] = useState(catalogItem?.external_slug || '')
-  const [publishing, setPublishing] = useState(false)
-
-  const formUrl = catalogItem?.external_slug
-    ? `${window.location.origin}/intake/${catalogItem.external_slug}`
-    : null
-
-  async function togglePublicForm() {
-    setPublishing(true)
-    try {
-      if (catalogItem) {
-        // Toggle is_external
-        await api.updateCatalogItem(catalogItem.id, { is_external: !catalogItem.is_external })
-      } else {
-        // Create new catalog item with external access
-        const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-        await api.createCatalogItem({
-          name: t.name,
-          description: t.description || '',
-          owner_org_id: t.owner_org_id,
-          work_item_type_id: t.id,
-          is_internal: true,
-          is_external: true,
-          external_slug: slug,
-        })
-        setSlugDraft(slug)
-      }
-      onCatalogUpdate?.()
-    } catch (err) { console.error(err) }
-    finally { setPublishing(false) }
-  }
-
-  async function updateSlug() {
-    if (!catalogItem || !slugDraft.trim()) return
-    try {
-      await api.updateCatalogItem(catalogItem.id, { external_slug: slugDraft.trim() })
-      onCatalogUpdate?.()
-    } catch (err) { console.error(err) }
-  }
 
   return (
     <div className="border border-border/50 rounded">
@@ -439,10 +392,6 @@ function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTa
         )}
 
         <span className="text-xs font-medium flex-1 truncate">{t.name}</span>
-
-        {catalogItem?.is_external && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary flex-shrink-0">Form</span>
-        )}
 
         {t.key_prefix && (
           <span className="text-[10px] text-muted-foreground flex-shrink-0">{t.key_prefix}.*</span>
@@ -479,58 +428,6 @@ function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTa
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Prefix</span>
             <span className="text-xs">{t.key_prefix || '—'}</span>
-          </div>
-
-          {/* Public Intake Form */}
-          <div className="border-t border-border/30 pt-2 mt-2 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Intake</span>
-              <Switch
-                checked={catalogItem?.is_external || false}
-                onCheckedChange={togglePublicForm}
-                disabled={publishing}
-              />
-              <span className="text-xs text-muted-foreground flex-1">
-                {catalogItem?.is_external ? 'Public form enabled' : 'No public form'}
-              </span>
-            </div>
-
-            {catalogItem?.is_external && (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Slug</span>
-                  <input
-                    className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs"
-                    value={slugDraft}
-                    onChange={e => setSlugDraft(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                    onBlur={updateSlug}
-                    onKeyDown={e => e.key === 'Enter' && updateSlug()}
-                    placeholder="url-slug"
-                  />
-                </div>
-                {formUrl && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-16 flex-shrink-0">URL</span>
-                    <a
-                      href={formUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-accent hover:underline truncate"
-                    >
-                      {formUrl}
-                    </a>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs h-6 flex-shrink-0"
-                      onClick={() => navigator.clipboard.writeText(formUrl)}
-                    >
-                      Copy
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
           <div className="flex items-center gap-2 pt-1">
