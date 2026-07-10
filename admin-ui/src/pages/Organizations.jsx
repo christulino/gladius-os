@@ -10,6 +10,7 @@ import { LoadingState, ErrorState } from '@/components/Panel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import OrgContextLibrary from './OrgContextLibrary'
 import OrgAiModels from './OrgAiModels'
+import { isMultiOrgEnabled } from '@/lib/appConfig'
 
 // Org type → dot color (hex)
 const ORG_TYPE_DOT = {
@@ -252,7 +253,6 @@ function CatalogSection({ orgId, setTab }) {
   const { data, loading, error, reload } = useApi(() => api.serviceLibrary(orgId), [orgId])
   const { data: workflowsData } = useApi(() => api.workflows())
   const { data: classesData } = useApi(() => api.witClasses())
-  const { data: catalogData, reload: reloadCatalog } = useApi(() => api.catalogItems(orgId), [orgId])
   const [adding, setAdding] = useState(false)
   const [addClassId, setAddClassId] = useState('')
   const [addName, setAddName] = useState('')
@@ -264,11 +264,6 @@ function CatalogSection({ orgId, setTab }) {
   const rows = data?.rows || []
   const workflows = workflowsData?.rows || []
   const classes = classesData?.rows || []
-  const catalogItems = catalogData?.rows || []
-
-  // Map type_id → catalog item for quick lookup
-  const catalogByTypeId = {}
-  for (const ci of catalogItems) catalogByTypeId[ci.work_item_type_id] = ci
 
   const grouped = {}
   for (const r of rows) {
@@ -368,8 +363,6 @@ function CatalogSection({ orgId, setTab }) {
                 onSuspend={suspendType}
                 onChangeWorkflow={changeWorkflow}
                 setTab={setTab}
-                catalogItem={catalogByTypeId[t.id]}
-                onCatalogUpdate={() => { reload(); reloadCatalog() }}
               />
             ))}
           </div>
@@ -379,48 +372,9 @@ function CatalogSection({ orgId, setTab }) {
   )
 }
 
-function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTab, catalogItem, onCatalogUpdate }) {
+function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTab }) {
   const [expanded, setExpanded] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [slugDraft, setSlugDraft] = useState(catalogItem?.external_slug || '')
-  const [publishing, setPublishing] = useState(false)
-
-  const formUrl = catalogItem?.external_slug
-    ? `${window.location.origin}/intake/${catalogItem.external_slug}`
-    : null
-
-  async function togglePublicForm() {
-    setPublishing(true)
-    try {
-      if (catalogItem) {
-        // Toggle is_external
-        await api.updateCatalogItem(catalogItem.id, { is_external: !catalogItem.is_external })
-      } else {
-        // Create new catalog item with external access
-        const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-        await api.createCatalogItem({
-          name: t.name,
-          description: t.description || '',
-          owner_org_id: t.owner_org_id,
-          work_item_type_id: t.id,
-          is_internal: true,
-          is_external: true,
-          external_slug: slug,
-        })
-        setSlugDraft(slug)
-      }
-      onCatalogUpdate?.()
-    } catch (err) { console.error(err) }
-    finally { setPublishing(false) }
-  }
-
-  async function updateSlug() {
-    if (!catalogItem || !slugDraft.trim()) return
-    try {
-      await api.updateCatalogItem(catalogItem.id, { external_slug: slugDraft.trim() })
-      onCatalogUpdate?.()
-    } catch (err) { console.error(err) }
-  }
 
   return (
     <div className="border border-border/50 rounded">
@@ -438,10 +392,6 @@ function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTa
         )}
 
         <span className="text-xs font-medium flex-1 truncate">{t.name}</span>
-
-        {catalogItem?.is_external && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary flex-shrink-0">Form</span>
-        )}
 
         {t.key_prefix && (
           <span className="text-[10px] text-muted-foreground flex-shrink-0">{t.key_prefix}.*</span>
@@ -478,58 +428,6 @@ function CatalogTypeRow({ type: t, workflows, onSuspend, onChangeWorkflow, setTa
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Prefix</span>
             <span className="text-xs">{t.key_prefix || '—'}</span>
-          </div>
-
-          {/* Public Intake Form */}
-          <div className="border-t border-border/30 pt-2 mt-2 space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Intake</span>
-              <Switch
-                checked={catalogItem?.is_external || false}
-                onCheckedChange={togglePublicForm}
-                disabled={publishing}
-              />
-              <span className="text-xs text-muted-foreground flex-1">
-                {catalogItem?.is_external ? 'Public form enabled' : 'No public form'}
-              </span>
-            </div>
-
-            {catalogItem?.is_external && (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground w-16 flex-shrink-0">Slug</span>
-                  <input
-                    className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs"
-                    value={slugDraft}
-                    onChange={e => setSlugDraft(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                    onBlur={updateSlug}
-                    onKeyDown={e => e.key === 'Enter' && updateSlug()}
-                    placeholder="url-slug"
-                  />
-                </div>
-                {formUrl && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground w-16 flex-shrink-0">URL</span>
-                    <a
-                      href={formUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-accent hover:underline truncate"
-                    >
-                      {formUrl}
-                    </a>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-xs h-6 flex-shrink-0"
-                      onClick={() => navigator.clipboard.writeText(formUrl)}
-                    >
-                      Copy
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
           <div className="flex items-center gap-2 pt-1">
@@ -1675,56 +1573,67 @@ export default function Organizations({ setTab }) {
   const [selectedId, setSelectedId] = useState(null)
   const [section, setSection] = useState('settings')
   const [creating, setCreating] = useState(false)
+  const multiOrg = isMultiOrgEnabled()
 
-  const tree = useMemo(() => {
+  // Single-org mode: the org-tree navigation is only meaningful across
+  // multiple orgs, and the system org is infrastructure, not a workspace —
+  // so Org Center collapses to the one user-facing org's settings surface.
+  const visibleRows = useMemo(() => {
     if (!data?.rows) return []
-    return buildOrgTree(data.rows)
-  }, [data])
+    return multiOrg ? data.rows : data.rows.filter(o => o.org_type !== 'system')
+  }, [data, multiOrg])
+
+  const tree = useMemo(() => buildOrgTree(visibleRows), [visibleRows])
 
   const orgsById = useMemo(() => {
-    if (!data?.rows) return {}
     const m = {}
-    for (const o of data.rows) m[o.id] = o
+    for (const o of visibleRows) m[o.id] = o
     return m
-  }, [data])
+  }, [visibleRows])
 
   const selectedOrg = selectedId ? orgsById[selectedId] : null
+  const showTree = multiOrg || visibleRows.length > 1
 
-  // Auto-select first org
+  // Auto-select first visible org
   useEffect(() => {
-    if (!selectedId && data?.rows?.length) {
-      setSelectedId(data.rows[0].id)
+    if (!selectedId && visibleRows.length) {
+      setSelectedId(visibleRows[0].id)
     }
-  }, [data, selectedId])
+  }, [visibleRows, selectedId])
 
   return (
     <>
       <div className="flex h-full min-h-0">
-        {/* Compact tree sidebar */}
-        <div className="w-[220px] flex-shrink-0 border-r border-border bg-card flex flex-col min-h-0">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border flex-shrink-0">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Organizations</span>
-            <Button size="sm" variant="outline" className="text-xs h-6 px-2" onClick={() => setCreating(true)}>+</Button>
+        {/* Compact tree sidebar (hidden in single-org mode) */}
+        {showTree && (
+          <div className="w-[220px] flex-shrink-0 border-r border-border bg-card flex flex-col min-h-0">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border flex-shrink-0">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Organizations</span>
+              <Button size="sm" variant="outline" className="text-xs h-6 px-2" onClick={() => setCreating(true)}>+</Button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {loading ? <LoadingState /> :
+               error ? <ErrorState message={error} /> :
+               tree.map(node => (
+                 <CompactTreeNode key={node.id} node={node} selectedId={selectedId} onSelect={setSelectedId} />
+               ))
+              }
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto py-1">
-            {loading ? <LoadingState /> :
-             error ? <ErrorState message={error} /> :
-             tree.map(node => (
-               <CompactTreeNode key={node.id} node={node} selectedId={selectedId} onSelect={setSelectedId} />
-             ))
-            }
-          </div>
-        </div>
+        )}
 
         {/* Detail area */}
-        <OrgDetail
-          key={selectedId}
-          org={selectedOrg}
-          section={section}
-          setSection={setSection}
-          onSaved={reload}
-          setTab={setTab}
-        />
+        {!showTree && loading ? <LoadingState /> :
+         !showTree && error ? <ErrorState message={error} /> : (
+          <OrgDetail
+            key={selectedId}
+            org={selectedOrg}
+            section={section}
+            setSection={setSection}
+            onSaved={reload}
+            setTab={setTab}
+          />
+        )}
       </div>
 
       <FormDrawer

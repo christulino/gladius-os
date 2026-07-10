@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { isMultiOrgEnabled } from '@/lib/appConfig'
 
 function buildOrgTree(orgs) {
   const sorted = [...orgs].sort((a, b) => a.name.localeCompare(b.name))
@@ -38,6 +39,17 @@ export function OrgSelector({ orgs, selectedId, onChange }) {
 
   const selectedOrg = orgs.find(o => o.id === selectedId)
   const label = selectedOrg?.name || 'Select org...'
+
+  // Single-org mode (default): no tree/dropdown navigation, just the name.
+  // Still shown if there's genuinely more than one org to pick from, so a
+  // multi-org dataset never gets silently stranded behind the flag.
+  if (!isMultiOrgEnabled() && orgs.length <= 1) {
+    return (
+      <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-foreground min-w-[160px] max-w-[280px]">
+        <span className="truncate">{label}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="relative" ref={ref}>
