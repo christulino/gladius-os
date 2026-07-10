@@ -10,6 +10,7 @@ import { LoadingState, ErrorState } from '@/components/Panel'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import OrgContextLibrary from './OrgContextLibrary'
 import OrgAiModels from './OrgAiModels'
+import { isMultiOrgEnabled } from '@/lib/appConfig'
 
 // Org type → dot color (hex)
 const ORG_TYPE_DOT = {
@@ -1572,56 +1573,67 @@ export default function Organizations({ setTab }) {
   const [selectedId, setSelectedId] = useState(null)
   const [section, setSection] = useState('settings')
   const [creating, setCreating] = useState(false)
+  const multiOrg = isMultiOrgEnabled()
 
-  const tree = useMemo(() => {
+  // Single-org mode: the org-tree navigation is only meaningful across
+  // multiple orgs, and the system org is infrastructure, not a workspace —
+  // so Org Center collapses to the one user-facing org's settings surface.
+  const visibleRows = useMemo(() => {
     if (!data?.rows) return []
-    return buildOrgTree(data.rows)
-  }, [data])
+    return multiOrg ? data.rows : data.rows.filter(o => o.org_type !== 'system')
+  }, [data, multiOrg])
+
+  const tree = useMemo(() => buildOrgTree(visibleRows), [visibleRows])
 
   const orgsById = useMemo(() => {
-    if (!data?.rows) return {}
     const m = {}
-    for (const o of data.rows) m[o.id] = o
+    for (const o of visibleRows) m[o.id] = o
     return m
-  }, [data])
+  }, [visibleRows])
 
   const selectedOrg = selectedId ? orgsById[selectedId] : null
+  const showTree = multiOrg || visibleRows.length > 1
 
-  // Auto-select first org
+  // Auto-select first visible org
   useEffect(() => {
-    if (!selectedId && data?.rows?.length) {
-      setSelectedId(data.rows[0].id)
+    if (!selectedId && visibleRows.length) {
+      setSelectedId(visibleRows[0].id)
     }
-  }, [data, selectedId])
+  }, [visibleRows, selectedId])
 
   return (
     <>
       <div className="flex h-full min-h-0">
-        {/* Compact tree sidebar */}
-        <div className="w-[220px] flex-shrink-0 border-r border-border bg-card flex flex-col min-h-0">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border flex-shrink-0">
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Organizations</span>
-            <Button size="sm" variant="outline" className="text-xs h-6 px-2" onClick={() => setCreating(true)}>+</Button>
+        {/* Compact tree sidebar (hidden in single-org mode) */}
+        {showTree && (
+          <div className="w-[220px] flex-shrink-0 border-r border-border bg-card flex flex-col min-h-0">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border flex-shrink-0">
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Organizations</span>
+              <Button size="sm" variant="outline" className="text-xs h-6 px-2" onClick={() => setCreating(true)}>+</Button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {loading ? <LoadingState /> :
+               error ? <ErrorState message={error} /> :
+               tree.map(node => (
+                 <CompactTreeNode key={node.id} node={node} selectedId={selectedId} onSelect={setSelectedId} />
+               ))
+              }
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto py-1">
-            {loading ? <LoadingState /> :
-             error ? <ErrorState message={error} /> :
-             tree.map(node => (
-               <CompactTreeNode key={node.id} node={node} selectedId={selectedId} onSelect={setSelectedId} />
-             ))
-            }
-          </div>
-        </div>
+        )}
 
         {/* Detail area */}
-        <OrgDetail
-          key={selectedId}
-          org={selectedOrg}
-          section={section}
-          setSection={setSection}
-          onSaved={reload}
-          setTab={setTab}
-        />
+        {!showTree && loading ? <LoadingState /> :
+         !showTree && error ? <ErrorState message={error} /> : (
+          <OrgDetail
+            key={selectedId}
+            org={selectedOrg}
+            section={section}
+            setSection={setSection}
+            onSaved={reload}
+            setTab={setTab}
+          />
+        )}
       </div>
 
       <FormDrawer
