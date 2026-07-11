@@ -1,30 +1,9 @@
 /**
  * runtime/rateLimiter.js
- * Two primitives used by the delivery worker:
- *   - HostRateLimiter: in-memory sliding window keyed by host
+ * Primitives used by the delivery worker:
  *   - Semaphore: bounded concurrency
+ *   - checkUserChannelRate: per-(user, channel) send rate check
  */
-
-export class HostRateLimiter {
-  constructor({ windowMs, cap }) {
-    this.windowMs = windowMs
-    this.cap = cap
-    this.buckets = new Map()
-  }
-  allow(host) {
-    const now = Date.now()
-    const cutoff = now - this.windowMs
-    const bucket = this.buckets.get(host) ?? []
-    const kept = bucket.filter(t => t > cutoff)
-    if (kept.length >= this.cap) {
-      this.buckets.set(host, kept)
-      return false
-    }
-    kept.push(now)
-    this.buckets.set(host, kept)
-    return true
-  }
-}
 
 export class Semaphore {
   constructor(n) {
@@ -65,4 +44,4 @@ export async function checkUserChannelRate({ query, userId, channel, perMinute, 
   return { allowed: true }
 }
 
-export default { HostRateLimiter, Semaphore, checkUserChannelRate }
+export default { Semaphore, checkUserChannelRate }
