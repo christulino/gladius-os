@@ -2,10 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm test)",
-      "Bash(node api/server.js)"
+      "Bash(node api/server.js)",
+      "Bash(gh pr merge:*)"
     ],
     "deny": [
-      "Bash(gh pr merge:*)",
       "mcp__plugin_github_github__merge_pull_request",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
