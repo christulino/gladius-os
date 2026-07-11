@@ -199,7 +199,7 @@ export async function translate({ prompt, userContext }) {
     totalOut += retryResp.usage?.output_tokens ?? 0
     const retryText = extractText(retryResp)
     if (!looksLikeFilters(retryText)) {
-      await logUsage(userContext.userId, prompt.length, totalIn, totalOut, 'non_jql', 1)
+      await logUsage(userContext.userId, prompt.length, totalIn, totalOut, 'invalid_output', 1)
       throw new TranslateError('TRANSLATION_FAILED', 'output was not a valid filter object')
     }
     text = retryText

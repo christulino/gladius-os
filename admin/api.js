@@ -106,12 +106,12 @@ const ALLOWED_TABLES = {
   'runtime.work_item_links':                'runtime',
 }
 
-// JQL reserved-key validator. Custom field keys must not collide with the
-// 28 native JQL identifiers seeded in blueprint.reserved_field_keys.
+// Reserved-key validator. Custom field keys must not collide with the
+// 28 native search field identifiers seeded in blueprint.reserved_field_keys.
 async function assertNotReservedFieldKey(fieldKey) {
   const r = await query('SELECT 1 FROM blueprint.reserved_field_keys WHERE field_key = $1', [fieldKey])
   if (r.rowCount > 0) {
-    const err = new Error(`'${fieldKey}' is a reserved JQL identifier and cannot be used as a custom field key`)
+    const err = new Error(`'${fieldKey}' is a reserved field key and cannot be used as a custom field key`)
     err.status = 400
     err.code = 'RESERVED_FIELD_KEY'
     err.expose = true
