@@ -3,13 +3,13 @@
  * Assembles the Kanban board data set.
  *
  * Execution pattern:
- *   Step 1 — Neo4j:       resolve which org URIs to include
+ *   Step 1 — PostgreSQL:  resolve which org URIs to include (recursive CTE)
  *   Step 2 — PostgreSQL:  fetch active work items for those orgs
  *   Step 3 — PostgreSQL:  fetch stage and service class metadata for columns/swimlanes
  *   Step 4 — Application: group into 2D grid structure
  *
- * Neo4j handles the hierarchy traversal.
- * PostgreSQL handles the data — fast with the composite board index.
+ * PostgreSQL handles both the hierarchy traversal and the data — fast with
+ * the composite board index.
  *
  * Usage:
  *   import { getBoardData } from '../board/boardQuery.js'
@@ -43,7 +43,7 @@ export async function getBoardData({
   filters = {},
   includeDescendants = true,
 }) {
-  // Step 1 — Neo4j: which orgs to include
+  // Step 1 — PostgreSQL: which orgs to include (recursive CTE)
   const orgUris = includeDescendants
     ? await getDescendantOrgUris(orgUri)
     : [orgUri]

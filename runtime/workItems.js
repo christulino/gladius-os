@@ -4,7 +4,6 @@
  *
  * Design decisions:
  *   - Missing required fields → pending state, not rejection
- *   - Neo4j sync is async via runtime.events (neo4j-sync subscriber)
  *   - canCreate() is stubbed — visibility rules engine plugs in later
  *   - No hard deletes — work items are cancelled, not destroyed
  */
@@ -358,7 +357,7 @@ export async function updateWorkItemFields(workItemUri, fieldValues, userId) {
     workItemUri,
   ])
 
-  // Emit work_item.edited event so neo4j-sync reindexes.
+  // Emit work_item.edited event so subscribers (search-index, audit-log) reindex.
   // This function runs in `completeWorkItem` / field-update flow — a short-lived
   // tx of its own is fine since we are outside the main transaction here.
   const evtClient = await getClient()
