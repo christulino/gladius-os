@@ -45,8 +45,7 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 - Derived class of service (never user-selected — computed from `is_expedited`, `due_date`, `work_nature`)
 
 **Search**
-- JQL (Jira Query Language-compatible) with a PEG grammar compiler
-- Natural language → JQL translation via Claude Haiku
+- Natural language → structured filter translation via Claude Haiku
 - Saved filters
 - Full-text search on titles, descriptions, comments, custom fields
 
@@ -77,7 +76,7 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 | Database | PostgreSQL (source of truth) |
 | Frontend | React 18 + Vite + shadcn/ui + Tailwind CSS |
 | Auth | express-session + connect-pg-simple |
-| AI | Anthropic SDK (Claude Haiku for NL→JQL, configurable model for playbooks) |
+| AI | Anthropic SDK (Claude Haiku for NL→structured-filter search, configurable model for playbooks) |
 | MCP | `@modelcontextprotocol/sdk` stdio transport |
 
 ---
@@ -131,7 +130,7 @@ Copy `.env.example` to `.env`. Key variables:
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `SESSION_SECRET` | Yes | Express session secret (any random string) |
 | `GLADIUS_ENCRYPTION_KEY` | Yes | 32-byte hex key for encrypting AI model API keys |
-| `ANTHROPIC_API_KEY` | No | Enables NL→JQL translation and default playbook execution |
+| `ANTHROPIC_API_KEY` | No | Enables NL→structured-filter search translation and default playbook execution |
 | `GLADIUS_AGENT_USER_ID` | No | User ID for MCP server write operations |
 | `FLOWOS_MAX_ATTACHMENT_MB` | No | Per-file attachment size limit (default: 25) |
 

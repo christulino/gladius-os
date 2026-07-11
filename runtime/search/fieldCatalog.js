@@ -117,14 +117,7 @@ export async function buildFieldCatalog(userCtx) {
     values: r.lookup_list_id ? (lookupValues.get(r.lookup_list_id) || []) : undefined,
   }))
 
-  const compilerInput = rows.map(r => ({
-    field_key: r.field_key,
-    field_type: r.field_type,
-    org_id: r.org_id,
-    lookup_list_id: r.lookup_list_id,
-  }))
-
-  const value = { native: NATIVE_FIELDS, custom, compilerInput }
+  const value = { native: NATIVE_FIELDS, custom }
   CACHE.set(key, { value, expiresAt: Date.now() + TTL_MS })
   return value
 }
