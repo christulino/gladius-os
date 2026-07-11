@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { notificationsApi } from '@/lib/api'
 
-const CHANNELS = ['in_app', 'email', 'webhook', 'agent']
+const CHANNELS = ['in_app', 'agent']
 const RELATIONSHIPS = ['owns', 'working_on', 'reviewing', 'watching', 'requester', 'mentioned']
 
 export default function SettingsNotifications() {
@@ -66,16 +66,7 @@ export default function SettingsNotifications() {
                 />
               </div>
 
-              {ch.channel === 'email' && (
-                <input
-                  className="mt-2 w-full text-xs border border-border rounded px-1.5 py-0.5 bg-background"
-                  placeholder="email@example.com"
-                  defaultValue={ch.config?.email_to || ''}
-                  onBlur={e => saveChannel(ch.channel, { config: { ...ch.config, email_to: e.target.value } })}
-                />
-              )}
-
-              {(ch.channel === 'webhook' || ch.channel === 'agent') && (
+              {ch.channel === 'agent' && (
                 <>
                   <input
                     className="mt-2 w-full text-xs border border-border rounded px-1.5 py-0.5 bg-background"
@@ -93,11 +84,6 @@ export default function SettingsNotifications() {
                   {!ch.is_enabled && ch.config?.url && (
                     <div className="text-xs mt-1 text-destructive">Awaiting ownership verification.</div>
                   )}
-                </>
-              )}
-
-              {ch.channel === 'agent' && (
-                <>
                   <textarea
                     className="mt-1 w-full text-xs border border-border rounded px-1.5 py-0.5 bg-background resize-y"
                     placeholder="System prompt"
