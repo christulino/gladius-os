@@ -75,7 +75,6 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 | Runtime | Node.js v24 (ESM) |
 | API | Express |
 | Database | PostgreSQL (source of truth) |
-| Graph | Neo4j (optional — sync queue built, drain not yet implemented) |
 | Frontend | React 18 + Vite + shadcn/ui + Tailwind CSS |
 | Auth | express-session + connect-pg-simple |
 | AI | Anthropic SDK (Claude Haiku for NL→JQL, configurable model for playbooks) |

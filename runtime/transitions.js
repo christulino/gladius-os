@@ -4,14 +4,13 @@
  *
  * Two-phase approach:
  *   Phase 1: prepareTransition()  — validate, evaluate criteria, collect prompts
- *   Phase 2: executeTransition()  — commit the transition, run actions, sync graph
+ *   Phase 2: executeTransition()  — commit the transition, run actions
  *
  * Design decisions locked:
  *   - API criteria failures BLOCK the transition
  *   - Optional spawn prompts shown BEFORE transition fires
  *   - Spawn action failures ROLL BACK the entire transition
  *   - api_call actions are fire-and-forget AFTER the transaction commits
- *   - Neo4j sync is synchronous after commit
  *
  * Usage:
  *   import { prepareTransition, executeTransition } from '../runtime/transitions.js'
@@ -295,7 +294,7 @@ export async function executeTransition(workItemId, toStageId, userId, options =
   // POST-TRANSACTION — fire and forget, never rolls back the transition
   // =========================================================================
 
-  // Nudge the event processor so subscribers (neo4j-sync, audit-log) drain now
+  // Nudge the event processor so subscribers (search-index, audit-log, notifications) drain now
   nudgeAfterCommit()
 
   // Fire playbook executor — non-blocking side effect, never rolls back the transition
@@ -440,7 +439,7 @@ async function executeSpawnAction(client, action, workItem, historyId, now) {
     ) VALUES ($1, 'spawn', $2, true, $3)
   `, [historyId, now, spawned.id])
 
-  // Emit spawn fired event (so neo4j-sync creates the child node)
+  // Emit spawn fired event (for subscribers: audit-log, notifications)
   await emitEvent(client, {
     eventType: 'transition_action.spawn_fired',
     entityId:  workItem.id,
@@ -456,7 +455,7 @@ async function executeSpawnAction(client, action, workItem, historyId, now) {
     },
   })
 
-  // Emit work_item.created for the spawned item so neo4j-sync picks it up
+  // Emit work_item.created for the spawned item so subscribers (search-index, audit-log) pick it up
   await emitEvent(client, {
     eventType: 'work_item.created',
     entityId:  spawned.id,
