@@ -19,10 +19,6 @@ import { healthCheck as pgHealth }    from '../db/postgres.js'
 import { createSessionMiddleware, requireAuth } from '../core/auth.js'
 import { DEV_TOOLS_ENABLED, requireDevTools }   from '../core/devTools.js'
 import authRoutes       from './routes/auth.js'
-import workItemRoutes   from './routes/workItems.js'
-import orgRoutes        from './routes/organizations.js'
-import catalogRoutes    from './routes/catalog.js'
-import boardRoutes      from './routes/board.js'
 import adminApiRoutes   from '../admin/api.js'
 import simulationRoutes from './routes/simulation.js'
 import { startProcessor } from '../runtime/eventProcessor.js'
@@ -67,10 +63,6 @@ app.use((req, _res, next) => {
 app.use('/auth',             authRoutes)
 
 // All API routes require authentication
-app.use('/v1/work-items',        requireAuth, workItemRoutes)
-app.use('/v1/organizations',     requireAuth, orgRoutes)
-app.use('/v1/catalog',           requireAuth, catalogRoutes)
-app.use('/v1/board',             requireAuth, boardRoutes)
 app.use('/admin/api/simulation', requireDevTools, requireAuth, simulationRoutes)
 app.use('/admin/api',            requireAuth, adminApiRoutes)
 
