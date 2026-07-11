@@ -13,9 +13,9 @@
 --     delivery outbox — see runtime/subscribers/notifications.js
 --     fetchEnabledOutOfBandChannels, which only ever selects channel='agent').
 --
--- Idempotent: legacy rows (if any exist) are re-labelled to 'agent' before
--- the constraint is added, and the constraint is dropped (IF EXISTS) before
--- being re-added with the same definition, so this is safe to re-run.
+-- Idempotent: legacy rows (if any exist) are deleted before the constraint
+-- is added, and the constraint is dropped (IF EXISTS) before being re-added
+-- with the same definition, so this is safe to re-run.
 
 -- =============================================================================
 -- blueprint.user_notification_channels
@@ -25,10 +25,12 @@ ALTER TABLE blueprint.user_notification_channels
   DROP CONSTRAINT IF EXISTS user_notification_channels_channel_check;
 
 -- No live code ever wrote 'email'/'webhook' rows, but if any exist (e.g. from
--- manual testing or an older build), disable and re-label them rather than
--- deleting user preference rows outright.
-UPDATE blueprint.user_notification_channels
-  SET channel = 'agent'
+-- manual testing or an older build), delete them. Deletion is correct here:
+-- email/webhook were never delivered, so these rows carry no real user
+-- intent, and re-labelling to 'agent' would both fabricate an opt-in the
+-- user never made and collide with the (user_id, channel) PRIMARY KEY
+-- whenever the user already holds an 'agent' row (or both legacy rows).
+DELETE FROM blueprint.user_notification_channels
   WHERE channel IN ('email', 'webhook');
 
 ALTER TABLE blueprint.user_notification_channels
