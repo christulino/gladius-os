@@ -428,8 +428,6 @@ router.get('/work-items', async (req, res, next) => {
         s.name    AS current_stage_name,
         s.stage_class AS current_stage_class,
         s.is_terminal AS is_terminal,
-        sc.name   AS service_class_name,
-        sc.color  AS service_class_color,
         o.name    AS org_name,
         o.slug    AS org_slug,
         wi.field_values,
@@ -439,7 +437,6 @@ router.get('/work-items', async (req, res, next) => {
       JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
       JOIN blueprint.stages s            ON s.id   = wi.current_stage_id
       JOIN blueprint.organizations o     ON o.id   = wi.owner_org_id
-      LEFT JOIN blueprint.service_classes sc ON sc.id = wi.service_class_id
       ORDER BY wi.id DESC
       LIMIT $1 OFFSET $2
     `, [limit, offset])
@@ -1755,19 +1752,6 @@ router.put('/workflows/:id/stages/reorder', async (req, res, next) => {
 // BOARD
 // =============================================================================
 
-router.get('/service-classes', async (req, res, next) => {
-  try {
-    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
-    const result = await query(`
-      SELECT id, name, color, icon, priority_order, can_bypass_wip
-      FROM blueprint.service_classes
-      WHERE is_active = true AND ($1::int IS NULL OR org_id = $1)
-      ORDER BY priority_order ASC
-    `, [orgId])
-    res.json({ rows: result.rows, count: result.rowCount })
-  } catch (err) { next(err) }
-})
-
 router.get('/service-library', async (req, res, next) => {
   try {
     const orgId = parseInt(req.query.org_id)
@@ -1803,23 +1787,17 @@ router.get('/board', async (req, res, next) => {
     const org = orgResult.rows[0]
     const retentionDays = org.done_retention_days ?? 14
 
-    // Run items, stages, service classes, and org WIP limits in parallel
+    // Run items, stages, and org WIP limits in parallel
     const currentUserId = req.userId ?? null
-    const [itemsResult, stagesResult, scResult, wipResult] = await Promise.all([
+    const [itemsResult, stagesResult, wipResult] = await Promise.all([
       query(`
         SELECT wi.id, wi.uri, wi.title, wi.spawn_state, wi.current_stage_id, wi.workflow_id,
                wi.entered_current_stage_at, wi.created_at, wi.updated_at, wi.display_key,
-               wi.service_class_id, wi.description, wi.current_substate,
+               wi.description, wi.current_substate,
                wi.due_date, wi.is_expedited, wi.work_nature,
                wi.priority, wi.tags, wi.estimate, wi.estimate_unit, wi.started_at, wi.resolved_at, wi.origin,
                wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
                s.name AS current_stage_name, s.stage_class AS current_stage_class,
-               CASE
-                 WHEN wi.is_expedited = true THEN 'expedite'
-                 WHEN wi.due_date IS NOT NULL THEN 'fixed_date'
-                 WHEN wi.work_nature = 'improvement' THEN 'deferred'
-                 ELSE 'standard'
-               END AS derived_service_class,
                owner_rel.user_id AS owner_user_id,
                owner_user.display_name AS owner_display_name,
                COALESCE((
@@ -1869,12 +1847,6 @@ router.get('/board', async (req, res, next) => {
         AND s.is_active = true AND s.stage_class != 'cancelled'
         ORDER BY s.display_order ASC
       `, [orgId, retentionDays]),
-      query(`
-        SELECT id, name, color, icon, priority_order
-        FROM blueprint.service_classes
-        WHERE org_id = $1 AND is_active = true
-        ORDER BY priority_order ASC
-      `, [orgId]),
       query(`
         SELECT stage_name, wip_limit, enforcement_type
         FROM blueprint.org_wip_limits
@@ -1973,7 +1945,6 @@ router.get('/board', async (req, res, next) => {
       org,
       columns,
       items:           itemsResult.rows,
-      service_classes: scResult.rows,
       wip_limits:      wipLimits,
     })
   } catch (err) { next(err) }
@@ -1981,7 +1952,7 @@ router.get('/board', async (req, res, next) => {
 
 router.post('/work-items', async (req, res, next) => {
   try {
-    const { title, work_item_type_id, owner_org_id, service_class_id, description,
+    const { title, work_item_type_id, owner_org_id, description,
             due_date, is_expedited, work_nature, priority, tags, estimate, estimate_unit, origin, requester_id } = req.body
     if (!title?.trim())       return res.status(400).json({ error: 'title is required' })
     if (!work_item_type_id)   return res.status(400).json({ error: 'work_item_type_id is required' })
@@ -1991,7 +1962,6 @@ router.post('/work-items', async (req, res, next) => {
       title:              title.trim(),
       work_item_type_id:  parseInt(work_item_type_id),
       owner_org_id:       parseInt(owner_org_id),
-      service_class_id:   service_class_id ? parseInt(service_class_id) : undefined,
       description:        description?.trim() || undefined,
       due_date:           due_date || undefined,
       is_expedited:       !!is_expedited,
@@ -2327,20 +2297,14 @@ router.get('/work-items/:id', async (req, res, next) => {
         wi.spawn_state, wi.current_substate, wi.display_key, wi.sequence_number,
         wi.field_values, wi.pending_missing_fields,
         wi.parent_id, wi.created_at, wi.updated_at, wi.entered_current_stage_at,
-        wi.current_stage_id, wi.workflow_id, wi.service_class_id,
+        wi.current_stage_id, wi.workflow_id,
         wi.due_date, wi.is_expedited, wi.work_nature,
         wi.priority, wi.tags, wi.estimate, wi.estimate_unit, wi.started_at, wi.resolved_at, wi.origin, wi.requester_id,
         wi.acceptance_criteria, wi.work_item_type_id,
         wit.name AS work_item_type_name, wit.icon AS work_item_type_icon, wit.color AS work_item_type_color,
         wit.key_prefix,
         s.name AS current_stage_name, s.stage_class AS current_stage_class, s.is_terminal,
-        o.name AS org_name, o.slug AS org_slug, o.id AS owner_org_id,
-        CASE
-          WHEN wi.is_expedited = true THEN 'expedite'
-          WHEN wi.due_date IS NOT NULL THEN 'fixed_date'
-          WHEN wi.work_nature = 'improvement' THEN 'deferred'
-          ELSE 'standard'
-        END AS derived_service_class
+        o.name AS org_name, o.slug AS org_slug, o.id AS owner_org_id
       FROM runtime.work_items wi
       JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
       JOIN blueprint.stages s ON s.id = wi.current_stage_id
@@ -2452,8 +2416,8 @@ router.patch('/work-items/:id', async (req, res, next) => {
 router.post('/work-items/:id/substate', async (req, res, next) => {
   const workItemId = parseInt(req.params.id)
   const { substate } = req.body
-  if (!['active', 'blocked', 'waiting'].includes(substate)) {
-    return res.status(400).json({ error: 'substate must be "active", "blocked", or "waiting"' })
+  if (!['active', 'blocked'].includes(substate)) {
+    return res.status(400).json({ error: 'substate must be "active" or "blocked"' })
   }
 
   const client = await getClient()

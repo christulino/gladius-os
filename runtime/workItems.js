@@ -24,7 +24,6 @@ import { randomUUID }       from 'node:crypto'
  * @param {number}  params.work_item_type_id  - blueprint.work_item_types.id
  * @param {number}  params.owner_org_id       - blueprint.organizations.id
  * @param {string}  params.title              - required
- * @param {number}  [params.service_class_id] - defaults to Standard
  * @param {number}  [params.parent_id]        - runtime.work_items.id
  * @param {Object}  [params.field_values]     - { field_key: value }
  * @param {string}  [params.description]
@@ -36,7 +35,6 @@ export async function createWorkItem(params, userId) {
     work_item_type_id,
     owner_org_id,
     title,
-    service_class_id,
     parent_id,
     field_values = {},
     description,
@@ -111,31 +109,6 @@ export async function createWorkItem(params, userId) {
     throw new ValidationError(`No active workflow with entry stage found for work item type "${workItemType.name}"`)
   }
   const { workflow_id, entry_stage_id, entry_stage_name } = workflowResult.rows[0]
-
-  // =========================================================================
-  // RESOLVE SERVICE CLASS
-  // =========================================================================
-
-  let resolvedServiceClassId = service_class_id
-
-  if (!resolvedServiceClassId) {
-    // Default to Standard for this org
-    const scResult = await query(`
-      SELECT id FROM blueprint.service_classes
-      WHERE org_id = $1 AND name = 'Standard' AND is_active = true
-      LIMIT 1
-    `, [owner_org_id])
-    resolvedServiceClassId = scResult.rows[0]?.id || null
-  } else {
-    // Validate provided service class belongs to this org
-    const scResult = await query(
-      'SELECT id FROM blueprint.service_classes WHERE id = $1 AND org_id = $2 AND is_active = true',
-      [service_class_id, owner_org_id]
-    )
-    if (!scResult.rows.length) {
-      throw new ValidationError(`Service class ${service_class_id} not found for this org`)
-    }
-  }
 
   // =========================================================================
   // VALIDATE PARENT (if provided)
@@ -217,7 +190,7 @@ export async function createWorkItem(params, userId) {
       title.trim(),
       description || null,
       entry_stage_id,
-      resolvedServiceClassId,
+      null,            // service_class_id — class-of-service vocabulary cut (FEAT.25491); column retained, unwritten
       spawnState,
       parent_id || null,
       pendingMissingFields ? JSON.stringify(pendingMissingFields) : null,
@@ -263,7 +236,6 @@ export async function createWorkItem(params, userId) {
         current_stage_name:  entry_stage_name,
         current_substate:    workItem.current_substate,
         spawn_state:         workItem.spawn_state,
-        service_class:       'standard',
         sla_status:          'no_sla',
         due_date:            workItem.due_date,
         parent_id:           workItem.parent_id,

@@ -242,13 +242,6 @@ function FieldInput({ field, value, onChange }) {
   }
 }
 
-const SERVICE_CLASS_CONFIG = {
-  expedite:   { label: 'Expedite',   color: '#A33A25' },
-  fixed_date: { label: 'Fixed Date', color: '#9A7318' },
-  standard:   { label: 'Standard',   color: '#1E5C3A' },
-  deferred:   { label: 'Deferred',   color: '#6A6460' },
-}
-
 export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChange, onChanged }) {
   const [activeId, setActiveId] = useState(initialWorkItemId)
   const [item, setItem] = useState(null)
@@ -719,8 +712,6 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
   if (!item && !loading) return null
 
-  const cos = SERVICE_CLASS_CONFIG[item?.derived_service_class] || SERVICE_CLASS_CONFIG.standard
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent overlay={false}>
@@ -764,12 +755,6 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                 )}
                 <Badge variant="muted">{item.current_stage_name}</Badge>
                 <span className="text-xs text-muted-foreground italic">{item.work_item_type_name}</span>
-                <span
-                  className="text-xs px-1.5 py-0.5 rounded-full"
-                  style={{ background: `${cos.color}22`, color: cos.color }}
-                >
-                  {cos.label}
-                </span>
                 {item.current_substate === 'blocked' && <Badge variant="amber">blocked</Badge>}
               </div>
             </SheetHeader>
