@@ -901,7 +901,6 @@ function ExitConditionsPanel({ stageId, onChanged }) {
   const [addName, setAddName] = useState('')
   const [addDesc, setAddDesc] = useState('')
   const [addCondition, setAddCondition] = useState('')
-  const [addEndpoint, setAddEndpoint] = useState('')
 
   const criteria = data?.rows || []
 
@@ -918,10 +917,6 @@ function ExitConditionsPanel({ stageId, onChanged }) {
       if (addType === 'codified' && addCondition.trim()) {
         try { payload.codified_condition = JSON.parse(addCondition) } catch {}
       }
-      if (addType === 'api' && addEndpoint.trim()) {
-        payload.api_endpoint = addEndpoint.trim()
-        payload.api_method = 'GET'
-      }
       await api.createExitCriteria(payload)
       resetAddForm()
       reload()
@@ -934,7 +929,6 @@ function ExitConditionsPanel({ stageId, onChanged }) {
     setAddName('')
     setAddDesc('')
     setAddCondition('')
-    setAddEndpoint('')
     setAddType('manual')
   }
 
@@ -954,12 +948,11 @@ function ExitConditionsPanel({ stageId, onChanged }) {
     } catch (err) { console.error(err) }
   }
 
-  const tierLabel = { manual: 'Manual sign-off', codified: 'System check', api: 'API gate' }
-  const tierBadge = { manual: 'muted', codified: 'blue', api: 'amber' }
+  const tierLabel = { manual: 'Manual sign-off', codified: 'System check' }
+  const tierBadge = { manual: 'muted', codified: 'blue' }
   const tierDesc = {
     manual: 'Human acknowledges this condition is met before work can proceed.',
     codified: 'System evaluates a condition: required field, child items complete, checklist done.',
-    api: 'External system returns pass/fail via API call.',
   }
 
   return (
@@ -988,11 +981,6 @@ function ExitConditionsPanel({ stageId, onChanged }) {
               {c.codified_condition && (
                 <ConditionSummary condition={c.codified_condition} />
               )}
-              {c.api_endpoint && (
-                <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1">
-                  {c.api_method || 'GET'} {c.api_endpoint}
-                </div>
-              )}
               <div className="flex items-center gap-3 pt-0.5">
                 <button className="text-[10px] text-muted-foreground hover:text-foreground" onClick={() => toggleBlocking(c)}>
                   {c.is_blocking ? 'Make advisory' : 'Make blocking'}
@@ -1011,7 +999,7 @@ function ExitConditionsPanel({ stageId, onChanged }) {
 
             {/* Type selector */}
             <div className="flex gap-1">
-              {['manual', 'codified', 'api'].map(t => (
+              {['manual', 'codified'].map(t => (
                 <button
                   key={t}
                   onClick={() => setAddType(t)}
@@ -1066,15 +1054,6 @@ function ExitConditionsPanel({ stageId, onChanged }) {
                   onChange={e => setAddCondition(e.target.value)}
                 />
               </>
-            )}
-
-            {addType === 'api' && (
-              <input
-                className="w-full bg-background border border-border rounded px-2 py-1.5 text-xs"
-                placeholder="API endpoint URL"
-                value={addEndpoint}
-                onChange={e => setAddEndpoint(e.target.value)}
-              />
             )}
 
             <div className="flex items-center gap-2 pt-1">

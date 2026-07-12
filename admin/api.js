@@ -3725,8 +3725,7 @@ router.get('/exit-criteria', async (req, res, next) => {
 
     const result = await query(`
       SELECT id, uri, stage_id, name, description, criteria_tier, display_order,
-             codified_condition, api_endpoint, api_method, api_payload_template,
-             api_success_condition, api_timeout_seconds, is_blocking, is_active,
+             codified_condition, is_blocking, is_active,
              created_at, updated_at
       FROM blueprint.exit_criteria
       WHERE stage_id = $1
@@ -3737,17 +3736,24 @@ router.get('/exit-criteria', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// Exit criteria tiers a user is allowed to author. The 'api' tier (arbitrary
+// outbound fetch on transition, blocking on failure) was cut — DEBT.25494,
+// SSRF-shaped liability with zero solo use.
+const ALLOWED_CRITERIA_TIERS = ['manual', 'codified']
+
 // Create exit criteria
 router.post('/exit-criteria', async (req, res, next) => {
   try {
     const {
       stage_id, name, description, criteria_tier, codified_condition,
-      api_endpoint, api_method, api_payload_template, api_success_condition,
-      api_timeout_seconds, is_blocking, display_order
+      is_blocking, display_order
     } = req.body
 
     if (!stage_id || !name?.trim() || !criteria_tier) {
       return res.status(400).json({ error: 'stage_id, name, and criteria_tier are required' })
+    }
+    if (!ALLOWED_CRITERIA_TIERS.includes(criteria_tier)) {
+      return res.status(400).json({ error: `criteria_tier must be one of: ${ALLOWED_CRITERIA_TIERS.join(', ')}` })
     }
 
     const uri = generateUri('system', 'criteria')
@@ -3755,9 +3761,8 @@ router.post('/exit-criteria', async (req, res, next) => {
     const result = await query(`
       INSERT INTO blueprint.exit_criteria
         (uri, stage_id, name, description, criteria_tier, codified_condition,
-         api_endpoint, api_method, api_payload_template, api_success_condition,
-         api_timeout_seconds, is_blocking, display_order)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         is_blocking, display_order)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `, [
       uri,
@@ -3766,11 +3771,6 @@ router.post('/exit-criteria', async (req, res, next) => {
       description?.trim() || null,
       criteria_tier,
       codified_condition ? JSON.stringify(codified_condition) : null,
-      api_endpoint?.trim() || null,
-      api_method?.trim() || 'GET',
-      api_payload_template ? JSON.stringify(api_payload_template) : null,
-      api_success_condition ? JSON.stringify(api_success_condition) : null,
-      api_timeout_seconds ?? 10,
       is_blocking ?? true,
       display_order ?? 0,
     ])
@@ -3785,6 +3785,10 @@ router.patch('/exit-criteria/:id', async (req, res, next) => {
     const { name, description, criteria_tier, codified_condition, is_blocking, is_active, display_order } = req.body
     const fields = []
     const vals = []
+
+    if (criteria_tier !== undefined && !ALLOWED_CRITERIA_TIERS.includes(criteria_tier)) {
+      return res.status(400).json({ error: `criteria_tier must be one of: ${ALLOWED_CRITERIA_TIERS.join(', ')}` })
+    }
 
     if (name !== undefined)               { fields.push(`name = $${fields.length + 1}`);               vals.push(name.trim()) }
     if (description !== undefined)         { fields.push(`description = $${fields.length + 1}`);         vals.push(description?.trim() || null) }
