@@ -37,16 +37,6 @@ export default function WorkItems() {
       )},
     { accessorKey: 'spawn_state', header: 'State',
       cell: ({ getValue }) => <Badge variant={STATE_VARIANT[getValue()] ?? 'muted'}>{getValue()}</Badge> },
-    { accessorKey: 'service_class_name', header: 'Service Class',
-      cell: ({ row }) => {
-        const { service_class_color: color, service_class_name: name } = row.original
-        return (
-          <div className="flex items-center gap-1.5">
-            {color && <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />}
-            <span className="text-muted-foreground">{name ?? '—'}</span>
-          </div>
-        )
-      }},
     { accessorKey: 'org_slug', header: 'Org',
       cell: ({ getValue }) => <span className="text-muted-foreground">{getValue()}</span> },
     { accessorKey: 'created_at', header: 'Created',

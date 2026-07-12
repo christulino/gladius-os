@@ -2,13 +2,6 @@ import { useState, useEffect } from 'react'
 import { Bug, Sparkles, CheckSquare, Layers, FolderKanban, Headphones, AlertTriangle, FileText } from 'lucide-react'
 import { formatElapsed } from '@/lib/utils'
 
-const SERVICE_CLASS_CONFIG = {
-  expedite:   { label: 'Expedite',   color: '#A33A25', bg: '#A33A2518' },
-  fixed_date: { label: 'Fixed Date', color: '#9A7318', bg: '#9A731818' },
-  standard:   { label: 'Standard',   color: '#1E5C3A', bg: '#1E5C3A18' },
-  deferred:   { label: 'Deferred',   color: '#6A6460', bg: '#6A646018' },
-}
-
 const TYPE_ICON_MAP = {
   'Bug':              Bug,
   'Feature':          Sparkles,
@@ -31,7 +24,7 @@ function formatDueDate(iso) {
   return { label, overdue, urgent }
 }
 
-export function WorkItemCard({ item, onClick, onPull, isSelected, isChecked, selectMode }) {
+export function WorkItemCard({ item, onClick, isSelected, isChecked, selectMode }) {
   const [stageTime, setStageTime] = useState(() => formatElapsed(item.entered_current_stage_at))
   const [totalTime, setTotalTime] = useState(() => formatElapsed(item.created_at))
 
@@ -45,13 +38,10 @@ export function WorkItemCard({ item, onClick, onPull, isSelected, isChecked, sel
     return () => clearInterval(id)
   }, [item.entered_current_stage_at, item.created_at])
 
-  const cos = SERVICE_CLASS_CONFIG[item.derived_service_class] || SERVICE_CLASS_CONFIG.standard
   const isBlocked = item.current_substate === 'blocked'
-  const isWaiting = item.current_substate === 'waiting'
   const isPersonal = !item.owner_org_id
   const cornerRadius = isPersonal ? 'rounded-lg' : 'rounded-sm'
   const due = formatDueDate(item.due_date)
-  const showPull = onPull && isWaiting
 
   const checkedBorder = isChecked ? '2px solid hsl(var(--primary))' : null
   const selectedBorder = isSelected ? '2px solid hsl(var(--primary))' : null
@@ -82,22 +72,11 @@ export function WorkItemCard({ item, onClick, onPull, isSelected, isChecked, sel
       )}
 
       {/* Unread notification dot */}
-      {!selectMode && !showPull && item.unread_count > 0 && (
+      {!selectMode && item.unread_count > 0 && (
         <span
           className="absolute top-1 right-1 h-2 w-2 rounded-full bg-[hsl(var(--primary))]"
           title={`${item.unread_count} unread notification${item.unread_count === 1 ? '' : 's'}`}
         />
-      )}
-
-      {/* Pull arrow button (waiting items only, not in select mode) */}
-      {showPull && !selectMode && (
-        <span
-          onClick={e => { e.stopPropagation(); onPull() }}
-          className="absolute top-1 right-1 w-5 h-5 rounded flex items-center justify-center text-xs bg-primary/10 text-primary opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20 cursor-pointer"
-          title="Pull to active"
-        >
-          →
-        </span>
       )}
 
       {/* Row 1: icon + title + assignee */}

@@ -185,7 +185,6 @@ export const api = {
   // Board
   board:          (org_id) => apiFetch(`/board?org_id=${org_id}`),
   serviceLibrary: (org_id) => apiFetch(`/service-library?org_id=${org_id}`),
-  serviceClasses: (org_id) => apiFetch(`/service-classes${org_id ? `?org_id=${org_id}` : ''}`),
   createWorkItem: (data)   => apiFetch('/work-items', { method: 'POST', body: JSON.stringify(data) }),
 
   // Workflow Manager

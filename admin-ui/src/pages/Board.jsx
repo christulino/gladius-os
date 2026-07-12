@@ -10,19 +10,7 @@ import { BulkActionBar } from '@/components/BulkActionBar'
 import { Button } from '@/components/ui/button'
 import { Zap } from 'lucide-react'
 
-// ─── Service Class Swimlane Config ──────────────────────────────────────────
-
-const SWIMLANE_ORDER = ['expedite', 'fixed_date', 'standard', 'deferred', 'personal']
-const SWIMLANE_CONFIG = {
-  expedite:   { label: 'Expedite',   color: '#A33A25', bg: '#F5D4CD' },
-  fixed_date: { label: 'Fixed Date', color: '#9A7318', bg: '#F2E2B8' },
-  standard:   { label: 'Standard',   color: '#1E5C3A', bg: '#D4E8DA' },
-  deferred:   { label: 'Deferred',   color: '#6A6460', bg: '#E4E1DE' },
-  personal:   { label: 'Personal',   color: '#8B7355', bg: '#E8E1D7' },
-}
-
 const COL_WIDTH = 220
-const LABEL_WIDTH = 80
 const COL_GAP = 1 // px gap — thin visible column dividers
 
 // ─── Semantic Stage Class Colors ────────────────────────────────────────────
@@ -213,51 +201,24 @@ export default function Board({ setTab }) {
     return map
   }, [flatColumns])
 
-  // Item grid: grid[columnKey][swimlane] = { waiting: [], active: [] }
+  // Item grid: grid[columnKey] = [items] — one flat stack per stage column
   const itemGrid = useMemo(() => {
     const grid = {}
     for (const col of flatColumns) {
-      grid[col.key] = {}
-      for (const cls of SWIMLANE_ORDER) {
-        grid[col.key][cls] = { waiting: [], active: [] }
-      }
+      grid[col.key] = []
     }
     for (const item of filteredItems) {
       const colKey = stageIdToKey[item.current_stage_id]
       if (!colKey || !grid[colKey]) continue
-      const cls = item.derived_service_class || 'standard'
-      if (!grid[colKey][cls]) continue
-      if (item.current_substate === 'waiting') {
-        grid[colKey][cls].waiting.push(item)
-      } else {
-        grid[colKey][cls].active.push(item)
-      }
+      grid[colKey].push(item)
     }
     return grid
   }, [flatColumns, filteredItems, stageIdToKey])
 
-  // Count items per column (all substates combined)
+  // Count items per column
   function columnItemCount(colKey) {
-    const colData = itemGrid[colKey]
-    if (!colData) return 0
-    let count = 0
-    for (const cls of SWIMLANE_ORDER) {
-      count += (colData[cls]?.waiting?.length ?? 0) + (colData[cls]?.active?.length ?? 0)
-    }
-    return count
+    return itemGrid[colKey]?.length ?? 0
   }
-
-  // Determine which swimlanes have items (hide empty)
-  const activeSwimlanes = useMemo(() => {
-    return SWIMLANE_ORDER.filter(cls =>
-      flatColumns.some(col => {
-        const cell = itemGrid[col.key]?.[cls]
-        return cell && (cell.waiting.length > 0 || cell.active.length > 0)
-      })
-    )
-  }, [flatColumns, itemGrid])
-
-  const displaySwimlanes = activeSwimlanes.length > 0 ? activeSwimlanes : ['standard']
 
   const createFields = [
     { key: 'title', label: 'Title', type: 'text', required: true, placeholder: 'What needs to happen?' },
@@ -291,15 +252,6 @@ export default function Board({ setTab }) {
       reloadBoard()
     } catch (err) {
       console.error('Failed to set WIP limit:', err)
-    }
-  }
-
-  async function handlePull(itemId) {
-    try {
-      await api.setSubstate(itemId, 'active')
-      reloadBoard()
-    } catch (err) {
-      console.error('Failed to pull item:', err)
     }
   }
 
@@ -343,8 +295,7 @@ export default function Board({ setTab }) {
       let count = 0
       let totalWidth = 0
       while (i + count < flatColumns.length && flatColumns[i + count].stage_class === col.stage_class) {
-        const c = flatColumns[i + count]
-        totalWidth += c.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
+        totalWidth += COL_WIDTH
         count++
       }
       spans.push({ stage_class: col.stage_class, label: col.class_label, colCount: count, width: totalWidth, startIdx: i })
@@ -565,7 +516,6 @@ export default function Board({ setTab }) {
             <div className="sticky top-0 z-10 px-4 pt-3 bg-background">
               {/* Row 1: L1 stage_class headers — semantic colors */}
               <div className="flex flex-row">
-                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
                 {classHeaderSpans.map(span => {
                   const classColor = STAGE_CLASS_COLORS[span.stage_class] || { bg: '#F1F5F9', text: '#475569' }
                   return (
@@ -585,18 +535,16 @@ export default function Board({ setTab }) {
                 })}
               </div>
 
-              {/* Row 2: L2 stage headers + L3 waiting sub-headers */}
+              {/* Row 2: L2 stage headers */}
               <div className="flex flex-row">
-                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }} />
                 {flatColumns.map((col, colIdx) => {
                   const count = columnItemCount(col.key)
                   const orgWip = wipLimits[col.name]
                   const wipLimit = orgWip?.wip_limit ?? null
                   const wipOver = wipLimit && count > wipLimit
-                  const colWidth = col.has_waiting_queue ? COL_WIDTH * 2 + COL_GAP : COL_WIDTH
 
                   return (
-                    <div key={col.key} className="flex-shrink-0" style={{ width: colWidth, borderLeft: colIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
+                    <div key={col.key} className="flex-shrink-0" style={{ width: COL_WIDTH, borderLeft: colIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
                       <div className={`flex items-center gap-2 px-3 py-2 border-b-2 ${
                         wipOver ? 'bg-destructive/10 border-destructive' : 'bg-card border-border'
                       }`}>
@@ -616,110 +564,35 @@ export default function Board({ setTab }) {
                           onEdit={(val) => handleWipEdit(col.name, val)}
                         />
                       </div>
-                      {/* L3: waiting queue sub-header */}
-                      {col.has_waiting_queue && (
-                        <div className="flex flex-row bg-card">
-                          <div className="text-xs text-muted-foreground/60 px-2 py-0.5" style={{ width: COL_WIDTH }}>
-                            Ready for...
-                          </div>
-                          <div style={{ width: COL_WIDTH }} />
-                        </div>
-                      )}
                     </div>
                   )
                 })}
               </div>
             </div>
 
-            {/* ─── Swimlane Rows ─── */}
-            {displaySwimlanes.map((cls, laneIdx) => {
-              const config = SWIMLANE_CONFIG[cls]
-              return (
-                <div key={cls} className="flex flex-row px-4" style={{ borderTop: laneIdx > 0 ? '1px solid #D4D4D4' : undefined }}>
-                  {/* Swimlane label with left accent bar */}
-                  <div className="flex-shrink-0 py-2 flex items-start justify-end pr-3" style={{ width: LABEL_WIDTH }}>
-                    <div
-                      className="flex items-start"
-                      style={{ borderLeft: `4px solid ${config.color}`, paddingLeft: 8 }}
-                    >
-                      <span
-                        className="text-xs font-medium uppercase tracking-wide"
-                        style={{ color: config.color, writingMode: 'vertical-rl', textOrientation: 'mixed', transform: 'rotate(180deg)' }}
-                      >
-                        {config.label}
-                      </span>
+            {/* ─── Item Row ─── */}
+            <div className="flex flex-row px-4">
+              {flatColumns.map((col, colIdx) => {
+                const cellItems = itemGrid[col.key] ?? []
+                const colBorder = colIdx > 0 ? { borderLeft: '1px solid #D4D4D4' } : {}
+                return (
+                  <div key={col.key} className="flex-shrink-0 py-2 px-1 min-h-[24px]" style={{ width: COL_WIDTH, ...colBorder }}>
+                    <div className="flex flex-col gap-1.5">
+                      {cellItems.map(item => (
+                        <WorkItemCard
+                          key={item.id}
+                          item={item}
+                          isSelected={!selectMode && detailOpen && detailItemId === item.id}
+                          isChecked={selectMode && selectedItemIds.has(item.id)}
+                          selectMode={selectMode}
+                          onClick={handleCardClick}
+                        />
+                      ))}
                     </div>
                   </div>
-                  {/* Cells */}
-                  {flatColumns.map((col, colIdx) => {
-                    const cell = itemGrid[col.key]?.[cls]
-                    const waitingItems = cell?.waiting ?? []
-                    const activeItems = cell?.active ?? []
-                    const colBorder = colIdx > 0 ? { borderLeft: '1px solid #D4D4D4' } : {}
-
-                    if (col.has_waiting_queue) {
-                      // Split cell: waiting | active with dashed divider
-                      return (
-                        <div key={col.key} className="flex-shrink-0 py-2 px-1 flex flex-row relative" style={{ width: COL_WIDTH * 2 + COL_GAP, ...colBorder }}>
-                          {/* Dashed center divider */}
-                          <div className="absolute top-0 bottom-0" style={{ left: COL_WIDTH + COL_GAP / 2, borderLeft: '1px dashed #B0B0B0' }} />
-                          {/* Waiting (left) */}
-                          <div className="min-h-[24px] pr-1.5" style={{ width: COL_WIDTH }}>
-                            <div className="flex flex-col gap-1.5">
-                              {waitingItems.map(item => (
-                                <WorkItemCard
-                                  key={item.id}
-                                  item={item}
-                                  isSelected={!selectMode && detailOpen && detailItemId === item.id}
-                                  isChecked={selectMode && selectedItemIds.has(item.id)}
-                                  selectMode={selectMode}
-                                  onClick={handleCardClick}
-                                  onPull={() => handlePull(item.id)}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          {/* Active (right) */}
-                          <div className="min-h-[24px] pl-1.5" style={{ width: COL_WIDTH, marginLeft: COL_GAP }}>
-                            <div className="flex flex-col gap-1.5">
-                              {activeItems.map(item => (
-                                <WorkItemCard
-                                  key={item.id}
-                                  item={item}
-                                  isSelected={!selectMode && detailOpen && detailItemId === item.id}
-                                  isChecked={selectMode && selectedItemIds.has(item.id)}
-                                  selectMode={selectMode}
-                                  onClick={handleCardClick}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    }
-
-                    // Single cell (no waiting queue)
-                    const allCellItems = [...waitingItems, ...activeItems]
-                    return (
-                      <div key={col.key} className="flex-shrink-0 py-2 px-1 min-h-[24px]" style={{ width: COL_WIDTH, ...colBorder }}>
-                        <div className="flex flex-col gap-1.5">
-                          {allCellItems.map(item => (
-                            <WorkItemCard
-                              key={item.id}
-                              item={item}
-                              isSelected={!selectMode && detailOpen && detailItemId === item.id}
-                              isChecked={selectMode && selectedItemIds.has(item.id)}
-                              selectMode={selectMode}
-                              onClick={handleCardClick}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         )}
 

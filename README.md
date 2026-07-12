@@ -17,7 +17,6 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 - **Pull, don't push.** Work moves when downstream capacity exists, not when upstream decides to push it.
 - **WIP limits expose problems.** They don't prevent work — they surface systemic bottlenecks so you can fix the system.
 - **Policies over process steps.** Explicit rules beat implicit agreements. Exit criteria gate every transition.
-- **Classes of service are first-class.** Expedite, Fixed Date, Standard, and Deferred work flow differently by design.
 - **The system signals its own problems.** Nothing should fail silently.
 
 ---
@@ -25,9 +24,8 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 ## Features
 
 **Board**
-- Kanban board with swimlanes by derived class of service
-- WIP limits at stage and class level
-- Waiting queue split (buffer → active) per stage
+- Kanban board with stage-based columns
+- WIP limits at the stage level
 - Multi-select bulk transitions and assignments
 
 **Work items**
@@ -42,7 +40,6 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 - Two-phase transition engine: prepare (evaluate) → execute (commit)
 - Three-tier exit criteria: manual checklist, codified conditions, API-verified
 - Waiveable criteria with audit trail
-- Derived class of service (never user-selected — computed from `is_expedited`, `due_date`, `work_nature`)
 
 **Search**
 - Natural language → structured filter translation via Claude Haiku

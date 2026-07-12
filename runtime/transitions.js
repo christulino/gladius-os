@@ -176,7 +176,9 @@ export async function executeTransition(workItemId, toStageId, userId, options =
     await client.query('BEGIN')
 
     // 1. Update work item's current stage
-    const newSubstate = toStage.has_waiting_queue ? 'waiting' : 'active'
+    // Substate is a single active|blocked flag (FEAT.25491 cut the 'waiting' value);
+    // entering a stage always lands 'active' — blocked is set explicitly via the substate endpoint.
+    const newSubstate = 'active'
     const fromStageClass = workItem.current_stage_class
 
     // Determine lifecycle timestamps
@@ -392,14 +394,6 @@ async function executeSpawnAction(client, action, workItem, historyId, now) {
   const { generateUri } = await import('../core/uri.js')
   const spawnedUri = generateUri(targetOrg.slug, 'work-items')
 
-  // Get default service class for target org
-  const scResult = await client.query(`
-    SELECT id FROM blueprint.service_classes
-    WHERE org_id = $1 AND name = 'Standard' AND is_active = true
-    LIMIT 1
-  `, [targetOrgId])
-  const serviceClassId = scResult.rows[0]?.id
-
   // Create the spawned work item
   const spawnResult = await client.query(`
     INSERT INTO runtime.work_items (
@@ -416,7 +410,7 @@ async function executeSpawnAction(client, action, workItem, historyId, now) {
     action.spawn_work_item_type_id,
     targetOrgId,
     entryStage.id,
-    serviceClassId,
+    null,              // service_class_id — class-of-service vocabulary cut (FEAT.25491); column retained, unwritten
     null,              // parent_id — spawned items are not children, they're independent
     workItem.id,       // origin_work_item_id — tracks where this came from
     `${workItem.title} (spawned)`,
@@ -471,7 +465,6 @@ async function executeSpawnAction(client, action, workItem, historyId, now) {
       current_stage_class: spawned.current_stage_class,
       current_substate:    'active',
       spawn_state:         spawned.spawn_state,
-      service_class:       'standard',
       sla_status:          'no_sla',
       due_date:            null,
       created_at:          spawned.created_at,
