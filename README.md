@@ -129,7 +129,6 @@ Copy `.env.example` to `.env`. Key variables:
 | `GLADIUS_ENCRYPTION_KEY` | Yes | 32-byte hex key for encrypting AI model API keys |
 | `ANTHROPIC_API_KEY` | No | Enables NL→structured-filter search translation and default playbook execution |
 | `GLADIUS_AGENT_USER_ID` | No | User ID for MCP server write operations |
-| `FLOWOS_MAX_ATTACHMENT_MB` | No | Per-file attachment size limit (default: 25) |
 
 Generate an encryption key:
 ```bash

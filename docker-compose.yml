@@ -1,7 +1,7 @@
 version: "3.9"
 
 # Gladius — Local Development Environment
-# Runs PostgreSQL and MinIO (S3-compatible object storage for evidence files)
+# Runs PostgreSQL
 #
 # Start:   docker compose up -d
 # Stop:    docker compose down
@@ -33,30 +33,5 @@ services:
       timeout: 5s
       retries: 10
 
-  # ===========================================================================
-  # MINIO
-  # S3-compatible object storage for evidence files (photos, attachments)
-  # Browser UI: http://localhost:9001  (user: flowos, password: flowos_dev_secret)
-  # ===========================================================================
-  minio:
-    image: minio/minio:latest
-    container_name: gladius-minio
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER:     flowos
-      MINIO_ROOT_PASSWORD: flowos_dev_secret
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # Browser console
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
 volumes:
   postgres_data:
-  minio_data:

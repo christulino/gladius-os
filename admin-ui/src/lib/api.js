@@ -358,33 +358,6 @@ export async function listAttachments(workItemId) {
   return (await r.json()).attachments
 }
 
-export async function uploadAttachment(workItemId, file, onProgress) {
-  return new Promise((resolve, reject) => {
-    const fd = new FormData()
-    fd.append('file', file)
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', `/admin/api/work-items/${workItemId}/attachments`)
-    xhr.withCredentials = true
-    if (onProgress) {
-      xhr.upload.addEventListener('progress', e => {
-        if (e.lengthComputable) onProgress(e.loaded / e.total)
-      })
-    }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try { resolve(JSON.parse(xhr.responseText).attachment) }
-        catch (e) { reject(e) }
-      } else if (xhr.status === 413) {
-        reject(new Error('File exceeds the maximum allowed size'))
-      } else {
-        reject(new Error(`uploadAttachment: ${xhr.status} ${xhr.responseText}`))
-      }
-    }
-    xhr.onerror = () => reject(new Error('upload network error'))
-    xhr.send(fd)
-  })
-}
-
 export async function addLinkAttachment(workItemId, url, title) {
   const r = await fetch(`/admin/api/work-items/${workItemId}/attachments`, {
     method: 'POST',
@@ -394,10 +367,6 @@ export async function addLinkAttachment(workItemId, url, title) {
   })
   if (!r.ok) throw new Error(`addLinkAttachment: ${r.status}`)
   return (await r.json()).attachment
-}
-
-export function attachmentDownloadUrl(workItemId, attachmentId) {
-  return `/admin/api/work-items/${workItemId}/attachments/${attachmentId}/download`
 }
 
 export async function deleteAttachment(workItemId, attachmentId) {
