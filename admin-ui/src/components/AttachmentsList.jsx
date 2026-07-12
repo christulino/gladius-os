@@ -1,19 +1,10 @@
 import { useState } from 'react'
-import { Trash2, FileText, Image as ImageIcon, Link as LinkIcon, Download } from 'lucide-react'
-import { attachmentDownloadUrl, deleteAttachment } from '../lib/api'
+import { Trash2, FileText, Link as LinkIcon } from 'lucide-react'
+import { deleteAttachment } from '../lib/api'
 import { Button } from './ui/button'
 
-function formatBytes(n) {
-  if (!n && n !== 0) return ''
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
-}
-
 function iconFor(att) {
-  if (att.kind === 'link') return LinkIcon
-  if (att.mime_type?.startsWith('image/')) return ImageIcon
-  return FileText
+  return att.kind === 'link' ? LinkIcon : FileText
 }
 
 export default function AttachmentsList({ workItemId, attachments, currentUserId, isAdmin, onChanged }) {
@@ -21,7 +12,7 @@ export default function AttachmentsList({ workItemId, attachments, currentUserId
 
   async function handleDelete(att) {
     setError(null)
-    if (!confirm(`Remove ${att.file_name || att.url_title || att.url}?`)) return
+    if (!confirm(`Remove ${att.url_title || att.url || att.file_name}?`)) return
     try {
       await deleteAttachment(workItemId, att.id)
       onChanged?.()
@@ -40,24 +31,14 @@ export default function AttachmentsList({ workItemId, attachments, currentUserId
       {attachments.map(att => {
         const Icon = iconFor(att)
         const canDelete = att.uploaded_by_user_id === currentUserId || isAdmin
-        const label = att.kind === 'file' ? att.file_name : (att.url_title || att.url)
-        const meta = att.kind === 'file'
-          ? `${formatBytes(Number(att.file_size_bytes))} · ${att.uploaded_by_name || ''}`
-          : (att.uploaded_by_name || '')
+        const label = att.kind === 'link' ? (att.url_title || att.url) : att.file_name
+        const meta = att.uploaded_by_name || ''
 
         return (
           <li key={att.id} className="flex items-center gap-2 py-2">
             <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="flex-1 min-w-0">
-              {att.kind === 'file' ? (
-                <a
-                  className="text-sm hover:underline truncate block"
-                  href={attachmentDownloadUrl(workItemId, att.id)}
-                  download={att.file_name}
-                >
-                  {label}
-                </a>
-              ) : (
+              {att.kind === 'link' ? (
                 <a
                   className="text-sm hover:underline truncate block"
                   href={att.url}
@@ -66,19 +47,11 @@ export default function AttachmentsList({ workItemId, attachments, currentUserId
                 >
                   {label}
                 </a>
+              ) : (
+                <span className="text-sm truncate block">{label}</span>
               )}
               <div className="text-xs text-muted-foreground truncate">{meta}</div>
             </div>
-            {att.kind === 'file' && (
-              <a
-                className="p-1 rounded hover:bg-black/[0.03]"
-                href={attachmentDownloadUrl(workItemId, att.id)}
-                download={att.file_name}
-                aria-label="Download"
-              >
-                <Download className="h-4 w-4 text-muted-foreground" />
-              </a>
-            )}
             {canDelete && (
               <Button
                 variant="ghost"
