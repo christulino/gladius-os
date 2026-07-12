@@ -7,10 +7,17 @@
 //   waiveCriterion         — rejects empty reason, stores waiver metadata
 //   evaluateExitCriteria   — manual criterion passes when waived
 //                         — no_unresolved_decisions condition (fails/passes based on decisions)
-//                         — api tier with no endpoint configured → blocking failure
+//                         — legacy/unknown criteria_tier (e.g. a pre-existing 'api' row)
+//                           fails closed with no outbound request
 //
-// Note: codified/api tier waiver short-circuit is tested separately in
+// Note: codified tier waiver short-circuit is tested separately in
 // tests/exit-criteria-waiver.test.js (added with DEBT.25479 fix).
+//
+// The 'api' tier (arbitrary outbound fetch, blocking the transition on
+// network failure) was cut in DEBT.25494 — SSRF-shaped liability with zero
+// solo use. It can no longer be authored via the API/UI; the test below
+// proves evaluation of any lingering/legacy row with that tier value fails
+// closed via the "unknown criteria tier" default branch, never fetch().
 //
 // Runs directly against the DB (no HTTP server needed). Each describe block
 // gets its own dedicated throwaway stage (see helpers/testStage.js) owned by
@@ -170,9 +177,9 @@ describe('exit criteria: no_unresolved_decisions condition', () => {
   })
 })
 
-// ── api tier ─────────────────────────────────────────────────────────────────
+// ── cut api tier (DEBT.25494) ─────────────────────────────────────────────────
 
-describe('exit criteria: api tier', () => {
+describe('exit criteria: cut api tier (DEBT.25494)', () => {
   let testOrg
   let stageId
   let workItemId
@@ -185,7 +192,7 @@ describe('exit criteria: api tier', () => {
     ;({ stageId } = await createTestStage(testOrg.orgId))
 
     const wi = await createWorkItem(
-      { title: 'api-tier test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
+      { title: 'api-tier-cut test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
       AGENT_ID,
     )
     workItemId = wi.id
@@ -196,25 +203,32 @@ describe('exit criteria: api tier', () => {
     await testOrg.teardown()
   })
 
-  it('fails and returns a reason when api_endpoint is not configured', async () => {
+  it('a lingering/legacy criteria_tier="api" row fails closed with no outbound request', async () => {
+    // The column still exists (no data migration was needed — 0 rows had this
+    // tier in production), but evaluateSingleCriterion no longer has an 'api'
+    // case, so this must NOT attempt a fetch(). It should fail via the
+    // "unknown criteria tier" default branch instead.
     const { rows } = await query(`
       INSERT INTO blueprint.exit_criteria
         (uri, stage_id, name, description, criteria_tier, api_endpoint, is_blocking, is_active)
-      VALUES ($1, $2, $3, $4, 'api', NULL, true, true)
+      VALUES ($1, $2, $3, $4, 'api', 'http://169.254.169.254/latest/meta-data/', true, true)
       RETURNING id
     `, [
-      'flowos://test/criteria/api-no-endpoint-' + Date.now(),
+      'flowos://test/criteria/api-tier-cut-' + Date.now(),
       stageId,
-      'TEST api no endpoint ' + Date.now(),
-      'temporary api criterion with no endpoint',
+      'TEST legacy api tier ' + Date.now(),
+      'temporary: proves the api tier no longer evaluates',
     ])
     criterionId = rows[0].id
 
     const res = await evaluateExitCriteria(workItemId, stageId)
     const c = mine(res)
     assert.ok(c, 'criterion should be in evaluation result')
-    assert.equal(c.passed, false, 'api criterion with no endpoint should fail')
-    assert.ok(c.reason?.toLowerCase().includes('endpoint'), `reason should mention endpoint; got: "${c.reason}"`)
+    assert.equal(c.passed, false, 'unknown/legacy api tier should fail (fail-closed)')
+    assert.ok(
+      c.reason?.toLowerCase().includes('unknown'),
+      `reason should indicate an unknown criteria tier, not an API/network error; got: "${c.reason}"`,
+    )
     assert.equal(res.failed.some(f => f.id === criterionId), true, 'should appear in failed list')
   })
 })

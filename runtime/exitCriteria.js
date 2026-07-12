@@ -2,12 +2,15 @@
  * runtime/exitCriteria.js
  * Evaluates exit criteria for a stage before allowing a transition.
  *
- * Three tiers:
+ * Two tiers:
  *   manual   — human must have explicitly checked this off
  *   codified — system evaluates a condition against runtime state
- *   api      — external endpoint called, response evaluated
  *
- * API failures BLOCK the transition (treat as criteria not met).
+ * (A third tier, 'api' — calling an arbitrary external endpoint and blocking
+ * the transition on the response — was cut in DEBT.25494: SSRF-shaped
+ * liability with zero solo use. Exit-criteria evaluation makes no outbound
+ * network calls.)
+ *
  * Non-blocking criteria (is_blocking: false) warn but don't stop the transition.
  *
  * Usage:
@@ -111,8 +114,6 @@ async function evaluateSingleCriterion(criterion, workItem) {
       return evaluateManual(criterion, workItem)
     case 'codified':
       return evaluateCodified(criterion, workItem)
-    case 'api':
-      return evaluateApi(criterion, workItem)
     default:
       console.warn(`[exitCriteria] Unknown criteria_tier: "${criterion.criteria_tier}"`)
       return { passed: false, reason: `Unknown criteria tier: ${criterion.criteria_tier}` }
@@ -268,58 +269,6 @@ async function evaluateCodified(criterion, workItem) {
 
     default:
       return { passed: false, reason: `Unknown codified condition type: "${condition.type}"` }
-  }
-}
-
-/**
- * API — call external endpoint and evaluate response.
- * Failures (network errors, timeouts) BLOCK the transition.
- */
-async function evaluateApi(criterion, workItem) {
-  if (!criterion.api_endpoint) {
-    return { passed: false, reason: 'API criterion has no endpoint configured' }
-  }
-
-  // Build payload from template — replace {{field_key}} with work item field values
-  const payload = interpolateTemplate(criterion.api_payload_template, workItem)
-
-  try {
-    const controller = new AbortController()
-    const timeout = setTimeout(
-      () => controller.abort(),
-      (criterion.api_timeout_seconds || 10) * 1000
-    )
-
-    const response = await fetch(criterion.api_endpoint, {
-      method:  criterion.api_method || 'GET',
-      headers: { 'Content-Type': 'application/json' },
-      body:    criterion.api_method === 'POST' ? JSON.stringify(payload) : undefined,
-      signal:  controller.signal,
-    })
-    clearTimeout(timeout)
-
-    const responseBody = await response.json().catch(() => ({}))
-
-    // Evaluate success condition against response
-    if (criterion.api_success_condition) {
-      const passes = evaluateJsonPath(responseBody, criterion.api_success_condition)
-      if (passes) return { passed: true }
-      return {
-        passed: false,
-        reason: `API response did not meet success condition (status: ${response.status})`,
-      }
-    }
-
-    // No success condition — treat 2xx as pass
-    if (response.ok) return { passed: true }
-    return { passed: false, reason: `API returned status ${response.status}` }
-
-  } catch (err) {
-    // Network error or timeout — BLOCK the transition
-    const reason = err.name === 'AbortError'
-      ? `API criterion timed out after ${criterion.api_timeout_seconds}s`
-      : `API criterion failed: ${err.message}`
-    return { passed: false, reason }
   }
 }
 
@@ -552,7 +501,7 @@ async function upsertCriteriaStatus(workItemId, criterion, newStatus, evalResult
     return
   }
 
-  // For codified/api criteria, update with evaluation result
+  // For codified criteria, update with evaluation result
   await query(`
     INSERT INTO runtime.exit_criteria_status
       (work_item_id, exit_criteria_id, stage_id, status, last_evaluated_at, evaluation_result)
@@ -590,38 +539,6 @@ function evaluateOperator(actual, operator, expected) {
     default:
       console.warn(`[exitCriteria] Unknown operator: "${operator}"`)
       return false
-  }
-}
-
-/**
- * Evaluate a JSONPath-style condition against a response body.
- * Condition: { path: "$.status", operator: "eq", value: "approved" }
- * Supports simple dot-notation paths only for now.
- */
-function evaluateJsonPath(obj, condition) {
-  try {
-    const path  = condition.path.replace(/^\$\./, '').split('.')
-    const value = path.reduce((acc, key) => acc?.[key], obj)
-    return evaluateOperator(value, condition.operator, condition.value)
-  } catch {
-    return false
-  }
-}
-
-/**
- * Replace {{field_key}} placeholders in a template with work item field values.
- */
-function interpolateTemplate(template, workItem) {
-  if (!template) return {}
-  const fieldValues = workItem.field_values || {}
-  const str = JSON.stringify(template)
-  const interpolated = str.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-    return workItem[key] ?? fieldValues[key] ?? ''
-  })
-  try {
-    return JSON.parse(interpolated)
-  } catch {
-    return template
   }
 }
 
