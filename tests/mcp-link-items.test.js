@@ -1,4 +1,5 @@
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { deleteWorkItems } from './helpers/cleanup.js'
@@ -142,3 +143,6 @@ describe('Work-item link/unlink API', () => {
     })
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

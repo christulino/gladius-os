@@ -1,4 +1,5 @@
-import { describe, it } from 'node:test'
+import { describe, it, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { getClient } from '../db/postgres.js'
 import { startDeliveryWorker, stopDeliveryWorker } from '../runtime/deliveryWorker.js'
@@ -33,3 +34,6 @@ describe('deliveryWorker tick() scheduling under advisory-lock contention', () =
     assert.equal(scheduleCount, 1, 'expected exactly one setTimeout scheduled per contended tick, got a double-schedule')
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

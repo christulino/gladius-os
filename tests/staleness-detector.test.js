@@ -9,6 +9,7 @@
 //   GET /work-items/:id/staleness endpoint
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query }                  from '../db/postgres.js'
 import { extractKeywords, findOverlap, checkContextStaleness } from '../runtime/stalenessDetector.js'
@@ -271,3 +272,6 @@ describe('GET /work-items/:id/staleness', () => {
     assert.equal(status, 404)
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

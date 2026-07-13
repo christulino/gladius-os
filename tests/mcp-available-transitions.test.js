@@ -1,5 +1,6 @@
 // tests/mcp-available-transitions.test.js
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { createTestOrg } from './helpers/testOrg.js'
@@ -92,3 +93,6 @@ describe('Available Transitions API', () => {
     assert.equal(res.status, 401)
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

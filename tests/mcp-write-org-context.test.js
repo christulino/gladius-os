@@ -3,6 +3,7 @@
 // Exercises create, list filtering, and delete; also verifies author_id is captured
 // correctly for both session-auth and Bearer-auth callers (FEAT.26358).
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { createTestOrg } from './helpers/testOrg.js'
@@ -88,3 +89,6 @@ describe('write_org_context — REST backing for MCP tool', () => {
     assert.equal(data.id, toDelete)
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

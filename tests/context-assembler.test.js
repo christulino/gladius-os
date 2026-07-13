@@ -9,6 +9,7 @@
 //                            pull_types filtering, 'ancestors' traversal, org context
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { assembleContext, formatContextForPrompt, MAX_CONTEXT_CHARS } from '../runtime/contextAssembler.js'
@@ -332,3 +333,6 @@ describe('assembleContext', () => {
     }
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

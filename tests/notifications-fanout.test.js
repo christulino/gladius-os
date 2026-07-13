@@ -1,4 +1,5 @@
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query, getClient } from '../db/postgres.js'
 import { loadMatrix, isEnabled } from '../runtime/notifications/matrix.js'
@@ -226,3 +227,5 @@ describe('subscribers/notifications — fanout', () => {
   })
 })
 
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

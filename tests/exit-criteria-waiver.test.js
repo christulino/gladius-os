@@ -9,6 +9,7 @@
 // be what makes it pass.
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { evaluateExitCriteria, waiveCriterion } from '../runtime/exitCriteria.js'
@@ -75,3 +76,6 @@ describe('exit criteria: waiver respected for all tiers', () => {
     assert.equal(res.failed.length, 0, 'waived criterion should not appear in failed list')
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)
