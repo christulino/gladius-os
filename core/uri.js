@@ -29,7 +29,6 @@ const ENTITY_TYPES = new Set([
   'work-item-type-classes',
   'workflows',
   'stages',
-  'service-catalog',
   'service-classes',
   'transitions',
   'connections',
