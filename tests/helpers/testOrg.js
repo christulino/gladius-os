@@ -23,6 +23,7 @@
  *   // inside tests:  testOrg.orgId, testOrg.typeId
  */
 
+import { randomUUID } from 'node:crypto'
 import { query } from '../../db/postgres.js'
 import { deleteWorkItems } from './cleanup.js'
 import { createAuthApi } from './auth.js'
@@ -39,7 +40,12 @@ const api = createAuthApi()
  */
 export async function createTestOrg() {
   const ts   = Date.now()
-  const slug = `test-org-${ts}`
+  // Date.now() alone collides when many test files call this concurrently
+  // (multiple calls can land in the same millisecond), producing intermittent
+  // "409 Slug already exists" under full-suite concurrency. Append a UUID so
+  // concurrent callers can never generate the same slug. `slug` is unbounded
+  // TEXT (db/migrations/002_org_types_permissions.sql) — no length concern.
+  const slug = `test-org-${ts}-${randomUUID()}`
 
   // Create org
   const { status: s1, data: org } = await api('/organizations', {

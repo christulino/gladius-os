@@ -26,7 +26,12 @@ describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows',
     const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
     workItemId = rows[0].id
     await query('UPDATE runtime.work_items SET priority = NULL WHERE id = $1', [workItemId])
-    await query('DELETE FROM runtime.events WHERE event_type = $1', ['work_item.edited'])
+    // Scoped to this test's own work item — an unscoped type-only delete would
+    // nuke work_item.edited rows belonging to OTHER concurrently-running tests
+    // (e.g. notifications-integration.test.js, which references live event ids
+    // as an FK and blows up with notifications_event_id_fkey if the row it
+    // grabbed gets deleted out from under it by an unrelated test's cleanup).
+    await query('DELETE FROM runtime.events WHERE event_type = $1 AND entity_id = $2', ['work_item.edited', workItemId])
     await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
   })
 
@@ -64,7 +69,8 @@ describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows',
     const { data } = await api(`/work-items/${workItemId}`)
     const current = data.title
 
-    await query('DELETE FROM runtime.events WHERE event_type = $1', ['work_item.edited'])
+    // Scoped to this work item — see rationale in the previous test's before().
+    await query('DELETE FROM runtime.events WHERE event_type = $1 AND entity_id = $2', ['work_item.edited', workItemId])
 
     const { status } = await api(`/work-items/${workItemId}`, {
       method: 'PATCH',
