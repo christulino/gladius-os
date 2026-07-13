@@ -69,13 +69,19 @@ For each item, in order, complete ALL steps before starting the next item:
    sign-off), park (see PARKING) — unless it's an unresolved decision, then try
    DECISION RESOLUTION first.
 2. DECISION RESOLUTION (tiered):
-   - GROUNDED: if an open design/discovery question is answerable from existing
-     sources — org context library, the item's journal + ancestors, DECISIONS.md,
-     CLAUDE.md/ARCHITECTURE.md, the non-negotiable design-constraints table — write a
-     `decision` journal entry on the item WITH the citation, and proceed.
-   - NOVEL: new scope, product direction, anything touching the design-constraint
-     non-negotiables, or conflicting grounded sources → park with a drafted
-     recommendation + the sources you considered. Never guess product direction.
+   - GROUNDED — only if an existing source DIRECTLY answers the question: org context
+     library, the item's journal + ancestors, DECISIONS.md, CLAUDE.md/ARCHITECTURE.md,
+     the non-negotiable design-constraints table. A directly-answering source *states*
+     the answer; stitching a conclusion together across several sources does NOT qualify
+     — that is you reasoning to a decision, i.e. a novel call wearing a citation. When it
+     genuinely applies, write a `decision` journal entry on the item WITH the citation
+     and proceed.
+   - NOVEL — park with a drafted recommendation + the sources you considered: new scope,
+     product direction, anything touching the design-constraint non-negotiables,
+     conflicting grounded sources, OR any decision that changes a public surface, an API
+     contract, or user-facing behavior — park those REGARDLESS of how citable they feel
+     (deleting or altering a shipped surface is direction, not cleanup). Never guess
+     product direction.
 3. DISPATCH: write a fresh implementer prompt for this item and pick the model —
    sonnet by default; opus when the item is multi-subsystem, migration-bearing,
    judgment-heavy, or a sonnet attempt already failed on it. The prompt must carry the
@@ -88,10 +94,38 @@ For each item, in order, complete ALL steps before starting the next item:
    PR with the repo's commit trailers; set pr_url + pr_status=open in ONE
    set_work_item_fields call; transition to Review only. The implementer NEVER merges.
    One retry per item max.
-4. INDEPENDENT REVIEW (never trust implementer claims):
+   IMPLEMENTER DIED MID-FLIGHT (session/API limit, crash — distinct from a rejected
+   attempt): inspect what it left. Claimed the item + made a worktree but committed no
+   code → discard the empty worktree + branch and re-dispatch fresh, telling the new
+   implementer the item is ALREADY CLAIMED and to continue from its current stage (do NOT
+   re-claim from Backlog). Left uncommitted partial work → inspect it before choosing
+   resume vs. restart. A death is infrastructure, NOT one of the "two consecutive
+   failures" stop-condition.
+4. INDEPENDENT REVIEW (never trust implementer claims — this step is load-bearing; it is
+   what catches defects the implementer reports as clean):
    - Read the full PR diff yourself (gh pr diff).
    - Re-run `npx eslint .` and the relevant test file(s) in the implementer's worktree
      yourself. Green means you saw it green.
+   - TEST SIGNAL IS AMBIGUOUS ON THE SHARED DOGFOOD — do NOT read a red test as a
+     regression until you've ruled out contention. Two known-environmental failure modes,
+     both caused by the live :3000 dogfood rather than the diff:
+       (a) events-integration audit-log CURSOR tests fail in any worktree because the
+           live dogfood holds the single PG advisory lock, so the worktree's event
+           processor can't drain.
+       (b) Running several test files in ONE `node --test` invocation collides on
+           `testOrg.js`'s millisecond-resolution slug → spurious 409 "cancelled".
+     So: RUN TEST FILES INDIVIDUALLY (one `node --test --test-force-exit tests/<file>`
+     per file), never batched. Before treating any red as real, confirm the diff actually
+     touches the failing test's code path (compare changed files against the event-drain /
+     subscriber path). A failure in code your diff never touched, that reproduces
+     identically against clean main under the live dogfood, is environmental — say so
+     explicitly in your merge verdict; do NOT silently merge past it, and do NOT park a
+     good PR over it. (Root cause: DEBT.26600 / DEBT.26643 test isolation — until those
+     land, this ambiguity is permanent and you must disambiguate by hand every time.)
+   - SERVER HYGIENE — your own review re-runs spawn alt-port servers (3011+). Track their
+     PIDs and `kill -9` them when done: SIGTERM is a no-op (DEBT.26639 — the server's
+     SIGTERM handler never calls process.exit()). NEVER touch the :3000 dogfood. Leftover
+     review servers hold the advisory lock and make (a) worse for every later item.
    - Check diff scope against the item's discovery/acceptance criteria.
 5. MERGE DECISION — merge ONLY if ALL hold:
    - lint + relevant tests green under your own re-run
@@ -102,6 +136,10 @@ For each item, in order, complete ALL steps before starting the next item:
    - deletions may be large when they match named cut targets (that is the cluster's
      job); large ADDITIONS get line-by-line review, not auto-park
    - Review-stage exit criteria honestly satisfiable
+   AMENDMENT CAP: if review finds a fixable issue you MAY send the implementer back to
+   amend the OPEN PR (same worktree/branch) with the specific fix — but at most TWICE per
+   item. A third amendment round → PARK for me: an item needing three review passes is
+   telling you the rubric or the spec is missing something a human should look at.
    ANY uncertainty → PARK. A bad merge poisons every later item's baseline; parking
    is cheap. Announce every merge as one line:
    "MERGE <key> — <verdict: what you checked, why it's green>".
@@ -147,6 +185,15 @@ END OF SESSION
 
 ## Tuning
 
+- **Field data (Session 51, 2026-07-12 — first full run):** shipped 7/7 of the June
+  conflict-cluster (DEBT.25488–25494, PRs #55–#61), zero parked, zero bad merges. But the
+  independent re-run (step 4) caught **3 real defects two implementers reported as clean**
+  — a UI 500-path (email/webhook toggles vs. a tightened constraint), a migration
+  `(user_id,channel)` PK-collision in a defensive re-label, and a false-red environmental
+  test that a careless orchestrator would have mistaken for a regression. One PR needed
+  two amendment rounds. Takeaway: the exception rate was NOT near zero, which per the
+  rubric note below means the rubric is pulling its weight — and step 4 is the single
+  load-bearing rule; nothing else would have caught those three.
 - **Target set:** swap the cluster list for `{ count: N }`-style ordinary curation once
   the cluster is done — the prompt's curate step already falls through to priority order.
 - **Rubric:** calibrate from the announced merge verdicts. If the exception (park) rate
@@ -155,4 +202,11 @@ END OF SESSION
   consider Phase 2.
 - **Phase 2 (scheduled, not built):** same prompt launched by a cron'd local Claude Code
   session (no cloud cost); digest + parked list instead of live supervision. Gate:
-  ≥2 supervised runs, zero bad merges, low exception rate.
+  ≥2 supervised runs, zero bad merges, low exception rate — **AND the test-isolation debt
+  closed first** (DEBT.26600 slug collision, DEBT.26643 pool, DEBT.26639 SIGTERM). That is
+  a HARD prerequisite, not a nice-to-have: unsupervised, the test-signal ambiguity in
+  step 4 means the orchestrator will eventually either merge a false-green or park a
+  false-red with no human to catch it. Until an orchestrator gets a clean, unambiguous
+  test signal without hand-disambiguation, Phase 2 is unsafe. Durable fix: give the
+  verification step its own throwaway Postgres so review never contends with the live
+  dogfood for the advisory lock.
