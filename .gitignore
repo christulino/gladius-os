@@ -6,6 +6,8 @@ admin-ui/node_modules
 
 # Environment — never commit credentials
 .env
+.env.*
+!.env.example
 .mcp.json
 
 # macOS
