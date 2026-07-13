@@ -42,10 +42,10 @@ function startServer(port, extraEnv) {
 
 function stopServer(child) {
   if (!child || child.killed) return
-  // SIGKILL, not SIGTERM: api/server.js's SIGTERM handler stops background
-  // workers but doesn't call process.exit(), so SIGTERM alone would leave
-  // these throwaway test servers running as orphans on the alt ports.
-  child.kill('SIGKILL')
+  // SIGTERM: api/server.js's SIGTERM handler stops background workers and
+  // then calls process.exit() (DEBT.26639), so a graceful signal is enough
+  // to reap these throwaway test servers — no orphans on the alt ports.
+  child.kill('SIGTERM')
 }
 
 describe('Single-org mode flag (FEAT.26604)', () => {

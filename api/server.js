@@ -134,7 +134,28 @@ app.listen(PORT, async () => {
   }
 })
 
-process.on('SIGTERM', async () => { await stopDeliveryWorker(); stopRetentionJob() })
-process.on('SIGINT',  async () => { await stopDeliveryWorker(); stopRetentionJob() })
+// =============================================================================
+// SHUTDOWN
+// =============================================================================
+
+let shuttingDown = false
+
+async function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[api] ${signal} received, shutting down...`)
+  try {
+    await stopDeliveryWorker()
+    stopRetentionJob()
+    console.log('[api] Shutdown cleanup complete')
+    process.exit(0)
+  } catch (err) {
+    console.error('[api] Error during shutdown cleanup:', err.message)
+    process.exit(1)
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT',  () => shutdown('SIGINT'))
 
 export default app
