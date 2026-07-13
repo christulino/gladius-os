@@ -194,10 +194,13 @@ export const workflows = [
       { from: 'blocked',     to: 'in_progress',  label: 'Unblock',        kind: 'sideways' },
       { from: 'review',      to: 'done',         label: 'Approve',        kind: 'forward'  },
       { from: 'review',      to: 'in_progress',  label: 'Request Changes',kind: 'backward', requires_reason: true },
+      // Cancel reachable from every non-terminal stage.
       { from: 'intake',      to: 'cancelled',    label: 'Cancel',         kind: 'forward',  requires_reason: true },
       { from: 'triage',      to: 'cancelled',    label: 'Cancel',         kind: 'forward',  requires_reason: true },
       { from: 'queued',      to: 'cancelled',    label: 'Cancel',         kind: 'forward',  requires_reason: true },
       { from: 'in_progress', to: 'cancelled',    label: 'Cancel',         kind: 'forward',  requires_reason: true },
+      { from: 'blocked',     to: 'cancelled',    label: 'Cancel',         kind: 'forward',  requires_reason: true },
+      { from: 'review',      to: 'cancelled',    label: 'Cancel',         kind: 'forward',  requires_reason: true },
     ],
   },
 
@@ -304,8 +307,12 @@ export const workflows = [
       { from: 'review',      to: 'in_progress',  label: 'Rework',        kind: 'backward', requires_reason: true },
       { from: 'delivery',    to: 'done',         label: 'Deployed',      kind: 'forward'  },
       { from: 'delivery',    to: 'in_progress',  label: 'Rollback',      kind: 'backward', requires_reason: true },
+      // Cancel ("Won't Fix") reachable from every non-terminal stage.
       { from: 'intake',      to: 'cancelled',    label: 'Won\'t Fix',    kind: 'forward',  requires_reason: true },
+      { from: 'queued',      to: 'cancelled',    label: 'Won\'t Fix',    kind: 'forward',  requires_reason: true },
       { from: 'in_progress', to: 'cancelled',    label: 'Won\'t Fix',    kind: 'forward',  requires_reason: true },
+      { from: 'review',      to: 'cancelled',    label: 'Won\'t Fix',    kind: 'forward',  requires_reason: true },
+      { from: 'delivery',    to: 'cancelled',    label: 'Won\'t Fix',    kind: 'forward',  requires_reason: true },
     ],
   },
 
@@ -387,6 +394,8 @@ export const workflows = [
       { from: 'triage',      to: 'intake',      label: 'Need More Info',kind: 'backward', requires_reason: true },
       { from: 'approved',    to: 'in_progress', label: 'Start',         kind: 'forward'  },
       { from: 'in_progress', to: 'done',        label: 'Fulfill',       kind: 'forward'  },
+      // Cancel reachable from every non-terminal stage (triage uses "Reject" above).
+      { from: 'intake',      to: 'cancelled',   label: 'Cancel',        kind: 'forward',  requires_reason: true },
       { from: 'in_progress', to: 'cancelled',   label: 'Cancel',        kind: 'forward',  requires_reason: true },
       { from: 'approved',    to: 'cancelled',   label: 'Cancel',        kind: 'forward',  requires_reason: true },
     ],
@@ -430,12 +439,24 @@ export const workflows = [
         is_entry_stage: false,
         is_terminal:   true,
       },
+      {
+        key:           'cancelled',
+        name:          'Cancelled',
+        stage_class:   'cancelled',
+        stage_type:    'waiting',
+        display_order: 4,
+        is_entry_stage: false,
+        is_terminal:   true,
+      },
     ],
     transitions: [
       { from: 'inbox', to: 'doing', label: 'Start',   kind: 'forward'  },
       { from: 'doing', to: 'done',  label: 'Complete', kind: 'forward'  },
       { from: 'doing', to: 'inbox', label: 'Pause',    kind: 'backward' },
       { from: 'done',  to: 'doing', label: 'Reopen',   kind: 'backward' },
+      // Cancel reachable from every non-terminal stage.
+      { from: 'inbox', to: 'cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
+      { from: 'doing', to: 'cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
     ],
   },
 

@@ -4374,6 +4374,12 @@ router.get('/search', async (req, res, next) => {
     params.push(90)
     where.push(`(wi.resolved_at IS NULL OR wi.resolved_at > NOW() - INTERVAL '1 day' * $${params.length})`)
 
+    // Cancelled items are excluded by default (mirrors the board). Opt in with
+    // ?include=cancelled, or by explicitly filtering ?stage_class=cancelled.
+    if (!include.includes('cancelled') && stage_class !== 'cancelled') {
+      where.push(`s.stage_class != 'cancelled'`)
+    }
+
     if (keyword) {
       const tsq = buildPrefixTsquery(keyword)
       if (tsq) {
