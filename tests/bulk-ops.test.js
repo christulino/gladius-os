@@ -9,6 +9,7 @@
 //   4. Input validation for both endpoints
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { createAuthApi } from './helpers/auth.js'
 import { createTestOrg } from './helpers/testOrg.js'
@@ -352,3 +353,6 @@ describe('Bulk ops — input validation', () => {
     assert.ok(data.error)
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

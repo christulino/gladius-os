@@ -6,6 +6,7 @@
 // tests/events-processor.test.js.
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { createAuthApi } from './helpers/auth.js'
@@ -301,3 +302,6 @@ describe('End-to-end — work item creation flows through event system to subscr
     assert.ok(cursorAfter > before, `audit-log cursor did not advance (was ${before}, is ${cursorAfter})`)
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

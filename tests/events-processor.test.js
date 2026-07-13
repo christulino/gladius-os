@@ -5,8 +5,9 @@
 // lock. For endpoint-level tests that require the server, see events-integration.test.js.
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
-import { query, getClient, pool } from '../db/postgres.js'
+import { query, getClient } from '../db/postgres.js'
 import { emitEvent } from '../core/events.js'
 import {
   startProcessor,
@@ -327,8 +328,5 @@ describe('subscribers/auditLog — writes work_item_edits rows', () => {
   })
 })
 
-// Close long-lived connections so the worker process exits cleanly.
-// The pg pool holds idle connections that prevent node --test workers from draining naturally.
-after(async () => {
-  await pool.end()
-})
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

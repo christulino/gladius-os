@@ -14,6 +14,7 @@
 // the result.
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { evaluateExitCriteria } from '../runtime/exitCriteria.js'
@@ -111,3 +112,6 @@ describe('exit criteria: context_entry_exists', () => {
     assert.equal(mine(res).passed, false, 'no design entries present → should fail')
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

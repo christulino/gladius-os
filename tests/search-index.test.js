@@ -1,4 +1,5 @@
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { searchIndexHandler, handlesEventType } from '../runtime/subscribers/searchIndex.js'
@@ -72,3 +73,6 @@ describe('searchIndex subscriber', () => {
     assert.equal(r.rows[0].comments_text, '')
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

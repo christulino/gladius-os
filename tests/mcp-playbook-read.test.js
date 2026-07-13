@@ -1,4 +1,5 @@
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { createAuthApi } from './helpers/auth.js'
@@ -86,3 +87,6 @@ describe('MCP Playbook Read', () => {
     assert.notEqual(status, 401, 'Bearer auth should work')
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

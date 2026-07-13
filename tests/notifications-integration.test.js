@@ -19,6 +19,7 @@
  */
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { createAuthApi } from './helpers/auth.js'
@@ -222,3 +223,6 @@ describe('notifications — end-to-end', () => {
     await query('DELETE FROM runtime.notifications WHERE id = $1', [otherNotifId])
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)

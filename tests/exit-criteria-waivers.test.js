@@ -24,6 +24,7 @@
 // an ephemeral test org, for isolation.
 
 import { describe, it, before, after } from 'node:test'
+import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { evaluateExitCriteria, waiveCriterion } from '../runtime/exitCriteria.js'
@@ -232,3 +233,6 @@ describe('exit criteria: cut api tier (DEBT.25494)', () => {
     assert.equal(res.failed.some(f => f.id === criterionId), true, 'should appear in failed list')
   })
 })
+
+// Close the shared PG pool so this test process can exit cleanly (DEBT.26643).
+after(closePool)
