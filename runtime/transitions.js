@@ -216,6 +216,18 @@ export async function executeTransition(workItemId, toStageId, userId, options =
       updateSql += `,\n        resolved_at = NULL`
     }
 
+    // Cancellation disposition: entering a cancelled-class stage records who
+    // cancelled it, why, and when. `now` ($3) is forward-generated like
+    // resolved_at — a legitimate event timestamp, not a back-fill. Part of the
+    // core transition UPDATE (not a side effect) so it commits atomically.
+    if (toStage.stage_class === 'cancelled') {
+      updateSql += `,\n        cancelled_at = $3`
+      updateVals.push(userId)
+      updateSql += `,\n        cancelled_by_user_id = $${updateVals.length}`
+      updateVals.push(reason ?? null)
+      updateSql += `,\n        cancelled_reason = $${updateVals.length}`
+    }
+
     updateVals.push(workItemId)
     updateSql += `\n      WHERE id = $${updateVals.length}`
 

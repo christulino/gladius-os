@@ -10,6 +10,7 @@ import { WorkItemHistory } from '@/components/WorkItemHistory'
 import AttachmentsList from '@/components/AttachmentsList'
 import AttachmentUpload from '@/components/AttachmentUpload'
 import { JournalTab } from '@/components/JournalTab'
+import { CancelWorkItem } from '@/components/CancelWorkItem'
 import PlaybookRunIndicator from '@/components/PlaybookRunIndicator'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { Plus, X, Check, CircleDot, Shield, AlertTriangle, Loader2 } from 'lucide-react'
@@ -712,6 +713,11 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
 
   if (!item && !loading) return null
 
+  // The cancel affordance is dedicated (terracotta) — keep it out of the generic
+  // "Transition to..." dropdown so there's a single, unambiguous cancel path.
+  const cancelTransition = transitions.find(t => t.to_stage_class === 'cancelled')
+  const forwardTransitions = transitions.filter(t => t.to_stage_class !== 'cancelled')
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent overlay={false}>
@@ -982,13 +988,13 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                           variant="outline"
                           size="sm"
                           onClick={() => setTransitionOpen(!transitionOpen)}
-                          disabled={saving || transitions.length === 0}
+                          disabled={saving || forwardTransitions.length === 0}
                         >
                           Transition to...
                         </Button>
                         {transitionOpen && (
                           <div className="absolute top-full mt-1 left-0 z-50 bg-card border border-border rounded shadow-lg min-w-[180px] py-1">
-                            {transitions.map(t => (
+                            {forwardTransitions.map(t => (
                               <button
                                 key={t.id}
                                 onClick={() => handleTransition(t)}
@@ -1009,6 +1015,12 @@ export function WorkItemDetail({ workItemId: initialWorkItemId, open, onOpenChan
                       >
                         Link Work Item
                       </Button>
+
+                      <CancelWorkItem
+                        workItemId={workItemId}
+                        cancelTransition={cancelTransition}
+                        onCancelled={async () => { await loadData(); onChanged?.() }}
+                      />
                     </div>
 
                     {/* Exit criteria gate */}

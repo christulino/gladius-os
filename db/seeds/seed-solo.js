@@ -107,9 +107,13 @@ const FEATURE_DEV_WORKFLOW = {
     { from: 'dev_test',  to: 'review',    label: 'Submit for Review', kind: 'forward' },
     { from: 'review',    to: 'done',      label: 'Approve',           kind: 'forward' },
     { from: 'review',    to: 'dev_test',  label: 'Request Changes',   kind: 'backward', requires_reason: true },
+    // Cancel reachable from every non-terminal stage.
     { from: 'backlog',   to: 'cancelled', label: 'Cancel',            kind: 'forward',  requires_reason: true },
     { from: 'todo',      to: 'cancelled', label: 'Cancel',            kind: 'forward',  requires_reason: true },
+    { from: 'discovery', to: 'cancelled', label: 'Cancel',            kind: 'forward',  requires_reason: true },
+    { from: 'planning',  to: 'cancelled', label: 'Cancel',            kind: 'forward',  requires_reason: true },
     { from: 'dev_test',  to: 'cancelled', label: 'Cancel',            kind: 'forward',  requires_reason: true },
+    { from: 'review',    to: 'cancelled', label: 'Cancel',            kind: 'forward',  requires_reason: true },
   ],
 }
 
