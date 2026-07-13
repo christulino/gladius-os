@@ -258,12 +258,6 @@ export const api = {
   simulationSpeed:    (speed) => apiFetch('/simulation/speed', { method: 'PUT', body: JSON.stringify({ speed }) }),
   simulationStatus:   () => apiFetch('/simulation/status'),
 
-  // Service Catalog
-  catalogItems:       (org_id) => apiFetch(`/catalog-items?org_id=${org_id}`),
-  createCatalogItem:  (data) => apiFetch('/catalog-items', { method: 'POST', body: JSON.stringify(data) }),
-  updateCatalogItem:  (id, data) => apiFetch(`/catalog-items/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  deleteCatalogItem:  (id) => apiFetch(`/catalog-items/${id}`, { method: 'DELETE' }),
-
   // Context Entries
   contextEntries:     (workItemId, types) => apiFetch(`/work-items/${workItemId}/context-entries${types ? '?types='+types : ''}`),
   createContextEntry: (workItemId, data)  => apiFetch(`/work-items/${workItemId}/context-entries`, { method: 'POST', body: JSON.stringify(data) }),
