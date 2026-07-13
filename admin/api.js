@@ -3170,78 +3170,81 @@ router.delete('/work-items/:id/links/:targetId', async (req, res, next) => {
 // REPORTS
 // =============================================================================
 
-// Delivery time histogram — completed items with lead time buckets
-router.get('/reports/delivery-time', async (req, res, next) => {
-  try {
-    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
-    const witType = req.query.wit_type || null
-    const days = parseInt(req.query.days) || 42 // default 6 weeks
+// NOTE: The delivery-time report was CUT (FEAT.26609 — "flow metrics: trim to
+// three"). Reports now expose exactly three metrics: cycle time by stage, aging
+// WIP, and throughput. Each splits work into a binary agent-vs-human CLASS (never
+// per-user — "the workflow is measured, not the worker") using the transition
+// actor: agent = runtime.stage_transition_history.transitioned_by_user_id equal to
+// GLADIUS_AGENT_USER_ID; everything else (real humans AND NULL/system) folds into
+// human. was_automated is deliberately NOT used — it means connection/action
+// triggered, not AI-agent. See design journal entry on FEAT.26609 for the full rule.
 
-    const result = await query(`
-      SELECT wi.id, wi.title, wi.display_key,
-             wit.name AS work_item_type_name,
-             s.stage_class,
-             wi.created_at AS started_at,
-             wi.entered_current_stage_at AS completed_at,
-             EXTRACT(EPOCH FROM (wi.entered_current_stage_at - wi.created_at)) / 3600 AS lead_time_hours
-      FROM runtime.work_items wi
-      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
-      JOIN blueprint.stages s ON s.id = wi.current_stage_id
-      WHERE s.stage_class = 'done'
-        AND wi.spawn_state = 'active'
-        AND wi.entered_current_stage_at >= NOW() - ($1 || ' days')::interval
-        ${orgId ? 'AND wi.owner_org_id = $2' : ''}
-        ${witType ? `AND wit.name = ${orgId ? '$3' : '$2'}` : ''}
-      ORDER BY wi.entered_current_stage_at ASC
-    `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
-
-    res.json({ rows: result.rows, count: result.rowCount })
-  } catch (err) { next(err) }
-})
-
-// Throughput — items completed per time bucket
+// Throughput — items completed per time bucket, split by agent vs human actor
 router.get('/reports/throughput', async (req, res, next) => {
   try {
     const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
     const witType = req.query.wit_type || null
     const days = parseInt(req.query.days) || 42
     const bucket = req.query.bucket || 'week' // day, week, month
+    const agentId = parseInt(process.env.GLADIUS_AGENT_USER_ID || '', 10) || -1
 
     const truncExpr = bucket === 'day' ? `date_trunc('day', wi.entered_current_stage_at)`
                     : bucket === 'month' ? `date_trunc('month', wi.entered_current_stage_at)`
                     : `date_trunc('week', wi.entered_current_stage_at)`
 
+    const params = [days, agentId]
+    let idx = 3
+    let orgClause = '', typeClause = ''
+    if (orgId)   { orgClause  = `AND wi.owner_org_id = $${idx++}`; params.push(orgId) }
+    if (witType) { typeClause = `AND wit.name = $${idx++}`;        params.push(witType) }
+
+    // actor = who completed the item (moved it into its current done stage)
     const result = await query(`
       SELECT ${truncExpr} AS period,
-             wit.name AS work_item_type_name,
+             CASE WHEN t.transitioned_by_user_id = $2 THEN 'agent' ELSE 'human' END AS actor_class,
              COUNT(*)::int AS count
       FROM runtime.work_items wi
       JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
       JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      LEFT JOIN LATERAL (
+        SELECT h.transitioned_by_user_id
+        FROM runtime.stage_transition_history h
+        WHERE h.work_item_id = wi.id AND h.to_stage_id = wi.current_stage_id
+        ORDER BY h.exited_from_stage_at DESC
+        LIMIT 1
+      ) t ON true
       WHERE s.stage_class = 'done'
         AND wi.spawn_state = 'active'
         AND wi.entered_current_stage_at >= NOW() - ($1 || ' days')::interval
-        ${orgId ? 'AND wi.owner_org_id = $2' : ''}
-        ${witType ? `AND wit.name = ${orgId ? '$3' : '$2'}` : ''}
-      GROUP BY period, wit.name
-      ORDER BY period ASC, wit.name ASC
-    `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
+        ${orgClause}
+        ${typeClause}
+      GROUP BY period, actor_class
+      ORDER BY period ASC, actor_class ASC
+    `, params)
 
     res.json({ rows: result.rows, count: result.rowCount })
   } catch (err) { next(err) }
 })
 
-// Cycle time by stage — average time in each stage for completed items
+// Cycle time by stage — time in each stage, split by agent vs human actor
 router.get('/reports/cycle-time-by-stage', async (req, res, next) => {
   try {
     const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
     const witType = req.query.wit_type || null
     const days = parseInt(req.query.days) || 42
+    const agentId = parseInt(process.env.GLADIUS_AGENT_USER_ID || '', 10) || -1
 
-    // Get stage transition history — each row represents time in the from_stage
+    const params = [days, agentId]
+    let idx = 3
+    let orgClause = '', typeClause = ''
+    if (orgId)   { orgClause  = `AND wi.owner_org_id = $${idx++}`; params.push(orgId) }
+    if (witType) { typeClause = `AND wit.name = $${idx++}`;        params.push(witType) }
+
+    // Each history row = time in the from_stage; actor = who exited it from that stage
     const result = await query(`
       SELECT s.name AS stage_name,
              s.stage_class,
+             CASE WHEN h.transitioned_by_user_id = $2 THEN 'agent' ELSE 'human' END AS actor_class,
              COUNT(DISTINCT h.work_item_id)::int AS item_count,
              AVG(h.time_in_stage_seconds) / 3600.0 AS avg_hours,
              PERCENTILE_CONT(0.5) WITHIN GROUP (
@@ -3257,11 +3260,54 @@ router.get('/reports/cycle-time-by-stage', async (req, res, next) => {
       WHERE wi.spawn_state = 'active'
         AND h.exited_from_stage_at >= NOW() - ($1 || ' days')::interval
         AND s.stage_class != 'done'
-        ${orgId ? 'AND wi.owner_org_id = $2' : ''}
-        ${witType ? `AND wit.name = ${orgId ? '$3' : '$2'}` : ''}
-      GROUP BY s.name, s.stage_class
-      ORDER BY MIN(s.display_order) ASC
-    `, [days, ...(orgId ? [orgId] : []), ...(witType ? [witType] : [])])
+        ${orgClause}
+        ${typeClause}
+      GROUP BY s.name, s.stage_class, actor_class
+      ORDER BY MIN(s.display_order) ASC, actor_class ASC
+    `, params)
+
+    res.json({ rows: result.rows, count: result.rowCount })
+  } catch (err) { next(err) }
+})
+
+// Aging WIP — in-progress (non-terminal) items, current age in stage, split by actor
+router.get('/reports/aging-wip', async (req, res, next) => {
+  try {
+    const orgId = req.query.org_id ? parseInt(req.query.org_id) : null
+    const witType = req.query.wit_type || null
+    const agentId = parseInt(process.env.GLADIUS_AGENT_USER_ID || '', 10) || -1
+
+    const params = [agentId]
+    let idx = 2
+    let orgClause = '', typeClause = ''
+    if (orgId)   { orgClause  = `AND wi.owner_org_id = $${idx++}`; params.push(orgId) }
+    if (witType) { typeClause = `AND wit.name = $${idx++}`;        params.push(witType) }
+
+    // Age from entered_current_stage_at (sacred timestamp — read only, never set here).
+    // actor = who last moved the item into its current stage.
+    const result = await query(`
+      SELECT wi.id, wi.display_key, wi.title,
+             wit.name AS work_item_type_name,
+             s.name AS stage_name,
+             s.stage_class,
+             EXTRACT(EPOCH FROM (NOW() - wi.entered_current_stage_at)) / 3600 AS age_hours,
+             CASE WHEN t.transitioned_by_user_id = $1 THEN 'agent' ELSE 'human' END AS actor_class
+      FROM runtime.work_items wi
+      JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
+      JOIN blueprint.stages s ON s.id = wi.current_stage_id
+      LEFT JOIN LATERAL (
+        SELECT h.transitioned_by_user_id
+        FROM runtime.stage_transition_history h
+        WHERE h.work_item_id = wi.id AND h.to_stage_id = wi.current_stage_id
+        ORDER BY h.exited_from_stage_at DESC
+        LIMIT 1
+      ) t ON true
+      WHERE wi.spawn_state = 'active'
+        AND s.stage_class NOT IN ('done', 'cancelled')
+        ${orgClause}
+        ${typeClause}
+      ORDER BY age_hours DESC
+    `, params)
 
     res.json({ rows: result.rows, count: result.rowCount })
   } catch (err) { next(err) }

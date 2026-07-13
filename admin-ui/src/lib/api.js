@@ -218,10 +218,10 @@ export const api = {
   acceptanceCriteria:     (wiId) => apiFetch(`/work-items/${wiId}/acceptance-criteria`),
   updateAcceptanceCriteria: (wiId, items) => apiFetch(`/work-items/${wiId}/acceptance-criteria`, { method: 'PUT', body: JSON.stringify({ items }) }),
 
-  // Reports
-  reportDeliveryTime:    (params) => apiFetch(`/reports/delivery-time?${new URLSearchParams(params)}`),
+  // Reports (three metrics: cycle time by stage, aging WIP, throughput — FEAT.26609)
   reportThroughput:      (params) => apiFetch(`/reports/throughput?${new URLSearchParams(params)}`),
   reportCycleTimeByStage:(params) => apiFetch(`/reports/cycle-time-by-stage?${new URLSearchParams(params)}`),
+  reportAgingWip:        (params) => apiFetch(`/reports/aging-wip?${new URLSearchParams(params)}`),
 
   query: (sql) => apiFetch('/query', {
     method: 'POST',
