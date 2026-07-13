@@ -439,12 +439,24 @@ export const workflows = [
         is_entry_stage: false,
         is_terminal:   true,
       },
+      {
+        key:           'cancelled',
+        name:          'Cancelled',
+        stage_class:   'cancelled',
+        stage_type:    'waiting',
+        display_order: 4,
+        is_entry_stage: false,
+        is_terminal:   true,
+      },
     ],
     transitions: [
       { from: 'inbox', to: 'doing', label: 'Start',   kind: 'forward'  },
       { from: 'doing', to: 'done',  label: 'Complete', kind: 'forward'  },
       { from: 'doing', to: 'inbox', label: 'Pause',    kind: 'backward' },
       { from: 'done',  to: 'doing', label: 'Reopen',   kind: 'backward' },
+      // Cancel reachable from every non-terminal stage.
+      { from: 'inbox', to: 'cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
+      { from: 'doing', to: 'cancelled', label: 'Cancel', kind: 'forward', requires_reason: true },
     ],
   },
 
