@@ -3214,7 +3214,7 @@ router.get('/reports/throughput', async (req, res, next) => {
         LIMIT 1
       ) t ON true
       WHERE s.stage_class = 'done'
-        AND wi.spawn_state = 'active'
+        AND wi.spawn_state = 'done'
         AND wi.entered_current_stage_at >= NOW() - ($1 || ' days')::interval
         ${orgClause}
         ${typeClause}
@@ -3257,8 +3257,9 @@ router.get('/reports/cycle-time-by-stage', async (req, res, next) => {
       JOIN runtime.work_items wi ON wi.id = h.work_item_id
       JOIN blueprint.work_item_types wit ON wit.id = wi.work_item_type_id
       JOIN blueprint.stages s ON s.id = h.from_stage_id
-      WHERE wi.spawn_state = 'active'
-        AND h.exited_from_stage_at >= NOW() - ($1 || ' days')::interval
+      -- No spawn_state filter: completed items' (spawn_state='done') stage history
+      -- is exactly the data a cycle-time metric needs. Aging-WIP is the in-flight view.
+      WHERE h.exited_from_stage_at >= NOW() - ($1 || ' days')::interval
         AND s.stage_class != 'done'
         ${orgClause}
         ${typeClause}
