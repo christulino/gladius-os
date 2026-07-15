@@ -7,6 +7,7 @@
  */
 
 import bcrypt from 'bcrypt'
+import crypto from 'crypto'
 import session from 'express-session'
 import connectPgSimple from 'connect-pg-simple'
 import pg from 'pg'
@@ -134,11 +135,45 @@ export async function findUserById(id) {
   return result.rows[0] || null
 }
 
+const USER_TOKEN_COLUMNS =
+  'id, uri, email, display_name, is_admin, is_active, is_agent'
+
+/**
+ * Resolve a user from a Bearer API token.
+ *
+ * Tokens are stored hashed at rest (SHA-256, hex) in api_token_hash. The
+ * primary lookup is by hash. As defense-in-depth during the plaintext->hash
+ * migration window, a plaintext fallback is retained: if the hash lookup
+ * misses, we try the legacy plaintext api_token column and, on a hit,
+ * backfill that row's api_token_hash (hash-on-use) so it migrates itself.
+ * This makes the change a superset of hash-on-next-use.
+ *
+ * SHA-256 (not bcrypt) is deliberate: API tokens are high-entropy random
+ * values, so a deterministic hash enables an indexed O(1) lookup and is
+ * timing-safe (no plaintext equality compare in SQL).
+ */
 export async function findUserByApiToken(token) {
   if (!token?.startsWith('fos_ak_')) return null
-  const result = await query(
-    'SELECT id, uri, email, display_name, is_admin, is_active, is_agent FROM blueprint.users WHERE api_token = $1 AND is_active = true',
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex')
+
+  const hashResult = await query(
+    `SELECT ${USER_TOKEN_COLUMNS} FROM blueprint.users WHERE api_token_hash = $1 AND is_active = true`,
+    [tokenHash]
+  )
+  if (hashResult.rows[0]) return hashResult.rows[0]
+
+  // Legacy plaintext fallback + hash-on-use backfill.
+  const plaintextResult = await query(
+    `SELECT ${USER_TOKEN_COLUMNS} FROM blueprint.users WHERE api_token = $1 AND is_active = true`,
     [token]
   )
-  return result.rows[0] || null
+  const user = plaintextResult.rows[0]
+  if (!user) return null
+
+  await query(
+    'UPDATE blueprint.users SET api_token_hash = $1 WHERE id = $2 AND api_token_hash IS NULL',
+    [tokenHash, user.id]
+  )
+  return user
 }
