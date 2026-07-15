@@ -77,8 +77,11 @@ SET sequence_number = wi.id,
     ) || '.' || wi.id
 WHERE wi.display_key IS NULL;
 
--- Set sequence to max existing id
-SELECT setval('runtime.work_item_seq', COALESCE((SELECT MAX(id) FROM runtime.work_items), 0));
+-- Set sequence to max existing id.
+-- GREATEST(..., 1) guards a truly empty runtime.work_items: MAX(id) is NULL ->
+-- COALESCE -> 0, and Postgres rejects setval(seq, 0) (min value 1). Clamping to 1
+-- keeps cold-start migrate-then-seed working on a fresh database.
+SELECT setval('runtime.work_item_seq', GREATEST(COALESCE((SELECT MAX(id) FROM runtime.work_items), 0), 1));
 
 -- =============================================================================
 -- 4. Work item links table (for "related" links — parent/child uses parent_id)
