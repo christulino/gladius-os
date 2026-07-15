@@ -50,6 +50,7 @@ uploads/
 _internal/
 *_HANDOFF.md
 ARCHITECTURE.md
+!docs/architecture.md
 CLAUDE.md
 SESSION_*.md
 STATE.md
