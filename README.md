@@ -211,6 +211,12 @@ file or visible in shared session output), rotate it immediately.
 
 ---
 
+## API documentation
+
+The full REST API is documented in [`docs/rest-api-reference.md`](docs/rest-api-reference.md) — base path, auth (session cookie vs. Bearer API token), and every endpoint group with request/response shapes for the most-used routes.
+
+---
+
 ## Contributing
 
 Gladius OS is early-stage and actively developed. Contributions welcome.
