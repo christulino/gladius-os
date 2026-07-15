@@ -12,6 +12,7 @@
 import express      from 'express'
 import helmet        from 'helmet'
 import { mkdir }    from 'fs/promises'
+import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import 'dotenv/config'
@@ -29,6 +30,10 @@ import { startDeliveryWorker, stopDeliveryWorker } from '../runtime/deliveryWork
 import { startRetentionJob, stopRetentionJob } from '../runtime/jobs/notificationRetention.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Read once at module load so /health always reflects the real package version —
+// avoids the version drifting from a hardcoded string (DEBT.26615).
+const { version: PKG_VERSION } = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'))
 
 // Fail fast on missing/placeholder secrets before doing any real work (DEBT.26613).
 // Exits the process with a clear message rather than booting in an insecure state.
@@ -104,7 +109,7 @@ app.get('/health', async (_req, res) => {
   res.status(postgres ? 200 : 503).json({
     status:   postgres ? 'ok' : 'degraded',
     postgres,
-    version:  '0.1.0',
+    version:  PKG_VERSION,
     timestamp: new Date().toISOString(),
   })
 })
