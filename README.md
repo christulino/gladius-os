@@ -215,6 +215,8 @@ file or visible in shared session output), rotate it immediately.
 
 The full REST API is documented in [`docs/rest-api-reference.md`](docs/rest-api-reference.md) — base path, auth (session cookie vs. Bearer API token), and every endpoint group with request/response shapes for the most-used routes.
 
+Stage playbook YAML frontmatter (`trigger`, `model`, `context.pull`/`context.org`/`context.write`, and execution lifecycle) is documented in [`docs/playbook-format.md`](docs/playbook-format.md).
+
 ---
 
 ## Contributing
