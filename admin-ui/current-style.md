@@ -1,4 +1,4 @@
-# Flow OS — UI Style System
+# Gladius — UI Style System
 
 > This style guide has been split into section files for maintainability.
 > Read `style/README.md` for the table of contents.

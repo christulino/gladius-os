@@ -1,6 +1,6 @@
 /**
  * simulation/apiClient.js
- * Thin wrapper around the Flow OS REST API for simulation agents.
+ * Thin wrapper around the Gladius REST API for simulation agents.
  * All calls go through the real API — no direct DB access.
  */
 

@@ -10,7 +10,7 @@ export default {
         sans: ['Inter', 'Helvetica Neue', 'Helvetica', '-apple-system', 'sans-serif'],
       },
       colors: {
-        // Flow OS design tokens mapped to shadcn CSS variable names
+        // Gladius design tokens mapped to shadcn CSS variable names
         border:     'hsl(var(--border))',
         input:      'hsl(var(--input))',
         ring:       'hsl(var(--ring))',

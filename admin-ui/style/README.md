@@ -1,4 +1,4 @@
-# Flow OS — UI Style System
+# Gladius — UI Style System
 
 > Target design system. All new UI work follows these rules.
 > When existing code conflicts with this document, this document wins.
