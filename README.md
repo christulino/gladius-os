@@ -217,6 +217,8 @@ The full REST API is documented in [`docs/rest-api-reference.md`](docs/rest-api-
 
 Stage playbook YAML frontmatter (`trigger`, `model`, `context.pull`/`context.org`/`context.write`, and execution lifecycle) is documented in [`docs/playbook-format.md`](docs/playbook-format.md).
 
+The actor/terminology model (Gladius / Executor / Worker / Headless Worker / Orchestrator / Maintainer / Architect) and how playbooks reach a Worker are documented in [`docs/architecture.md`](docs/architecture.md).
+
 ---
 
 ## Contributing
