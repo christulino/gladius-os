@@ -1,6 +1,6 @@
 /**
  * runtime/transitions.js
- * Stage transition engine — the heart of Flow OS.
+ * Stage transition engine — the heart of Gladius.
  *
  * Two-phase approach:
  *   Phase 1: prepareTransition()  — validate, evaluate criteria, collect prompts

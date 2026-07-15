@@ -8,7 +8,7 @@ The sidebar is the only navigation. No top bar. Logo/app identity at the top.
 
 ```
 ┌──────────────────────┐
-│  ◈ Flow OS           │  Logo + app name, compact
+│  ◈ Gladius           │  Logo + app name, compact
 │                      │
 │  Board               │  ← primary, always first
 │                      │

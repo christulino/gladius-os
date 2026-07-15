@@ -112,7 +112,7 @@ app.use((err, _req, res, _next) => {
 // =============================================================================
 
 app.listen(PORT, async () => {
-  console.log(`[api] Flow OS running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
+  console.log(`[api] Gladius running on port ${PORT} (${process.env.NODE_ENV || 'development'})`)
   console.log(`[api] Health: http://localhost:${PORT}/health`)
   try {
     await startProcessor()
