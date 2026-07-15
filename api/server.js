@@ -10,6 +10,7 @@
  */
 
 import express      from 'express'
+import helmet        from 'helmet'
 import { mkdir }    from 'fs/promises'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
@@ -17,6 +18,8 @@ import 'dotenv/config'
 import { initLogger }                 from '../admin/logger.js'
 import { healthCheck as pgHealth }    from '../db/postgres.js'
 import { createSessionMiddleware, requireAuth } from '../core/auth.js'
+import { createCorsMiddleware }       from '../core/cors.js'
+import { assertRequiredSecrets }      from '../core/secrets.js'
 import { DEV_TOOLS_ENABLED, requireDevTools }   from '../core/devTools.js'
 import authRoutes       from './routes/auth.js'
 import adminApiRoutes   from '../admin/api.js'
@@ -26,6 +29,10 @@ import { startDeliveryWorker, stopDeliveryWorker } from '../runtime/deliveryWork
 import { startRetentionJob, stopRetentionJob } from '../runtime/jobs/notificationRetention.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+
+// Fail fast on missing/placeholder secrets before doing any real work (DEBT.26613).
+// Exits the process with a clear message rather than booting in an insecure state.
+assertRequiredSecrets()
 
 // Patch console before anything else logs — only when Dev Tools are enabled.
 // Default install: plain console, nothing captured, nothing intercepted.
@@ -41,6 +48,18 @@ mkdir(uploadsDir, { recursive: true }).catch(() => {})
 // =============================================================================
 // MIDDLEWARE
 // =============================================================================
+
+// Security headers (DEBT.26613). CSP is intentionally DISABLED: helmet's default
+// Content-Security-Policy blocks the Vite/shadcn admin SPA (inline styles/scripts)
+// served at /admin. Tuning a real CSP is a deliberate follow-up. helmet's
+// crossOriginResourcePolicy / COEP defaults are kept — verified the admin-ui and
+// /uploads still load same-origin.
+app.use(helmet({ contentSecurityPolicy: false }))
+
+// Hand-rolled CORS (DEBT.26613). Same-origin by default (no headers); reflects
+// an allowlisted Origin when GLADIUS_CORS_ORIGINS is set. Placed before body /
+// session parsing so preflight OPTIONS short-circuits without touching sessions.
+app.use(createCorsMiddleware())
 
 app.use(express.json())
 

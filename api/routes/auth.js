@@ -10,6 +10,7 @@
  */
 
 import { Router } from 'express'
+import rateLimit from 'express-rate-limit'
 import { query } from '../../db/postgres.js'
 import { generateUri } from '../../core/uri.js'
 import { DEV_TOOLS_ENABLED } from '../../core/devTools.js'
@@ -21,6 +22,27 @@ import {
 } from '../../core/auth.js'
 
 const router = Router()
+
+// ─── Brute-force throttle (DEBT.26613) ──────────────────────────────────────
+// STRICT per-IP limiter on the credential-accepting routes ONLY (login + first-
+// user setup). Deliberately NOT applied globally: the MCP agent and dogfood hit
+// /admin/api at high frequency and must never be throttled by this.
+const LOGIN_RATE_MAX = parseInt(process.env.GLADIUS_LOGIN_RATE_MAX || '10', 10)
+
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: LOGIN_RATE_MAX,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Disabled under NODE_ENV=test: the integration suite runs each test file in a
+  // separate process, each performing its own login from 127.0.0.1. Throttling
+  // those would 429 the suite after the limit. CI sets NODE_ENV=test.
+  skip: () => process.env.NODE_ENV === 'test',
+  handler: (_req, res) =>
+    res.status(429).json({
+      error: 'Too many attempts. Please wait a few minutes and try again.',
+    }),
+})
 
 // ─── GET /auth/status ──────────────────────────────────────────────────────
 // Public — tells the frontend whether to show login or setup wizard.
@@ -61,7 +83,7 @@ router.get('/status', async (req, res, next) => {
 // ─── POST /auth/setup ──────────────────────────────────────────────────────
 // Creates the first admin user. Only works when no users with passwords exist.
 
-router.post('/setup', async (req, res, next) => {
+router.post('/setup', loginRateLimiter, async (req, res, next) => {
   try {
     // Check if setup is still needed
     const check = await query(
@@ -104,7 +126,7 @@ router.post('/setup', async (req, res, next) => {
 
 // ─── POST /auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginRateLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body
     if (!email?.trim() || !password) {
