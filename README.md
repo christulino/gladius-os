@@ -30,15 +30,14 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 
 **Work items**
 - Configurable work item types and workflows per organization
-- Custom fields (text, number, date, boolean, select, multi-select, URL, user, lookup)
-- Intake forms — public no-auth endpoints for external submission
+- Custom fields (text, number, date, select, multi-select)
 - Parent/child and related item linking
-- File and link attachments
+- Link attachments
 - Comment threads with edit/delete
 
 **Flow engine**
 - Two-phase transition engine: prepare (evaluate) → execute (commit)
-- Three-tier exit criteria: manual checklist, codified conditions, API-verified
+- Two-tier exit criteria: manual checklist, codified conditions
 - Waiveable criteria with audit trail
 
 **Search**
@@ -50,12 +49,11 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 - Stage playbooks: YAML-frontmatter markdown instructions that execute on stage entry
 - Context journal: append-only structured entries per work item (decisions, acceptance criteria, notes, test plans)
 - Org context library: org-level knowledge available to all playbook executions
-- MCP stdio server: 8 tools for external AI agents to read context, write journal entries, transition items, search, and comment
+- MCP stdio server: 17 tools for external AI agents to read context, write journal entries, transition items, search, and comment
 
 **Notifications**
-- Four delivery channels: in-app, email, webhook, agent
-- Exponential backoff with per-channel rate limits
-- Webhook ownership challenge (HMAC)
+- Two delivery channels: in-app and agent
+- Exponential backoff with rate limits on agent delivery
 
 **Audit trail**
 - Append-only event log on every work item
@@ -143,7 +141,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 admin/          Express route handlers
 admin-ui/       React frontend (Vite)
 api/            Server entry point + auth middleware
-core/           Auth, events, storage, URI generation
+core/           Auth, events, CORS, secrets, URI generation
 db/             PostgreSQL connection pool + migrations
 mcp/            MCP stdio server
 runtime/        Transition engine, search, notifications, AI execution
@@ -179,7 +177,7 @@ Gladius OS ships an MCP stdio server for AI agent integration:
 node mcp/gladius-context-server.js
 ```
 
-Tools: `list_context_entries`, `write_context_entry`, `get_assembled_context`, `list_org_context`, `get_work_item`, `search_work_items`, `transition_work_item`, `add_comment`.
+Tools: `list_context_entries`, `write_context_entry`, `get_assembled_context`, `list_org_context`, `write_org_context`, `get_work_item`, `search_work_items`, `transition_work_item`, `get_session_context`, `add_comment`, `set_work_item_fields`, `get_exit_criteria`, `ack_exit_criterion`, `get_stage_playbook`, `get_available_transitions`, `link_work_items`, `unlink_work_items`.
 
 Configure `GLADIUS_AGENT_USER_ID` in `.env` to set the actor identity for write operations.
 
