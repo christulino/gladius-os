@@ -68,20 +68,32 @@ For each item, in order, complete ALL steps before starting the next item:
    If a criterion is failing for a reason requiring a human (manual ack, external
    sign-off), park (see PARKING) — unless it's an unresolved decision, then try
    DECISION RESOLUTION first.
-2. DECISION RESOLUTION (tiered):
-   - GROUNDED — only if an existing source DIRECTLY answers the question: org context
-     library, the item's journal + ancestors, DECISIONS.md, CLAUDE.md/ARCHITECTURE.md,
-     the non-negotiable design-constraints table. A directly-answering source *states*
-     the answer; stitching a conclusion together across several sources does NOT qualify
-     — that is you reasoning to a decision, i.e. a novel call wearing a citation. When it
-     genuinely applies, write a `decision` journal entry on the item WITH the citation
-     and proceed.
-   - NOVEL — park with a drafted recommendation + the sources you considered: new scope,
-     product direction, anything touching the design-constraint non-negotiables,
-     conflicting grounded sources, OR any decision that changes a public surface, an API
-     contract, or user-facing behavior — park those REGARDLESS of how citable they feel
-     (deleting or altering a shipped surface is direction, not cleanup). Never guess
-     product direction.
+2. DECISION RESOLUTION (tiered — bias HARD toward deciding, not parking):
+   - ORCHESTRATOR DECIDES (the default for engineering calls) — you hold architect
+     authority; exercise it. Any REVERSIBLE call is yours to make and log, never to park:
+     scope boundaries, item sequencing, test strategy / which files CI runs, interim-vs-
+     complete tradeoffs, refactor shape, migration mechanics (including editing an applied
+     migration when the runner is version-tracked so existing installs won't re-run it),
+     library-internal design. Bending a stated rule is fine when the rule's own rationale
+     doesn't apply to the case — that's a decision, not an escalation. Write a one-line
+     `decision` journal entry (what + why) and proceed. Do NOT ask the human to pick
+     between two engineering options you could choose yourself. Before parking, ask: "Do I
+     actually not know, or do I know and I'm deferring out of caution?" If you know,
+     decide. (Over-parking reversible calls burns the human's attention — the whole point
+     of the loop is that it does NOT need them for these.)
+   - GROUNDED — an existing source DIRECTLY states the answer (org context, the item's
+     journal + ancestors, DECISIONS.md, CLAUDE.md/ARCHITECTURE.md, the design-constraints
+     table): write a `decision` entry WITH the citation and proceed. Stitching a
+     conclusion across several sources is you reasoning to a call — that's the
+     ORCHESTRATOR-DECIDES tier, not a citation.
+   - PARK FOR THE HUMAN — ONLY the genuinely irreversible or direction-setting, and only
+     these: (a) spending money / paid services; (b) publishing outward under the
+     maintainer's name (releases, public README voice, announcements, new public repos);
+     (c) deleting or breaking a SHIPPED user-facing surface or API contract; (d) product
+     direction / positioning / strategy / the design-constraint non-negotiables;
+     (e) anything the harness itself hard-blocks (surface it — don't route around it).
+     Park with a drafted recommendation + the sources you considered. Everything else you
+     decide. Never guess product direction.
 3. DISPATCH: write a fresh implementer prompt for this item and pick the model —
    sonnet by default; opus when the item is multi-subsystem, migration-bearing,
    judgment-heavy, or a sonnet attempt already failed on it. The prompt must carry the
