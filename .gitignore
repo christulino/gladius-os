@@ -64,6 +64,7 @@ TODO.md
 docs/superpowers/
 docs/plans/
 docs/strategy/
+docs/doctrine/
 feature_plans/
 .claude/*
 !.claude/workflows

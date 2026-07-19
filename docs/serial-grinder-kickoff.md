@@ -81,11 +81,25 @@ For each item, in order, complete ALL steps before starting the next item:
      actually not know, or do I know and I'm deferring out of caution?" If you know,
      decide. (Over-parking reversible calls burns the human's attention — the whole point
      of the loop is that it does NOT need them for these.)
-   - GROUNDED — an existing source DIRECTLY states the answer (org context, the item's
-     journal + ancestors, DECISIONS.md, CLAUDE.md/ARCHITECTURE.md, the design-constraints
-     table): write a `decision` entry WITH the citation and proceed. Stitching a
-     conclusion across several sources is you reasoning to a call — that's the
-     ORCHESTRATOR-DECIDES tier, not a citation.
+   - GROUNDED — an existing source DIRECTLY states the answer. Check the DOCTRINE first:
+     the org-context doctrine entries (tag `doctrine`) and their editing-medium files
+     (docs/doctrine/ENGINEERING-DOCTRINE.md + GLADIUS-DOMAIN-MODEL.md), then org context
+     generally, the item's journal + ancestors, DECISIONS.md, CLAUDE.md/ARCHITECTURE.md,
+     the design-constraints table. Cite and proceed. Stitching a conclusion across
+     several sources is you reasoning to a call — that's the ORCHESTRATOR-DECIDES tier,
+     not a citation.
+   - MECHANISM: an EXISTING open decision entry gets resolved via
+     POST /admin/api/work-items/:id/context-entries/:entryId/resolve with the ruling +
+     citation as resolution_text (migration 019 — this is what no_unresolved_decisions
+     reads). A ruling not tied to an existing entry gets a `decision` journal entry.
+   - DOCTRINE FEEDBACK (the loop that makes the doctrine converge):
+     (a) GRADUATION — every ORCHESTRATOR-DECIDES ruling is a doctrine gap by definition.
+         After resolving, append the principle behind the ruling to the relevant
+         doctrine file AND mirror it to the org-context doctrine entry, so the same
+         class of question is GROUNDED next time. Note it in the session report.
+     (b) OVERRIDES ARE DOCTRINE BUGS — if the human vetoes or reverses a ruling, find
+         the doctrine line that produced it and amend it in the same stroke. Never
+         reverse the decision but leave the doctrine that generated it.
    - PARK FOR THE HUMAN — ONLY the genuinely irreversible or direction-setting, and only
      these: (a) spending money / paid services; (b) publishing outward under the
      maintainer's name (releases, public README voice, announcements, new public repos);
@@ -179,9 +193,16 @@ STOP CONDITIONS (hard)
 END OF SESSION
 - Ask before touching the dogfood: pull main in the live checkout, rebuild admin-ui if
   frontend changed, `pm2 restart gladius-os` — only on my explicit confirm.
+- DOCTRINE RETRO (self-reflection pass, before the report): review this session's parks,
+  amendment rounds, and review-caught defects and ask of each: "would a doctrine
+  addition have prevented this park / caught this earlier / made this citable?" Each yes
+  becomes a doctrine amendment (file + org-context mirror) or, if it needs the human, a
+  drafted doctrine proposal in the report. An empty retro is a valid outcome — don't
+  invent doctrine to have something to say (ceremony must earn its place).
 - Report: items merged (with PR links), items parked (with the specific blocker +
-  drafted recommendation), decisions resolved (with citations), follow-ups written to
-  the board, worktrees pruned.
+  drafted recommendation), decisions resolved (with citations), DOCTRINE DELTA (rulings
+  graduated, amendments made, proposals for the human), follow-ups written to the board,
+  worktrees pruned.
 ```
 
 ## What's wired / assumed
