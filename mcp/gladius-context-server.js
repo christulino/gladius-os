@@ -21,6 +21,20 @@ const server = new Server(
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Cross-tenant guard: confirm a work item exists and belongs to the claimed org.
+ * Mirrors the inline check in get_work_item / get_available_transitions.
+ */
+async function assertItemInOrg(workItemId, orgId) {
+  const wi = await apiGet(`/admin/api/work-items/${workItemId}`)
+  if (!wi) throw new Error(`Work item ${workItemId} not found`)
+  if (wi.owner_org_id !== orgId) {
+    throw new Error(`Work item ${workItemId} not found in org ${orgId}`)
+  }
+}
+
 // ── Tool dispatch ─────────────────────────────────────────────────────────────
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -52,6 +66,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           visibility: args.visibility ?? 'item',
           is_agent:   args.is_agent !== false,
         })
+        return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
+      }
+
+      case 'resolve_decision': {
+        writeCount++
+        await assertItemInOrg(args.work_item_id, args.org_id)
+        const entry = await apiPost(
+          `/admin/api/work-items/${args.work_item_id}/context-entries/${args.entry_id}/resolve`,
+          { resolution_text: args.resolution_text },
+        )
+        // The REST endpoint 404s (→ null here) when the entry does not exist on this
+        // work item or is not a decision-type entry. Surface that, never silent success.
+        if (!entry) {
+          throw new Error(`Entry ${args.entry_id} is not a decision entry on work item ${args.work_item_id}`)
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
+      }
+
+      case 'reopen_decision': {
+        writeCount++
+        await assertItemInOrg(args.work_item_id, args.org_id)
+        const entry = await apiPost(
+          `/admin/api/work-items/${args.work_item_id}/context-entries/${args.entry_id}/reopen`,
+          {},
+        )
+        // 404 (→ null) also covers "decision is already open" — reopen only matches
+        // rows with resolved=true.
+        if (!entry) {
+          throw new Error(`Entry ${args.entry_id} is not a resolved decision entry on work item ${args.work_item_id}`)
+        }
         return { content: [{ type: 'text', text: JSON.stringify(entry, null, 2) }] }
       }
 
