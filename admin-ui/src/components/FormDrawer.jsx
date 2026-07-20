@@ -137,7 +137,9 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
     }
     // Mark form ready after a tick so initial state changes don't trigger auto-save
     setTimeout(() => { formReady.current = true }, 50)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Intentionally keyed on `open` only: this must re-run when the drawer opens, not
+  // when field defs or values change. Restore the react-hooks/exhaustive-deps directive
+  // if eslint-plugin-react-hooks is adopted (see DEBT.26638).
   }, [open])
 
   // Re-load dependent select options when their source field changes
@@ -157,7 +159,9 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
         setOptions(o => ({ ...o, [f.key]: [] }))
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Deps intentionally limited to [fields, values]; adding the setters would loop.
+  // Restore the react-hooks/exhaustive-deps directive if eslint-plugin-react-hooks
+  // is adopted (see DEBT.26638).
   }, [fields, values])
 
   // Auto-save: debounce changes and submit

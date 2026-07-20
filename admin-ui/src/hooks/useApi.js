@@ -16,7 +16,11 @@ export function useApi(fetchFn, deps = []) {
     } finally {
       setLoading(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // deps is a caller-supplied array; react-hooks/exhaustive-deps cannot analyze it
+  // statically. Suppression directive removed in DEBT.26638 because the rule is not
+  // installed (an unknown-rule directive is itself a lint error). Restore
+  // `eslint-disable-next-line react-hooks/exhaustive-deps` here if eslint-plugin-react-hooks
+  // is ever adopted -- the omission is intentional, not an oversight.
   }, deps)
 
   useEffect(() => { load() }, [load])
