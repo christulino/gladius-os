@@ -137,7 +137,6 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
     }
     // Mark form ready after a tick so initial state changes don't trigger auto-save
     setTimeout(() => { formReady.current = true }, 50)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // Re-load dependent select options when their source field changes
@@ -157,7 +156,6 @@ export function FormDrawer({ open, onOpenChange, title, fields = [], initialValu
         setOptions(o => ({ ...o, [f.key]: [] }))
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields, values])
 
   // Auto-save: debounce changes and submit

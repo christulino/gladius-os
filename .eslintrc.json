@@ -9,7 +9,8 @@
   },
   "ignorePatterns": [
     "node_modules/",
-    "admin-ui/",
+    "admin-ui/dist/",
+    "admin-ui/node_modules/",
     ".claude/"
   ],
   "rules": {
@@ -21,5 +22,28 @@
       "caughtErrorsIgnorePattern": "^_"
     }],
     "no-unreachable": "error"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["admin-ui/**/*.js", "admin-ui/**/*.jsx"],
+      "env": {
+        "browser": true
+      },
+      "parserOptions": {
+        "ecmaFeatures": {
+          "jsx": true
+        }
+      },
+      "rules": {
+        "no-undef": "error",
+        "no-unreachable": "error",
+        // no-unused-vars is disabled for admin-ui only: eslint's core rule cannot see
+        // that a component is "used" when it's referenced solely inside JSX (e.g.
+        // <Foo />) rather than as a plain identifier. Accurately enabling this rule
+        // here requires eslint-plugin-react's jsx-uses-vars, which is a new dependency
+        // (not added by this change -- see DEBT.26638 decision journal, entry 1002).
+        "no-unused-vars": "off"
+      }
+    }
+  ]
 }
