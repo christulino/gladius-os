@@ -39,6 +39,33 @@ export const TOOLS = [
     },
   },
   {
+    name: 'resolve_decision',
+    description: 'Resolve an open decision-type journal entry by recording the answer. Records attribution (the configured agent identity) and a timestamp, and emits context_entry.decision_resolved. Only decision-type entries can be resolved — get entry IDs from list_context_entries.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id:    { type: 'number', description: 'Work item the decision entry belongs to' },
+        org_id:          { type: 'number', description: 'Org the work item belongs to (required — cross-tenant guard)' },
+        entry_id:        { type: 'number', description: 'Decision entry ID (from list_context_entries)' },
+        resolution_text: { type: 'string', description: 'The answer being recorded — what was decided and why' },
+      },
+      required: ['work_item_id', 'org_id', 'entry_id', 'resolution_text'],
+    },
+  },
+  {
+    name: 'reopen_decision',
+    description: 'Reopen a previously resolved decision entry, clearing its resolution columns and emitting context_entry.decision_reopened. The prior answer is not lost — it survives in the earlier decision_resolved event payload. Only a currently-resolved decision entry can be reopened.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        work_item_id: { type: 'number', description: 'Work item the decision entry belongs to' },
+        org_id:       { type: 'number', description: 'Org the work item belongs to (required — cross-tenant guard)' },
+        entry_id:     { type: 'number', description: 'Resolved decision entry ID (from list_context_entries)' },
+      },
+      required: ['work_item_id', 'org_id', 'entry_id'],
+    },
+  },
+  {
     name: 'get_assembled_context',
     description: 'Get fully assembled context for a work item (journal entries + ancestor entries + org-level context), formatted for prompt injection',
     inputSchema: {

@@ -468,7 +468,7 @@ Response `200`:
 ## MCP server (for AI agents)
 
 External AI agents should generally prefer the **MCP stdio server**
-(`mcp/gladius-context-server.js`, 14 tools) over calling this REST API
+(`mcp/gladius-context-server.js`, 19 tools) over calling this REST API
 directly — it wraps the same endpoints via Bearer auth
 (`mcp/http-client.js`) with retry/backoff and gives task-shaped tools
 (`get_session_context`, `transition_work_item`, `write_context_entry`,

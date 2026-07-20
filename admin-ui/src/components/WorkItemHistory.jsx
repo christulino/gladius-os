@@ -71,7 +71,8 @@ function HistoryRow({ row, isExpanded, onToggle }) {
   const expandable =
     (row.event_type === 'work_item.edited' && Array.isArray(row.details?.changes) && row.details.changes.length > 0) ||
     (row.event_type === 'work_item.commented' && row.details?.preview) ||
-    (row.event_type === 'work_item.transitioned' && row.details?.reason)
+    (row.event_type === 'work_item.transitioned' && row.details?.reason) ||
+    (row.event_type === 'context_entry.decision_resolved' && row.details?.preview)
 
   return (
     <div className="flex gap-2 items-start">
@@ -100,6 +101,9 @@ function HistoryRow({ row, isExpanded, onToggle }) {
               <FieldChange key={i} change={c} />
             ))}
             {row.event_type === 'work_item.commented' && (
+              <p className="text-xs text-foreground/80 whitespace-pre-wrap">{row.details.preview}</p>
+            )}
+            {row.event_type === 'context_entry.decision_resolved' && row.details.preview && (
               <p className="text-xs text-foreground/80 whitespace-pre-wrap">{row.details.preview}</p>
             )}
             {row.event_type === 'work_item.transitioned' && row.details.reason && (

@@ -21,6 +21,8 @@ const HISTORY_EVENT_TYPES = [
   'work_item.unlinked',
   'work_item.attachment_added',
   'work_item.attachment_removed',
+  'context_entry.decision_resolved',
+  'context_entry.decision_reopened',
   'exit_criteria.acknowledged',
   'exit_criteria.unacknowledged',
   'exit_criteria.waived',
@@ -66,9 +68,11 @@ async function loadEnrichment(events) {
   const fromStageIds = new Set()
   const userIds = new Set()
   const targetItemIds = new Set()
+  const entryIds = new Set()
 
   for (const e of events) {
     const p = e.payload || {}
+    if (e.event_type.startsWith('context_entry.decision_') && p.entry_id) entryIds.add(p.entry_id)
     if (e.event_type === 'work_item.transitioned' && p.from_stage_id) fromStageIds.add(p.from_stage_id)
     if ((e.event_type === 'work_item.assigned' || e.event_type === 'work_item.unassigned') && p.user_id) {
       userIds.add(p.user_id)
@@ -77,7 +81,7 @@ async function loadEnrichment(events) {
     if (e.event_type === 'work_item.unlinked' && p.target_id) targetItemIds.add(p.target_id)
   }
 
-  const [stages, users, targets] = await Promise.all([
+  const [stages, users, targets, entries] = await Promise.all([
     fromStageIds.size
       ? query('SELECT id, name FROM blueprint.stages WHERE id = ANY($1::int[])', [[...fromStageIds]])
       : Promise.resolve({ rows: [] }),
@@ -87,12 +91,16 @@ async function loadEnrichment(events) {
     targetItemIds.size
       ? query('SELECT id, display_key, title FROM runtime.work_items WHERE id = ANY($1::int[])', [[...targetItemIds]])
       : Promise.resolve({ rows: [] }),
+    entryIds.size
+      ? query('SELECT id, title FROM runtime.context_entries WHERE id = ANY($1::int[])', [[...entryIds]])
+      : Promise.resolve({ rows: [] }),
   ])
 
   return {
     stages: new Map(stages.rows.map(r => [r.id, r.name])),
     users: new Map(users.rows.map(r => [r.id, r.display_name])),
     targets: new Map(targets.rows.map(r => [r.id, r])),
+    entries: new Map(entries.rows.map(r => [r.id, r.title])),
   }
 }
 
@@ -187,6 +195,19 @@ function formatEvent(e, enrich) {
       return { ...base, summary: `removed attachment ${what}`, details: null }
     }
 
+    case 'context_entry.decision_resolved': {
+      const label = decisionLabel(p, enrich)
+      const text = typeof p.resolution_text === 'string' ? p.resolution_text : ''
+      const inline = text.length > 120 ? text.slice(0, 119) + '…' : text
+      const summary = inline
+        ? `resolved decision ${label}: ${inline}`
+        : `resolved decision ${label}`
+      return { ...base, summary, details: text ? { preview: text } : null }
+    }
+
+    case 'context_entry.decision_reopened':
+      return { ...base, summary: `reopened decision ${decisionLabel(p, enrich)}`, details: null }
+
     case 'exit_criteria.acknowledged':
       return { ...base, summary: `checked exit criterion: ${p.criterion_label || ''}`, details: null }
 
@@ -205,6 +226,15 @@ function formatEvent(e, enrich) {
     default:
       return { ...base, summary: e.event_type, details: null }
   }
+}
+
+/**
+ * Human label for a decision entry referenced by a decision_resolved/_reopened
+ * payload. Entries are deletable and titles are nullable, so fall back to the id.
+ */
+function decisionLabel(payload, enrich) {
+  const title = enrich.entries.get(payload.entry_id)
+  return title ? `“${title}”` : `#${payload.entry_id ?? '?'}`
 }
 
 const FIELD_LABELS = {

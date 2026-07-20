@@ -102,4 +102,5 @@ export async function apiDelete(path, params = {}) {
 export const WRITE_TOOLS = new Set([
   'write_context_entry', 'write_org_context', 'add_comment', 'transition_work_item',
   'set_work_item_fields', 'ack_exit_criterion', 'link_work_items', 'unlink_work_items',
+  'resolve_decision', 'reopen_decision',
 ])
