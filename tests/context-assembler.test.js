@@ -14,7 +14,7 @@ import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { assembleContext, formatContextForPrompt, MAX_CONTEXT_CHARS } from '../runtime/contextAssembler.js'
 import { createWorkItem } from '../runtime/workItems.js'
-import { createContextEntry } from '../runtime/contextEntries.js'
+import { createContextEntry, resolveDecisionEntry } from '../runtime/contextEntries.js'
 import { createTestOrg } from './helpers/testOrg.js'
 
 const AGENT_ID = 309   // agent@flowos.internal
@@ -208,6 +208,65 @@ describe('formatContextForPrompt', () => {
     const withExplicitDefault = formatContextForPrompt(ctx, MAX_CONTEXT_CHARS)
     assert.equal(withOmitted, withExplicitDefault, 'omitting budgetChars must behave identically to passing MAX_CONTEXT_CHARS')
   })
+
+  // ── Decision resolution-state rendering (DEBT.26845) ───────────────────────
+  // A playbook re-litigates already-resolved decisions because the assembled
+  // context gives it no way to tell settled from open. These assert a resolved
+  // decision entry renders as unmistakably RESOLVED (with its answer) and an
+  // open one renders as unmistakably OPEN — for both item-journal and ancestor
+  // entries, since both flow through the same rendering path.
+
+  it('renders a resolved decision entry as unmistakably settled, with its answer', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{
+        type: 'decision', title: 'Lint config?', content: 'Should we use overrides or a plugin?',
+        is_agent: false, resolved: true, resolution_text: 'Use overrides.',
+        resolver_name: 'Chris Tulino', resolved_at: '2026-07-21T13:00:00.000Z',
+      }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.includes('RESOLVED'), 'resolved decision must be marked RESOLVED')
+    assert.ok(result.includes('Use overrides.'), 'must surface the recorded resolution_text')
+    assert.ok(result.includes('Chris Tulino'), 'must surface the resolver name when present')
+    assert.ok(!/DECISION STATUS: OPEN/.test(result), 'a resolved decision must not also read as OPEN')
+  })
+
+  it('renders an unresolved decision entry as unmistakably open', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{
+        type: 'decision', title: 'New question?', content: 'Something genuinely unanswered.',
+        is_agent: true, resolved: false, resolution_text: null, resolver_name: null, resolved_at: null,
+      }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(/DECISION STATUS: OPEN/.test(result), 'unresolved decision must be marked OPEN')
+    assert.ok(!result.includes('RESOLVED'), 'an open decision must not read as RESOLVED')
+  })
+
+  it('renders resolution state for a resolved decision in Ancestor Context too', () => {
+    const ctx = {
+      ...EMPTY,
+      ancestors: [{
+        type: 'decision', title: 'Parent question', content: 'Ancestor decision text.',
+        is_agent: false, resolved: true, resolution_text: 'Settled upstream.',
+        resolver_name: null, resolved_at: null, work_item_id: 1,
+      }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(result.includes('RESOLVED'), 'resolved ancestor decision must be marked RESOLVED')
+    assert.ok(result.includes('Settled upstream.'), 'must surface ancestor resolution_text')
+  })
+
+  it('does not add a resolution-state marker to non-decision entry types', () => {
+    const ctx = {
+      ...EMPTY,
+      itemJournal: [{ type: 'discovery', title: 'Not a decision', content: 'plain entry', is_agent: false }],
+    }
+    const result = formatContextForPrompt(ctx)
+    assert.ok(!result.includes('DECISION STATUS'), 'non-decision entries must not get a decision status line')
+  })
 })
 
 // ── assembleContext ───────────────────────────────────────────────────────────
@@ -331,6 +390,40 @@ describe('assembleContext', () => {
     for (const e of ctx.orgContext) {
       assert.equal(e.type, 'nfr', `expected only nfr org context, got type '${e.type}'`)
     }
+  })
+
+  // DEBT.26845 — assembleContext must surface decision resolution state so the
+  // caller (formatContextForPrompt) can render settled vs. open unmistakably.
+  it('includes resolution state on a resolved decision entry (DEBT.26845)', async () => {
+    const created = await createContextEntry(workItemId, {
+      type: 'decision', title: 'Resolved test decision', content: 'Pick A or B?', authorId: AGENT_ID, isAgent: true,
+    })
+    await resolveDecisionEntry(created.id, workItemId, { resolutionText: 'Picked A.', resolvedBy: AGENT_ID })
+
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
+      context: { pull: ['decision'], org: [] },
+    })
+    const entry = ctx.itemJournal.find(e => e.title === 'Resolved test decision')
+    assert.ok(entry, 'resolved decision entry should be present in itemJournal')
+    assert.equal(entry.resolved, true, 'resolved flag must be true')
+    assert.equal(entry.resolution_text, 'Picked A.', 'resolution_text must be surfaced')
+    assert.ok(entry.resolved_at, 'resolved_at must be surfaced')
+    assert.equal(entry.resolver_name, 'FlowOS Agent', 'resolver_name must be joined from blueprint.users')
+  })
+
+  it('leaves resolution fields empty/false on an open decision entry (DEBT.26845)', async () => {
+    await createContextEntry(workItemId, {
+      type: 'decision', title: 'Open test decision', content: 'Still unanswered?', authorId: AGENT_ID, isAgent: true,
+    })
+
+    const ctx = await assembleContext(workItemId, testOrg.orgId, {
+      context: { pull: ['decision'], org: [] },
+    })
+    const entry = ctx.itemJournal.find(e => e.title === 'Open test decision')
+    assert.ok(entry, 'open decision entry should be present in itemJournal')
+    assert.equal(entry.resolved, false, 'resolved flag must be false for an open decision')
+    assert.equal(entry.resolution_text, null, 'resolution_text must be null for an open decision')
+    assert.equal(entry.resolver_name, null, 'resolver_name must be null for an open decision')
   })
 })
 
