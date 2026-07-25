@@ -1,0 +1,19 @@
+node_modules
+admin-ui/node_modules
+admin-ui/dist
+.git
+.gitignore
+.env
+.env.*
+.claude
+docs
+tests
+uploads
+feature_plans
+_internal
+untitled folder
+untitled folder 2
+*.md
+docker-compose*.yml
+Dockerfile
+.dockerignore
