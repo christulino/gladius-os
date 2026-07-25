@@ -17,8 +17,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# Application source (admin-ui source is excluded by .dockerignore; its built
-# output is copied from stage 1 below).
+# Application source. .dockerignore keeps node_modules, .git, .env, docs, tests,
+# and admin-ui build artifacts (node_modules/dist) out; the admin-ui source that
+# COPY . . brings in is harmless and gets its built output overlaid from stage 1
+# below.
 COPY . .
 
 # Built admin UI from stage 1 (overlays any stale dist).

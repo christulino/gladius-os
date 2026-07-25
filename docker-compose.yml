@@ -15,7 +15,6 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: gladius-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB:       gladius
@@ -31,7 +30,6 @@ services:
 
   app:
     image: ghcr.io/christulino/gladius-os:latest
-    container_name: gladius-app
     restart: unless-stopped
     depends_on:
       postgres:
