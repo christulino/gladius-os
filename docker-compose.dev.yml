@@ -1,0 +1,39 @@
+version: "3.9"
+
+# Gladius — Contributor / Development Database
+# Runs ONLY PostgreSQL (with the db/init bind-mount) so you can run the app
+# from source: `docker compose -f docker-compose.dev.yml up -d` then `npm run dev`.
+#
+# For a full running app with no checkout, use the root docker-compose.yml.
+#
+# Start:   docker compose -f docker-compose.dev.yml up -d
+# Stop:    docker compose -f docker-compose.dev.yml down
+# Reset:   docker compose -f docker-compose.dev.yml down -v   (destroys all data)
+
+services:
+
+  # ===========================================================================
+  # POSTGRESQL
+  # Blueprint + Runtime schemas
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: gladius-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       flowos
+      POSTGRES_USER:     flowos
+      POSTGRES_PASSWORD: flowos_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d   # runs SQL files on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowos -d flowos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

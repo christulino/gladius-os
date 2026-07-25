@@ -1,37 +1,53 @@
-version: "3.9"
-
-# Gladius — Local Development Environment
-# Runs PostgreSQL
+# Gladius — one-shot install stack
+# Pulls the published app image + PostgreSQL. No source checkout required.
 #
-# Start:   docker compose up -d
-# Stop:    docker compose down
-# Reset:   docker compose down -v   (WARNING: destroys all data)
-# Logs:    docker compose logs -f [service]
+# Install:
+#   curl -O https://raw.githubusercontent.com/christulino/gladius-os/main/docker-compose.yml
+#   docker compose up
+#
+# Then open http://localhost:3000/admin/ — the generated admin password prints
+# in the app container logs on first boot. Add your Anthropic API key later
+# under Settings -> AI Models to enable playbooks and NL search.
+#
+# Reset (destroys all data + regenerates secrets):
+#   docker compose down -v
 
 services:
-
-  # ===========================================================================
-  # POSTGRESQL
-  # Blueprint + Runtime schemas
-  # ===========================================================================
   postgres:
     image: postgres:16-alpine
-    container_name: gladius-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       flowos
-      POSTGRES_USER:     flowos
-      POSTGRES_PASSWORD: flowos_dev
-    ports:
-      - "5432:5432"
+      POSTGRES_DB:       gladius
+      POSTGRES_USER:     gladius
+      POSTGRES_PASSWORD: gladius
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init:/docker-entrypoint-initdb.d   # runs SQL files on first start
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flowos -d flowos"]
+      test: ["CMD-SHELL", "pg_isready -U gladius -d gladius"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  app:
+    image: ghcr.io/christulino/gladius-os:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV:          production
+      PORT:              "3000"
+      POSTGRES_HOST:     postgres
+      POSTGRES_PORT:     "5432"
+      POSTGRES_DB:       gladius
+      POSTGRES_USER:     gladius
+      POSTGRES_PASSWORD: gladius
+      GLADIUS_MULTI_ORG: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - gladius_data:/data
+
 volumes:
   postgres_data:
+  gladius_data:
