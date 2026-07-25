@@ -54,7 +54,16 @@ export function createSessionMiddleware() {
       maxAge:   24 * 60 * 60 * 1000,  // 24 hours
       httpOnly: true,
       sameSite: 'lax',
-      secure:   process.env.NODE_ENV === 'production',
+      // 'auto' = Secure only when the connection is actually HTTPS (req.secure).
+      // Do NOT tie this to NODE_ENV: the default self-hosted install runs in
+      // production mode over plain HTTP on localhost, and a hardcoded
+      // secure:true makes express-session silently drop the session cookie,
+      // so login "succeeds" but no session persists. With 'auto' the cookie
+      // works over http://localhost and stays Secure over direct HTTPS.
+      // Behind a TLS-terminating reverse proxy, also set `app.set('trust proxy')`
+      // (and/or an explicit secure-cookie env) so req.secure reflects the proxy —
+      // tracked as a follow-up.
+      secure:   'auto',
     },
     name: 'gladius.sid',
   })
