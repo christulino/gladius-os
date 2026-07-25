@@ -516,20 +516,25 @@ async function seed() {
     `, [userOrgUri, userOrgSlug])
     const userOrgId = userOrgR.rows[0].id
 
-    // Admin user
+    // Admin user.
+    // On re-seed (e.g. a container restart), do NOT overwrite a *generated* random
+    // password — that would silently invalidate the password the user saved on
+    // first boot. An explicitly-provided GLADIUS_SOLO_PASSWORD stays authoritative
+    // (deterministic across boots / intentional reset). The `(xmax = 0)` flag tells
+    // us whether this was a fresh insert, so we only announce a password we set.
     const passwordHash = await bcrypt.hash(adminPassword, 12)
     const adminUri = generateUri(userOrgSlug, 'users')
+    const adminConflictSet = generatedPassword
+      ? 'display_name = EXCLUDED.display_name, is_admin = true, updated_at = NOW()'
+      : 'display_name = EXCLUDED.display_name, password_hash = EXCLUDED.password_hash, is_admin = true, updated_at = NOW()'
     const adminR = await client.query(`
       INSERT INTO blueprint.users (uri, email, display_name, password_hash, is_admin, is_active)
       VALUES ($1, $2, $3, $4, true, true)
-      ON CONFLICT (email) DO UPDATE SET
-        display_name  = EXCLUDED.display_name,
-        password_hash = EXCLUDED.password_hash,
-        is_admin      = true,
-        updated_at    = NOW()
-      RETURNING id
+      ON CONFLICT (email) DO UPDATE SET ${adminConflictSet}
+      RETURNING id, (xmax = 0) AS inserted
     `, [adminUri, adminEmail, adminName, passwordHash])
     const adminId = adminR.rows[0].id
+    const adminWasCreated = adminR.rows[0].inserted
 
     const adminRoleId   = roleIds['Admin']
     const orgAdminRoleId = roleIds['Org Admin']
@@ -833,9 +838,12 @@ A work item is Done when ALL of the following are true:
     console.log('  ─────────────────────────────────────────────────────────')
     console.log(`  Org:           My Workspace (slug: my-workspace)`)
     console.log(`  Admin email:   ${adminEmail}`)
-    if (generatedPassword) {
+    if (generatedPassword && adminWasCreated) {
       console.log(`  Admin password (SAVE THIS — shown once):`)
       console.log(`    ${adminPassword}`)
+    } else if (generatedPassword && !adminWasCreated) {
+      console.log(`  Admin password: unchanged (admin already existed — keep using`)
+      console.log(`                  the password printed on the first run)`)
     }
     console.log(`  Agent user:    Gladius Agent <${agentEmail}> (id: ${agentId})`)
     console.log(`  Workflow:      Feature Development (8 stages)`)
@@ -855,7 +863,7 @@ A work item is Done when ALL of the following are true:
     console.log('    1. npm run dev')
     console.log('    2. Open http://localhost:3000/admin/')
     console.log(`    3. Log in as ${adminEmail}`)
-    if (generatedPassword) {
+    if (generatedPassword && adminWasCreated) {
       console.log('    4. Change your password in Settings -> Profile')
     }
     console.log()
