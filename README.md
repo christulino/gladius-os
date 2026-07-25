@@ -76,11 +76,45 @@ Inspired by Taiichi Ohno's Toyota Production System, David Anderson's Kanban Met
 
 ---
 
-## Quick start
+## Install (Docker)
+
+You need Docker with Compose. Two commands, under 5 minutes, no file editing:
 
 ```bash
-# Start PostgreSQL
-docker compose up -d
+curl -O https://raw.githubusercontent.com/christulino/gladius-os/main/docker-compose.yml
+docker compose up
+```
+
+Then open **http://localhost:3000/admin/**. On first boot the app generates a
+random admin password and prints it in the container logs:
+
+```bash
+docker compose logs app | grep -A1 "Admin password"
+```
+
+Log in with `admin@example.com` and that password, then change it under
+**Settings → Profile**.
+
+**AI features (optional):** playbooks and natural-language search stay dark until
+you add an Anthropic API key under **Settings → AI Models**. No environment
+editing required — the board works immediately without it.
+
+**Reset everything** (destroys all data and regenerates secrets):
+
+```bash
+docker compose down -v
+```
+
+**Known limitations (v1):** the published image is `linux/amd64` only; on Apple
+Silicon it runs under emulation. Multi-arch images are planned.
+
+---
+
+## Quick start (from source)
+
+```bash
+# Start PostgreSQL for local development
+docker compose -f docker-compose.dev.yml up -d
 
 # Install dependencies
 npm install
