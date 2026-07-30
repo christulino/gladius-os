@@ -23,7 +23,6 @@ import { createWorkItem } from '../runtime/workItems.js'
 import { createTestOrg } from './helpers/testOrg.js'
 import { createTestStage } from './helpers/testStage.js'
 
-const AGENT_ID = 309   // agent@flowos.internal
 
 // ── parsePlaybook ─────────────────────────────────────────────────────────────
 
@@ -162,7 +161,7 @@ describe('executePlaybookForStageEntry', () => {
 
     const wi = await createWorkItem(
       { title: 'executor test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     workItemId = wi.id
     assert.ok(workItemId, 'failed to create test work item')

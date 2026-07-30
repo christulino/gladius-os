@@ -17,8 +17,6 @@ import { createWorkItem } from '../runtime/workItems.js'
 import { createTestOrg } from './helpers/testOrg.js'
 import { createTestStage } from './helpers/testStage.js'
 
-const USER_ID = 112   // Chris (waiving user)
-
 describe('exit criteria: waiver respected for all tiers', () => {
   let testOrg
   let stageId
@@ -33,7 +31,7 @@ describe('exit criteria: waiver respected for all tiers', () => {
 
     const wi = await createWorkItem(
       { title: 'waiver test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      USER_ID,
+      testOrg.userId,
     )
     workItemId = wi.id
     assert.ok(workItemId, 'failed to create temp work item')
@@ -66,7 +64,7 @@ describe('exit criteria: waiver respected for all tiers', () => {
   })
 
   it('codified criterion passes after being waived', async () => {
-    await waiveCriterion(workItemId, criterionId, USER_ID, 'waiving for test purposes')
+    await waiveCriterion(workItemId, criterionId, testOrg.userId, 'waiving for test purposes')
 
     const res = await evaluateExitCriteria(workItemId, stageId)
     const c = mine(res)

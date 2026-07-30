@@ -33,8 +33,6 @@ import { createContextEntry, resolveDecisionEntry } from '../runtime/contextEntr
 import { createTestOrg } from './helpers/testOrg.js'
 import { createTestStage } from './helpers/testStage.js'
 
-const USER_ID  = 112   // Chris Tulino (waiving user)
-const AGENT_ID = 309   // agent@flowos.internal
 
 describe('waiveCriterion', () => {
   let testOrg
@@ -48,7 +46,7 @@ describe('waiveCriterion', () => {
 
     const wi = await createWorkItem(
       { title: 'waiver test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     workItemId = wi.id
     assert.ok(workItemId, 'failed to create test work item')
@@ -73,7 +71,7 @@ describe('waiveCriterion', () => {
 
   it('throws when reason is empty', async () => {
     await assert.rejects(
-      () => waiveCriterion(workItemId, criterionId, USER_ID, ''),
+      () => waiveCriterion(workItemId, criterionId, testOrg.userId, ''),
       /reason is required/i,
       'should throw when reason is blank',
     )
@@ -81,16 +79,16 @@ describe('waiveCriterion', () => {
 
   it('throws when reason is whitespace only', async () => {
     await assert.rejects(
-      () => waiveCriterion(workItemId, criterionId, USER_ID, '   '),
+      () => waiveCriterion(workItemId, criterionId, testOrg.userId, '   '),
       /reason is required/i,
       'should throw when reason is whitespace-only',
     )
   })
 
   it('stores waiver metadata in exit_criteria_status', async () => {
-    const row = await waiveCriterion(workItemId, criterionId, USER_ID, 'Exempt per PM approval')
+    const row = await waiveCriterion(workItemId, criterionId, testOrg.userId, 'Exempt per PM approval')
     assert.equal(row.status, 'waived')
-    assert.equal(row.waived_by_user_id, USER_ID)
+    assert.equal(row.waived_by_user_id, testOrg.userId)
     assert.ok(row.waiver_reason?.includes('PM approval'), 'waiver reason should be stored')
     assert.ok(row.waived_at, 'waived_at timestamp should be set')
   })
@@ -123,7 +121,7 @@ describe('exit criteria: no_unresolved_decisions condition', () => {
 
     const wi = await createWorkItem(
       { title: 'no-decisions test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     workItemId = wi.id
     assert.ok(workItemId, 'failed to create test work item')
@@ -157,7 +155,7 @@ describe('exit criteria: no_unresolved_decisions condition', () => {
       type: 'decision',
       title: 'Which framework?',
       content: 'TBD',
-      authorId: AGENT_ID,
+      authorId: testOrg.agentUserId,
       isAgent: true,
     })
     decisionEntryId = entry.id
@@ -170,7 +168,7 @@ describe('exit criteria: no_unresolved_decisions condition', () => {
   it('passes again after the decision is resolved', async () => {
     await resolveDecisionEntry(decisionEntryId, workItemId, {
       resolutionText: 'We chose React.',
-      resolvedBy: USER_ID,
+      resolvedBy: testOrg.userId,
     })
 
     const res = await evaluateExitCriteria(workItemId, stageId)
@@ -194,7 +192,7 @@ describe('exit criteria: cut api tier (DEBT.25494)', () => {
 
     const wi = await createWorkItem(
       { title: 'api-tier-cut test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     workItemId = wi.id
     assert.ok(workItemId, 'failed to create test work item')

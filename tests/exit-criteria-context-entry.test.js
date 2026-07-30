@@ -23,7 +23,6 @@ import { createContextEntry } from '../runtime/contextEntries.js'
 import { createTestOrg } from './helpers/testOrg.js'
 import { createTestStage } from './helpers/testStage.js'
 
-const AGENT_ID = 309   // agent@flowos.internal
 
 describe('exit criteria: context_entry_exists', () => {
   let workItemId
@@ -44,7 +43,7 @@ describe('exit criteria: context_entry_exists', () => {
 
     const wi = await createWorkItem(
       { title: 'context_entry_exists test ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     workItemId = wi.id
     assert.ok(workItemId, 'failed to create temp work item')
@@ -90,7 +89,7 @@ describe('exit criteria: context_entry_exists', () => {
 
   it('passes once a matching context entry exists', async () => {
     await createContextEntry(workItemId,
-      { type: 'discovery', title: 'Scope & Understanding', content: 'temp', authorId: AGENT_ID, isAgent: true })
+      { type: 'discovery', title: 'Scope & Understanding', content: 'temp', authorId: testOrg.agentUserId, isAgent: true })
     const res = await evaluateExitCriteria(workItemId, stageId)
     assert.equal(mine(res).passed, true)
   })
@@ -101,7 +100,7 @@ describe('exit criteria: context_entry_exists', () => {
     assert.equal(mine(res).passed, false, 'one entry should not satisfy min_count 2')
 
     await createContextEntry(workItemId,
-      { type: 'discovery', title: 'Scope 2', content: 'temp2', authorId: AGENT_ID, isAgent: true })
+      { type: 'discovery', title: 'Scope 2', content: 'temp2', authorId: testOrg.agentUserId, isAgent: true })
     res = await evaluateExitCriteria(workItemId, stageId)
     assert.equal(mine(res).passed, true, 'two entries should satisfy min_count 2')
   })

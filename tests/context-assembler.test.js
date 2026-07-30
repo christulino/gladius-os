@@ -17,7 +17,6 @@ import { createWorkItem } from '../runtime/workItems.js'
 import { createContextEntry, resolveDecisionEntry } from '../runtime/contextEntries.js'
 import { createTestOrg } from './helpers/testOrg.js'
 
-const AGENT_ID = 309   // agent@flowos.internal
 
 // ── formatContextForPrompt ────────────────────────────────────────────────────
 
@@ -282,7 +281,7 @@ describe('assembleContext', () => {
     // Create a parent work item
     const parent = await createWorkItem(
       { title: 'assembler test parent ' + Date.now(), work_item_type_id: testOrg.typeId, owner_org_id: testOrg.orgId },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     parentWorkItemId = parent.id
     assert.ok(parentWorkItemId, 'failed to create parent work item')
@@ -295,26 +294,26 @@ describe('assembleContext', () => {
         owner_org_id: testOrg.orgId,
         parent_id: parentWorkItemId,
       },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     workItemId = child.id
     assert.ok(workItemId, 'failed to create child work item')
 
     // Create discovery entries on the child
-    await createContextEntry(workItemId, { type: 'discovery', title: 'Child disc', content: 'Child discovery.', authorId: AGENT_ID, isAgent: true })
+    await createContextEntry(workItemId, { type: 'discovery', title: 'Child disc', content: 'Child discovery.', authorId: testOrg.agentUserId, isAgent: true })
     // Create a design entry on the child (should NOT appear when pulling 'discovery')
-    await createContextEntry(workItemId, { type: 'design', title: 'Child design', content: 'Child design note.', authorId: AGENT_ID, isAgent: true })
+    await createContextEntry(workItemId, { type: 'design', title: 'Child design', content: 'Child design note.', authorId: testOrg.agentUserId, isAgent: true })
     // Create a note entry on the child (DEBT.25727 — Planning playbook must pull Worker analysis notes)
-    await createContextEntry(workItemId, { type: 'note', title: 'Worker analysis', content: 'Code-verified prior analysis.', authorId: AGENT_ID, isAgent: true })
+    await createContextEntry(workItemId, { type: 'note', title: 'Worker analysis', content: 'Code-verified prior analysis.', authorId: testOrg.agentUserId, isAgent: true })
     // Create an NFR entry on the parent (used for ancestor traversal)
-    await createContextEntry(parentWorkItemId, { type: 'nfr', title: 'Parent NFR', content: 'Parent nfr.', authorId: AGENT_ID, isAgent: true })
+    await createContextEntry(parentWorkItemId, { type: 'nfr', title: 'Parent NFR', content: 'Parent nfr.', authorId: testOrg.agentUserId, isAgent: true })
 
     // Create a throwaway org context entry (cleaned up by testOrg.teardown()'s
     // organizations CASCADE — no need to track its id separately)
     await query(`
       INSERT INTO blueprint.org_context (org_id, type, title, content, author_id)
       VALUES ($1, 'nfr', $2, 'Org NFR content.', $3)
-    `, [testOrg.orgId, '__test org context ' + Date.now(), AGENT_ID])
+    `, [testOrg.orgId, '__test org context ' + Date.now(), testOrg.agentUserId])
   })
 
   after(async () => {
@@ -396,9 +395,9 @@ describe('assembleContext', () => {
   // caller (formatContextForPrompt) can render settled vs. open unmistakably.
   it('includes resolution state on a resolved decision entry (DEBT.26845)', async () => {
     const created = await createContextEntry(workItemId, {
-      type: 'decision', title: 'Resolved test decision', content: 'Pick A or B?', authorId: AGENT_ID, isAgent: true,
+      type: 'decision', title: 'Resolved test decision', content: 'Pick A or B?', authorId: testOrg.agentUserId, isAgent: true,
     })
-    await resolveDecisionEntry(created.id, workItemId, { resolutionText: 'Picked A.', resolvedBy: AGENT_ID })
+    await resolveDecisionEntry(created.id, workItemId, { resolutionText: 'Picked A.', resolvedBy: testOrg.agentUserId })
 
     const ctx = await assembleContext(workItemId, testOrg.orgId, {
       context: { pull: ['decision'], org: [] },
@@ -408,12 +407,12 @@ describe('assembleContext', () => {
     assert.equal(entry.resolved, true, 'resolved flag must be true')
     assert.equal(entry.resolution_text, 'Picked A.', 'resolution_text must be surfaced')
     assert.ok(entry.resolved_at, 'resolved_at must be surfaced')
-    assert.equal(entry.resolver_name, 'FlowOS Agent', 'resolver_name must be joined from blueprint.users')
+    assert.equal(entry.resolver_name, testOrg.agentDisplayName, 'resolver_name must be joined from blueprint.users')
   })
 
   it('leaves resolution fields empty/false on an open decision entry (DEBT.26845)', async () => {
     await createContextEntry(workItemId, {
-      type: 'decision', title: 'Open test decision', content: 'Still unanswered?', authorId: AGENT_ID, isAgent: true,
+      type: 'decision', title: 'Open test decision', content: 'Still unanswered?', authorId: testOrg.agentUserId, isAgent: true,
     })
 
     const ctx = await assembleContext(workItemId, testOrg.orgId, {
