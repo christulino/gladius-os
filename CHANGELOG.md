@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-01
+
+### Fixed
+
+- **Multi-arch container image** — the publish workflow built only the runner's
+  native architecture, so `ghcr.io/christulino/gladius-os` shipped `linux/amd64`
+  only and Apple Silicon and ARM servers ran it under emulation. Now published
+  for `linux/amd64` and `linux/arm64`. No image changes were needed: the one
+  native dependency, `bcrypt`, ships arm64 musl prebuilds inside the npm package.
+
+### Changed
+
+- **CI runs the full test suite.** The interim allowlist added in 0.2.0's
+  development ran 22 of 35 test files, so CI reported green while a third of the
+  suite never executed. Integration tests now provision their own orgs, work
+  items and actor users instead of borrowing rows that existed only on the
+  maintainer's long-lived database, and CI runs every file (281 assertions). One
+  file remains excluded pending a product decision — `handlesEventType()` does
+  not cover the seeded `work_item.context_entry_added` notification default, so
+  that notification silently reaches nobody.
+
 ## [0.2.0] - 2026-07-25
 
 Onramp release — install and try Gladius in two commands, with a guided path to
