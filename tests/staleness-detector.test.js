@@ -18,7 +18,6 @@ import { createAuthApi }          from './helpers/auth.js'
 import { createTestOrg }          from './helpers/testOrg.js'
 import { createTestStage }        from './helpers/testStage.js'
 
-const AGENT_ID = 309   // agent@flowos.internal
 
 const api = createAuthApi()
 
@@ -117,7 +116,7 @@ describe('checkContextStaleness', () => {
         work_item_type_id: testOrg.typeId,
         owner_org_id: testOrg.orgId,
       },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     itemId = item.id
 
@@ -129,7 +128,7 @@ describe('checkContextStaleness', () => {
         work_item_type_id: testOrg.typeId,
         owner_org_id: testOrg.orgId,
       },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     shippedId = shipped.id
 
@@ -165,7 +164,7 @@ describe('checkContextStaleness', () => {
               now() - INTERVAL '2 hours',
               now() - INTERVAL '5 minutes',
               $3)
-    `, [itemId, planningStageId, AGENT_ID])
+    `, [itemId, planningStageId, testOrg.agentUserId])
 
     const result = await checkContextStaleness(itemId, testOrg.orgId)
     assert.equal(result.checked, true)
@@ -203,7 +202,7 @@ describe('checkContextStaleness', () => {
                 now() - INTERVAL '1 hour',
                 $3)
         RETURNING id
-      `, [itemId, planningStageId, AGENT_ID])
+      `, [itemId, planningStageId, testOrg.agentUserId])
       planningHistoryId = rows[0].id
     }
 
@@ -215,7 +214,7 @@ describe('checkContextStaleness', () => {
       VALUES ($1, 'discovery', 'Auth service scope',
               'The authentication module handles token validation and expiry.',
               now() - INTERVAL '2 hours', $2, true)
-    `, [itemId, AGENT_ID])
+    `, [itemId, testOrg.agentUserId])
 
     const result = await checkContextStaleness(itemId, testOrg.orgId)
     assert.equal(result.checked, true, 'should have run the check')
@@ -249,7 +248,7 @@ describe('GET /work-items/:id/staleness', () => {
         work_item_type_id: testOrg.typeId,
         owner_org_id: testOrg.orgId,
       },
-      AGENT_ID,
+      testOrg.agentUserId,
     )
     endpointItemId = item.id
   })

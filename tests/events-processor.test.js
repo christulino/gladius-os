@@ -3,11 +3,17 @@
 // The 'cursor and drain' tests call startProcessor({ forceTakeLock: true }) and
 // will be skipped/fail gracefully if a live API server already holds the advisory
 // lock. For endpoint-level tests that require the server, see events-integration.test.js.
+//
+// The auditLog suite provisions its own org + work item via createTestOrg, which
+// does need the API server up (org/type creation goes through REST). Everything
+// else in this file is DB-direct.
 
 import { describe, it, before, after } from 'node:test'
 import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query, getClient } from '../db/postgres.js'
+import { createTestOrg } from './helpers/testOrg.js'
+import { createWorkItem } from '../runtime/workItems.js'
 import { emitEvent } from '../core/events.js'
 import {
   startProcessor,
@@ -264,13 +270,27 @@ describe('runtime/eventProcessor.js — cursor and drain', () => {
 
 describe('subscribers/auditLog — writes work_item_edits rows', () => {
   let workItemId
+  let testOrg
 
+  // work_item_edits.work_item_id is FK-constrained, so this suite needs a real
+  // work item. It used to grab the lowest-id row in the table, which threw on a
+  // freshly-seeded or CI database where there are none (DEBT.26841). Own the row
+  // instead of borrowing one.
   before(async () => {
-    const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
-    assert.ok(rows.length, 'Need at least one work item in the DB (run npm run seed)')
-    workItemId = rows[0].id
+    testOrg = await createTestOrg()
+    const wi = await createWorkItem(
+      {
+        title:             'events-processor audit item ' + Date.now(),
+        work_item_type_id: testOrg.typeId,
+        owner_org_id:      testOrg.orgId,
+      },
+      testOrg.userId,
+    )
+    workItemId = wi.id
     await query('DELETE FROM runtime.work_item_edits WHERE work_item_id = $1', [workItemId])
   })
+
+  after(async () => { await testOrg.teardown() })
 
   it('writes one row per field change, all sharing edit_group_id', async () => {
     const groupId = '00000000-0000-0000-0000-000000000001'

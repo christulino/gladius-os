@@ -91,74 +91,33 @@ jobs:
           exit 1
 
       # ---------------------------------------------------------------------
-      # INTERIM ALLOWLIST — DEBT.26611
+      # FULL SUITE — DEBT.26841 dissolved the interim DEBT.26611 allowlist.
       #
-      # This runs the isolation-clean subset of tests/*.test.js, one file at
-      # a time (never batched — a batched run races on the shared `testOrg`
-      # slug generation across files). The excluded files below are NOT
-      # skipped because they're unimportant; they're excluded because they
-      # fail on a freshly-seeded CI database for reasons unrelated to the
-      # code they're testing:
+      # Every tests/*.test.js file now provisions its own fixtures (org, work
+      # items, actor users) instead of borrowing dogfood rows, so the suite
+      # runs on a freshly-seeded database. Files are still run ONE AT A TIME,
+      # never batched — a batched run races on `testOrg` slug generation
+      # across files.
       #
-      #   Hardcoded dogfood-only actor/user IDs (309, 112, 8) that only exist
-      #   on the live dogfood DB, not a fresh seed (FK violation on insert):
-      #     - context-assembler.test.js
-      #     - exit-criteria-context-entry.test.js
-      #     - exit-criteria-waiver.test.js
-      #     - exit-criteria-waivers.test.js
-      #     - playbook-executor.test.js
-      #     - staleness-detector.test.js
-      #     - search-translate.test.js
+      # ONE EXCLUSION REMAINS, and it is not a test-isolation problem:
       #
-      #   Ambient/global DB-state assumptions (expect a pre-existing work
-      #   item, or a specific hardcoded work-item id, that only exist on a
-      #   long-lived dogfood DB, not a fresh seed):
-      #     - events-integration.test.js
-      #     - events-processor.test.js
-      #     - notifications-integration.test.js
-      #
-      #   Missing self-skip guard: asserts Bearer auth succeeds without
-      #   checking whether GLADIUS_API_KEY is configured (unlike its sibling
-      #   MCP test files, which correctly self-skip when unset):
-      #     - mcp-playbook-read.test.js
-      #
-      #   Real product bug, unrelated to CI/test isolation: the notifications
-      #   subscriber's hardcoded HANDLED event-type set (runtime/subscribers/
-      #   notifications.js) is missing `work_item.context_entry_added`,
-      #   out of sync with the seeded notification_defaults:
-      #     - notifications-fanout.test.js
-      #
-      # All 12 are tracked by DEBT.26841 (test-isolation defect). When that
-      # item lands, delete this allowlist and run the full suite instead.
+      #   notifications-fanout.test.js — asserts handlesEventType() covers
+      #   every event type in the seeded blueprint.notification_defaults. It
+      #   does not: the HANDLED set in runtime/subscribers/notifications.js is
+      #   missing `work_item.context_entry_added`, so a notification default
+      #   the product ships and the UI offers silently fans out to nobody.
+      #   That is a real product defect tracked by DEBT.26601, and fixing it
+      #   is a behaviour decision (notify on every agent journal write? only
+      #   human-authored entries? drop the default instead?) rather than a
+      #   test fix. Re-include this file when DEBT.26601 lands.
       # ---------------------------------------------------------------------
-      - name: Run integration tests (isolation-clean allowlist)
+      - name: Run integration tests (full suite)
         run: |
           set -e
-          FILES="
-            tests/attachments-api.test.js
-            tests/bulk-ops.test.js
-            tests/comments-api.test.js
-            tests/context-api.test.js
-            tests/decision-resolution.test.js
-            tests/delivery-worker-tick.test.js
-            tests/dev-tools-gate.test.js
-            tests/mcp-attribution.test.js
-            tests/mcp-available-transitions.test.js
-            tests/mcp-field-writes.test.js
-            tests/mcp-link-items.test.js
-            tests/mcp-two-writers.test.js
-            tests/mcp-write-org-context.test.js
-            tests/notifications-ratelimit.test.js
-            tests/parse-agent-entries.test.js
-            tests/saved-filters-api.test.js
-            tests/search-api.test.js
-            tests/search-index.test.js
-            tests/session-context-api.test.js
-            tests/single-org-mode.test.js
-            tests/work-item-history.test.js
-            tests/workflow-api.test.js
-          "
-          for f in $FILES; do
+          for f in tests/*.test.js; do
+            case "$f" in
+              tests/notifications-fanout.test.js) echo "skipping $f — DEBT.26601"; continue ;;
+            esac
             echo "::group::$f"
             node --test --test-force-exit "$f"
             echo "::endgroup::"

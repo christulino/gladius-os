@@ -27,16 +27,24 @@ import { randomUUID } from 'node:crypto'
 import { query } from '../../db/postgres.js'
 import { deleteWorkItems } from './cleanup.js'
 import { createAuthApi } from './auth.js'
+import { createTestUser } from './testUser.js'
 
 const api = createAuthApi()
 
 /**
- * Create a fresh ephemeral org + one Task-class work item type.
+ * Create a fresh ephemeral org + one Task-class work item type + two actor
+ * users (one human, one agent).
+ *
+ * The actors exist so tests never have to hardcode a dogfood user ID for
+ * event actor_id / context-entry author_id (DEBT.26841). They are torn down
+ * AFTER the org, because context_entries and org_context reference users with
+ * no on-delete action — the org drop has to cascade those rows away first.
  *
  * Setup uses the HTTP API (validates real API paths).
  * Teardown uses direct DB queries (no delete-org API endpoint exists).
  *
- * @returns {Promise<{ orgId: number, typeId: number, teardown: () => Promise<void> }>}
+ * @returns {Promise<{ orgId: number, typeId: number, userId: number,
+ *   agentUserId: number, teardown: () => Promise<void> }>}
  */
 export async function createTestOrg() {
   const ts   = Date.now()
@@ -80,10 +88,24 @@ export async function createTestOrg() {
   }
   const typeId = wit.id
 
+  // Actor users for this org's tests. Membership is granted so code paths that
+  // resolve org visibility for the actor (e.g. contextAssembler) see the org.
+  const user  = await createTestUser({ orgId })
+  const agent = await createTestUser({ orgId, isAgent: true })
+
   return {
     orgId,
     typeId,
-    teardown: () => dropTestOrg(orgId),
+    userId:          user.id,
+    agentUserId:     agent.id,
+    agentDisplayName: agent.displayName,
+    teardown: async () => {
+      await dropTestOrg(orgId)
+      // Users last — the org drop cascades the context_entries / org_context
+      // rows that would otherwise RESTRICT these deletes.
+      await user.teardown()
+      await agent.teardown()
+    },
   }
 }
 

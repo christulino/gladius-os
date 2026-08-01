@@ -17,14 +17,36 @@ const api = createAuthApi()
 // Ephemeral org provisioned once for the whole test file; torn down in after().
 // Used by the E2E test that creates a work item.
 let testOrg
-before(async () => { testOrg = await createTestOrg() })
+
+// A work item this file owns. Several suites below used to grab the lowest-id
+// row in runtime.work_items and mutate it (priority, substate). That assumed a
+// pre-existing item, so it threw on a freshly-seeded or CI database where the
+// table is empty (DEBT.26841) — and where it did find a row, it was mutating
+// somebody else's data. Owning the row fixes both.
+let sharedWorkItemId
+
+before(async () => {
+  testOrg = await createTestOrg()
+  const { status, data } = await api('/work-items', {
+    method: 'POST',
+    body: JSON.stringify({
+      title:             'events-integration shared item ' + Date.now(),
+      work_item_type_id: testOrg.typeId,
+      owner_org_id:      testOrg.orgId,
+    }),
+  })
+  if (status !== 201) {
+    throw new Error(`events-integration: work item creation failed (${status}): ${JSON.stringify(data)}`)
+  }
+  sharedWorkItemId = data.id
+})
+
 after(async ()  => { await testOrg.teardown() })
 
 describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows', () => {
   let workItemId
   before(async () => {
-    const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
-    workItemId = rows[0].id
+    workItemId = sharedWorkItemId
     await query('UPDATE runtime.work_items SET priority = NULL WHERE id = $1', [workItemId])
     // Scoped to this test's own work item — an unscoped type-only delete would
     // nuke work_item.edited rows belonging to OTHER concurrently-running tests
@@ -91,10 +113,8 @@ describe('PATCH /work-items/:id — emits work_item.edited + writes audit rows',
 describe('Emission on people / link / comment / substate endpoints', () => {
   let workItemId, userId
   before(async () => {
-    const { rows: wi } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
-    workItemId = wi[0].id
-    const { rows: u } = await query('SELECT id FROM blueprint.users WHERE is_active = true ORDER BY id ASC LIMIT 1')
-    userId = u[0].id
+    workItemId = sharedWorkItemId
+    userId = testOrg.userId
     await query(`UPDATE runtime.work_items SET current_substate = 'blocked' WHERE id = $1`, [workItemId])
   })
 
@@ -247,17 +267,24 @@ describe('Admin API — event subscribers endpoints', () => {
 
 describe('Advisory lock — only one processor runs', () => {
   it('exactly one advisory lock is held for the processor key', async () => {
-    const { rows } = await query(
-      "SELECT COUNT(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND objid = 252727379"
-    )
-    assert.equal(rows[0].n, 1, 'exactly one advisory lock should be held')
+    // pg_locks is cluster-wide, so an unscoped count also sees processors of
+    // OTHER Gladius databases on the same PostgreSQL instance (a dev box running
+    // the dogfood alongside a test DB, or two CI jobs sharing a service
+    // container). The invariant under test is one processor per deployment —
+    // i.e. per database — so scope the count to the current one.
+    const { rows } = await query(`
+      SELECT COUNT(*)::int AS n FROM pg_locks
+      WHERE locktype = 'advisory'
+        AND objid = 252727379
+        AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+    `)
+    assert.equal(rows[0].n, 1, 'exactly one advisory lock should be held for this database')
   })
 })
 
 describe('API latency — emission does not block response', () => {
   it('PATCH /work-items/:id returns under 200ms even with emission', async () => {
-    const { rows } = await query('SELECT id FROM runtime.work_items ORDER BY id ASC LIMIT 1')
-    const id = rows[0].id
+    const id = sharedWorkItemId
 
     const t0 = performance.now()
     const { status } = await api(`/work-items/${id}`, {

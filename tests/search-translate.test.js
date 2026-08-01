@@ -1,7 +1,8 @@
-import { describe, it, beforeEach, after } from 'node:test'
+import { describe, it, before, beforeEach, after } from 'node:test'
 import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
+import { createTestUser } from './helpers/testUser.js'
 
 async function loadTranslator(stub) {
   const mod = await import(`../runtime/search/translate.js?cb=${Math.random()}`)
@@ -9,7 +10,20 @@ async function loadTranslator(stub) {
   return mod
 }
 
-const TEST_USER = 8
+// Provisioned per run rather than hardcoded: runtime.translator_usage.user_id
+// is FK-constrained to blueprint.users, and the old literal (8) exists only on
+// the dogfood DB — every insert here failed with 23503 in CI (DEBT.26841).
+let testUser
+let TEST_USER
+
+before(async () => {
+  testUser  = await createTestUser()
+  TEST_USER = testUser.id
+})
+
+after(async () => {
+  await testUser?.teardown()
+})
 
 beforeEach(async () => {
   await query('DELETE FROM runtime.translator_usage WHERE user_id = $1', [TEST_USER])

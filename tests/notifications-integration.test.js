@@ -6,16 +6,17 @@
  * Plan: docs/superpowers/plans/2026-04-20-notifications.md — Task 25
  *
  * Adaptation notes vs. plan template:
- *   - Plan assumed user id=1 is both the test user and the @mentioned target.
- *     Real seed has no user id=1 (lowest is 8). The authenticated test user is
- *     dynamically resolved (test@flowos.dev, id varies by seed run).
- *   - @mention target is user 8 (chris@flowos.dev, handle "chris"), who watches
- *     work item 106. Tests that resolve notifications for the authenticated user
- *     insert a row directly so actor-suppression doesn't interfere.
+ *   - Every fixture is provisioned by this file: an ephemeral org, the work item
+ *     under test, the @mention target, and that target's watch relationship. The
+ *     authenticated caller is the shared test user (test@flowos.dev), resolved by
+ *     email since its id varies by seed run.
+ *   - Tests that resolve notifications for the authenticated user insert a row
+ *     directly so actor-suppression doesn't interfere.
  *   - Direct DB queries used where the API only exposes the current user's own
  *     notifications (GET /notifications filters by req.userId).
  *   - event_id is NOT NULL in the schema. Injected test rows use real event IDs
- *     from runtime.events (distinct rows so UNIQUE(user_id, event_id) holds).
+ *     from runtime.events (distinct rows so UNIQUE(user_id, event_id) holds);
+ *     the events are generated here by PATCHing the item, not assumed present.
  */
 
 import { describe, it, before, after } from 'node:test'
@@ -23,16 +24,20 @@ import { closePool } from './helpers/poolTeardown.js'
 import assert from 'node:assert/strict'
 import { query } from '../db/postgres.js'
 import { createAuthApi } from './helpers/auth.js'
+import { createTestOrg } from './helpers/testOrg.js'
+import { createTestUser } from './helpers/testUser.js'
 
 const api = createAuthApi()
 
-// Work item 106 has user 8 (chris@flowos.dev, handle "chris") as a watcher.
-// The test posts a comment @mentioning chris, which should create a notification
-// for chris via both the 'watching' and 'mentioned' relationships.
-const TARGET_WORK_ITEM_ID = 106
-
-// We'll resolve the actual IDs at runtime via before().
-let mentionTargetUserId     // user who will be @mentioned (chris, id=8)
+// This suite used to target work item 106 and user 8 (chris@flowos.dev) and
+// relied on a watcher relationship and ≥3 events already existing — all
+// dogfood-only ambient state, so the file could not run on a fresh or CI
+// database (DEBT.26841). It now provisions the item, the mention target, the
+// watch relationship, and the events it needs.
+let testOrg
+let targetWorkItemId
+let mentionTarget           // ephemeral user handle object
+let mentionTargetUserId     // user who will be @mentioned
 let mentionTargetHandle     // email-prefix handle used in @mention
 let authenticatedUserId     // test user who calls the API (test@flowos.dev)
 let injectedNotificationId  // notification inserted for single mark-read test
@@ -42,16 +47,14 @@ let spareEventId3           // real event id for test-3 "target item" injection
 
 describe('notifications — end-to-end', () => {
   before(async () => {
-    // Resolve mention target: lowest real human user (user 8, chris@flowos.dev)
-    const { rows: userRows } = await query(
-      `SELECT id, split_part(email, '@', 1) AS handle
-         FROM blueprint.users
-        ORDER BY id ASC
-        LIMIT 1`
-    )
-    assert.ok(userRows.length, 'DB must have at least one user')
-    mentionTargetUserId = userRows[0].id
-    mentionTargetHandle = userRows[0].handle
+    testOrg = await createTestOrg()
+
+    // Mention target: an ephemeral user. The handle is the email prefix, which
+    // MENTION_RE (/@([A-Za-z0-9_.-]+)/) matches — the helper's UUID-suffixed
+    // local part is letters, digits and hyphens only.
+    mentionTarget       = await createTestUser({ orgId: testOrg.orgId })
+    mentionTargetUserId = mentionTarget.id
+    mentionTargetHandle = mentionTarget.email.split('@')[0]
 
     // Resolve authenticated user id (test@flowos.dev, created by auth helper)
     const { rows: authRows } = await query(
@@ -60,26 +63,44 @@ describe('notifications — end-to-end', () => {
     assert.ok(authRows.length, 'test@flowos.dev must exist — run auth setup first')
     authenticatedUserId = authRows[0].id
 
+    // The work item under test, owned by this file.
+    const { status, data } = await api('/work-items', {
+      method: 'POST',
+      body: JSON.stringify({
+        title:             'notifications integration item ' + Date.now(),
+        work_item_type_id: testOrg.typeId,
+        owner_org_id:      testOrg.orgId,
+      }),
+    })
+    assert.equal(status, 201, `work item creation failed: ${JSON.stringify(data)}`)
+    targetWorkItemId = data.id
+
     // Clean up any stale notifications that could interfere
     await query('DELETE FROM runtime.notifications WHERE user_id = $1', [mentionTargetUserId])
     await query('DELETE FROM runtime.notifications WHERE user_id = $1', [authenticatedUserId])
 
-    // Verify the mention target is watching the test work item so the
-    // notifications subscriber will create a row (watching + mentioned reasons)
-    const { rows: watchRows } = await query(
-      `SELECT 1 FROM runtime.work_item_user_relationships
-        WHERE work_item_id = $1 AND user_id = $2 AND is_active = true`,
-      [TARGET_WORK_ITEM_ID, mentionTargetUserId]
-    )
-    assert.ok(
-      watchRows.length,
-      `User ${mentionTargetUserId} must have an active relationship with work item ${TARGET_WORK_ITEM_ID}`
-    )
+    // The mention target must watch the item so the notifications subscriber
+    // creates a row with both 'watching' and 'mentioned' reasons.
+    const { status: relStatus } = await api(`/work-items/${targetWorkItemId}/relationships`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: mentionTargetUserId, relationship_type: 'watching' }),
+    })
+    assert.equal(relStatus, 201, 'failed to make the mention target a watcher')
 
-    // Fetch 3 real event IDs for injected test rows.
-    // runtime.notifications.event_id is NOT NULL with a UNIQUE(user_id, event_id)
-    // constraint. We pick events not already linked to a notification for
-    // authenticatedUserId so the unique constraint cannot fire.
+    // Three spare event IDs for injected notification rows.
+    // runtime.notifications.event_id is NOT NULL with UNIQUE(user_id, event_id),
+    // so pick events not already linked to a notification for authenticatedUserId.
+    // Generate our own rather than assuming the DB already holds enough: each
+    // PATCH below emits a work_item.edited event.
+    for (let i = 0; i < 3; i++) {
+      const { status: patchStatus } = await api(`/work-items/${targetWorkItemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: `notifications integration item seed-event ${i}` }),
+      })
+      assert.equal(patchStatus, 200, 'failed to generate a spare event')
+    }
+    await new Promise(r => setTimeout(r, 300))
+
     const { rows: evtRows } = await query(
       `SELECT e.id
          FROM runtime.events e
@@ -106,6 +127,8 @@ describe('notifications — end-to-end', () => {
       'DELETE FROM runtime.notifications WHERE user_id IN ($1, $2)',
       [mentionTargetUserId, authenticatedUserId]
     )
+    await testOrg?.teardown()
+    await mentionTarget?.teardown()
   })
 
   // ─── Test 1: mention creates notification ──────────────────────────────────
@@ -113,7 +136,7 @@ describe('notifications — end-to-end', () => {
   it('comment with @mention creates a notification for mentioned user', async () => {
     const body = `Hey @${mentionTargetHandle} check this out`
 
-    const res = await api(`/work-items/${TARGET_WORK_ITEM_ID}/comments`, {
+    const res = await api(`/work-items/${targetWorkItemId}/comments`, {
       method: 'POST',
       body:   JSON.stringify({ body }),
     })
@@ -134,7 +157,7 @@ describe('notifications — end-to-end', () => {
           AND event_type = 'work_item.commented'
         ORDER BY id DESC
         LIMIT 5`,
-      [mentionTargetUserId, TARGET_WORK_ITEM_ID]
+      [mentionTargetUserId, targetWorkItemId]
     )
 
     const mentioned = rows.find(r => r.reasons && r.reasons.includes('mentioned'))
@@ -152,7 +175,7 @@ describe('notifications — end-to-end', () => {
          (user_id, event_id, work_item_id, event_type, reasons, summary)
        VALUES ($1, $2, $3, 'work_item.commented', ARRAY['watching'], 'Test notification')
        RETURNING id`,
-      [authenticatedUserId, spareEventId1, TARGET_WORK_ITEM_ID]
+      [authenticatedUserId, spareEventId1, targetWorkItemId]
     )
     injectedNotificationId = ins[0].id
 
@@ -180,7 +203,7 @@ describe('notifications — end-to-end', () => {
          (user_id, event_id, work_item_id, event_type, reasons, summary)
        VALUES ($1, $2, $3, 'work_item.transitioned', ARRAY['watching'], 'Transition notification')
        RETURNING id`,
-      [authenticatedUserId, spareEventId2, TARGET_WORK_ITEM_ID]
+      [authenticatedUserId, spareEventId2, targetWorkItemId]
     )
     const _targetNotifId = ins1[0].id
 
@@ -197,19 +220,19 @@ describe('notifications — end-to-end', () => {
 
     const res = await api('/notifications/mark-read', {
       method: 'POST',
-      body:   JSON.stringify({ work_item_id: TARGET_WORK_ITEM_ID }),
+      body:   JSON.stringify({ work_item_id: targetWorkItemId }),
     })
     assert.equal(res.status, 200, `POST /notifications/mark-read failed: ${JSON.stringify(res.data)}`)
 
     // The target work item's notification should now be read
     const { data } = await api('/notifications?limit=200')
     const stillUnreadForItem = data.rows.filter(
-      r => r.work_item_id === TARGET_WORK_ITEM_ID && !r.read_at
+      r => r.work_item_id === targetWorkItemId && !r.read_at
     )
     assert.equal(
       stillUnreadForItem.length,
       0,
-      `Expected 0 unread notifications for work item ${TARGET_WORK_ITEM_ID}, got ${stillUnreadForItem.length}`
+      `Expected 0 unread notifications for work item ${targetWorkItemId}, got ${stillUnreadForItem.length}`
     )
 
     // The null-item notification should still be unread

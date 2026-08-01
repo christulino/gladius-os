@@ -11,6 +11,12 @@ const BEARER = process.env.GLADIUS_API_KEY || ''
 
 const api = createAuthApi()
 
+// Skip Bearer-specific tests when no API key is configured — same guard as the
+// sibling MCP test files. Without it this test asserted "not 401" against an
+// empty Bearer token, which of course IS 401, so the file failed anywhere
+// GLADIUS_API_KEY is unset (CI deliberately leaves it unset). DEBT.26841
+const skipBearer = !BEARER
+
 async function bearerFetch(path, options = {}) {
   const res = await fetch(`${BASE}/admin/api${path}`, {
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${BEARER}`, ...options.headers },
@@ -82,6 +88,7 @@ describe('MCP Playbook Read', () => {
   })
 
   it('returns playbook via Bearer auth', async () => {
+    if (skipBearer) return
     const { status } = await bearerFetch(`/work-items/${workItemInBacklog}/stage-playbook`)
     // 404 is correct (entry stage has no playbook), but NOT 401
     assert.notEqual(status, 401, 'Bearer auth should work')
