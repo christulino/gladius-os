@@ -8,25 +8,17 @@ import { query, getClient } from '../../db/postgres.js'
 import { loadMatrix } from '../notifications/matrix.js'
 import { renderSummary } from '../notifications/summaries.js'
 import { extractMentions } from '../notifications/mentions.js'
+import { isNotifiableEventType } from '../notifications/eventTypes.js'
 
-const HANDLED = new Set([
-  'work_item.created',
-  'work_item.edited',
-  'work_item.transitioned',
-  'work_item.substate_changed',
-  'work_item.assigned',
-  'work_item.commented',
-  'work_item.comment_edited',
-  'work_item.comment_deleted',
-  'work_item.spawned',
-  'work_item.linked',
-  'exit_criteria.acknowledged',
-  'exit_criteria.unacknowledged',
-  'exit_criteria.waived',
-])
-
-export function handlesEventType(eventType) {
-  return HANDLED.has(eventType)
+/**
+ * Which event types this subscriber acts on.
+ *
+ * Derived from blueprint.notification_defaults (union user overrides), NOT a
+ * hardcoded list — see runtime/notifications/eventTypes.js for why. Async by
+ * necessity; the event processor awaits `handles`.
+ */
+export async function handlesEventType(eventType) {
+  return isNotifiableEventType(eventType)
 }
 
 async function fetchWorkItem(workItemId) {
@@ -66,7 +58,7 @@ async function fetchEnabledOutOfBandChannels(userId) {
 }
 
 export async function notificationsHandler(event) {
-  if (!HANDLED.has(event.event_type)) return
+  if (!await isNotifiableEventType(event.event_type)) return
 
   const workItem = await fetchWorkItem(event.entity_id)
   if (!workItem) return

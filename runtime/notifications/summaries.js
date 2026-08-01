@@ -20,6 +20,10 @@ const RENDERERS = {
   'work_item.comment_edited': (e, w) => `${e.payload.author_name ?? 'Someone'} edited a comment on ${w.display_key}`,
   'work_item.comment_deleted': (e, w) => `${e.payload.author_name ?? 'Someone'} deleted a comment on ${w.display_key}`,
   'work_item.spawned':        (e, w) => `${w.display_key} was spawned`,
+  // The actor is suppressed before this renders, so the reader is never the
+  // author — "an agent" / "someone" is accurate from the recipient's side.
+  'work_item.context_entry_added': (e, w) =>
+    `${e.payload?.is_agent ? 'An agent' : 'Someone'} added a ${e.payload?.type ?? 'journal'} entry to ${w.display_key}`,
   'work_item.linked':         (e, w) => `${w.display_key} linked to ${e.payload.linked_display_key ?? 'another item'}`,
   'exit_criteria.acknowledged':   (e, w) => `Exit criterion checked on ${w.display_key}: ${truncate(e.payload.criterion_label, 60)}`,
   'exit_criteria.unacknowledged': (e, w) => `Exit criterion un-checked on ${w.display_key}: ${truncate(e.payload.criterion_label, 60)}`,

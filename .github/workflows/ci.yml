@@ -99,25 +99,14 @@ jobs:
       # never batched — a batched run races on `testOrg` slug generation
       # across files.
       #
-      # ONE EXCLUSION REMAINS, and it is not a test-isolation problem:
-      #
-      #   notifications-fanout.test.js — asserts handlesEventType() covers
-      #   every event type in the seeded blueprint.notification_defaults. It
-      #   does not: the HANDLED set in runtime/subscribers/notifications.js is
-      #   missing `work_item.context_entry_added`, so a notification default
-      #   the product ships and the UI offers silently fans out to nobody.
-      #   That is a real product defect tracked by DEBT.26601, and fixing it
-      #   is a behaviour decision (notify on every agent journal write? only
-      #   human-authored entries? drop the default instead?) rather than a
-      #   test fix. Re-include this file when DEBT.26601 lands.
+      # No exclusions: DEBT.26601 restored notifications-fanout.test.js by
+      # deriving the notifiable event-type set from the database instead of a
+      # hand-maintained literal.
       # ---------------------------------------------------------------------
       - name: Run integration tests (full suite)
         run: |
           set -e
           for f in tests/*.test.js; do
-            case "$f" in
-              tests/notifications-fanout.test.js) echo "skipping $f — DEBT.26601"; continue ;;
-            esac
             echo "::group::$f"
             node --test --test-force-exit "$f"
             echo "::endgroup::"

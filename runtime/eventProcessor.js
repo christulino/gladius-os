@@ -229,7 +229,19 @@ async function drainOne(sub) {
     if (!events.length) return
 
     for (const event of events) {
-      const handles = sub.handles(event.event_type)
+      // `handles` may be sync or async — the notifications subscriber resolves
+      // its event-type set from the database. Awaiting a non-promise is a
+      // no-op, so sync predicates are unaffected. A throw here must not escape
+      // the loop: treat an unresolvable predicate as "handles it" and let the
+      // handler decide, rather than skipping the event and advancing the
+      // cursor past it forever.
+      let handles
+      try {
+        handles = await sub.handles(event.event_type)
+      } catch (err) {
+        console.warn(`[events] subscriber "${sub.name}" handles() failed for event ${event.id}, assuming handled: ${err.message}`)
+        handles = true
+      }
 
       if (!handles) {
         cursor = Number(event.id)

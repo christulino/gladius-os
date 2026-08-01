@@ -7,6 +7,7 @@ import { renderSummary } from '../runtime/notifications/summaries.js'
 import { extractMentions } from '../runtime/notifications/mentions.js'
 import { emitEvent } from '../core/events.js'
 import { notificationsHandler, handlesEventType as notifHandles } from '../runtime/subscribers/notifications.js'
+import { invalidateEventTypeCache } from '../runtime/notifications/eventTypes.js'
 
 describe('notifications/matrix', () => {
   let testUserId
@@ -222,8 +223,52 @@ describe('subscribers/notifications — fanout', () => {
 
   it('handlesEventType covers every seeded event type', async () => {
     const { rows } = await query('SELECT DISTINCT event_type FROM blueprint.notification_defaults')
-    for (const r of rows) assert.equal(notifHandles(r.event_type), true, r.event_type)
-    assert.equal(notifHandles('test.random'), false)
+    for (const r of rows) assert.equal(await notifHandles(r.event_type), true, r.event_type)
+    assert.equal(await notifHandles('test.random'), false)
+  })
+
+  // The set is derived, so a newly seeded default must become notifiable with
+  // no code change. That is the whole point of DEBT.26601 — proving the
+  // hand-sync step is gone, not just that today's list happens to match.
+  it('a newly seeded default becomes notifiable without a code change', async () => {
+    const probe = 'test.derived_probe'
+    try {
+      await query(`
+        INSERT INTO blueprint.notification_defaults (relationship_type, event_type, enabled)
+        VALUES ('watching', $1, true)
+        ON CONFLICT (relationship_type, event_type) DO NOTHING
+      `, [probe])
+      invalidateEventTypeCache()
+      assert.equal(await notifHandles(probe), true, 'seeded default should be notifiable')
+    } finally {
+      await query('DELETE FROM blueprint.notification_defaults WHERE event_type = $1', [probe])
+      invalidateEventTypeCache()
+    }
+  })
+
+  // Second instance of the same drift class: RENDERERS in summaries.js was
+  // also missing work_item.context_entry_added, and nothing bound it to the
+  // notifiable set. An unrendered type falls back to the raw
+  // "KEY: event.type" string, which is a user-visible degradation rather than
+  // an error — so it needs a test, not a comment.
+  it('every notifiable event type has a summary renderer', async () => {
+    const { rows } = await query('SELECT DISTINCT event_type FROM blueprint.notification_defaults')
+    const workItem = { id: 1, display_key: 'TEST.1', title: 'Renderer coverage probe' }
+    const missing = []
+    for (const { event_type } of rows) {
+      const event = {
+        event_type,
+        payload: {
+          from_stage_name: 'A', to_stage_name: 'B', substate: 'active',
+          criterion_label: 'c', linked_display_key: 'TEST.2',
+          type: 'note', is_agent: true, body: 'b',
+        },
+      }
+      if (renderSummary(event, workItem) === `${workItem.display_key}: ${event_type}`) {
+        missing.push(event_type)
+      }
+    }
+    assert.deepEqual(missing, [], `event types with no summary renderer: ${missing.join(', ')}`)
   })
 })
 
