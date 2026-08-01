@@ -33,6 +33,10 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
 
+      # Required to build the linux/arm64 image on an amd64 runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -40,6 +44,15 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          # Without this, build-push-action publishes ONLY the runner's native
+          # architecture (amd64), so Apple Silicon users pulled an emulated
+          # image. The one native dependency, bcrypt@6, ships prebuilt binaries
+          # inside the npm package (prebuilds/linux-arm64/bcrypt.musl.node) via
+          # node-gyp-build, so the arm64 build needs no toolchain in the image.
+          # The arm64 leg runs under QEMU and is slow; this workflow only fires
+          # on tag pushes, so the cost is acceptable versus maintaining a
+          # two-runner native matrix plus a manifest merge.
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

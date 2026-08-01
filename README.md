@@ -63,8 +63,8 @@ editing required — the board works immediately without it.
 docker compose down -v
 ```
 
-**Known limitations (v1):** the published image is `linux/amd64` only; on Apple
-Silicon it runs under emulation. Multi-arch images are planned.
+The published image is multi-arch (`linux/amd64` and `linux/arm64`), so Apple
+Silicon and ARM servers run natively — no emulation.
 
 > **New here?** After installing, follow the [Quickstart](docs/quickstart.md) — in
 > about 10 minutes you'll watch a stage gate refuse to let an unfinished item
