@@ -4,10 +4,15 @@ Gladius gates work: an item can't leave a stage until that stage's exit criteria
 
 ## Before you start
 
-You need a running Gladius. If you haven't installed it yet, follow the two-step Docker install in the [README](../README.md#install-docker), then come back here. You'll need the admin password Gladius printed in the app logs on first boot:
+You need a running Gladius. If you haven't installed it yet, follow the two-step Docker install in the [README](../README.md#install-docker), then come back here.
+
+You'll need the admin password Gladius printed on first boot. If you didn't save it, search the logs:
 
 ```bash
-docker compose logs app | grep -A1 "Admin password"
+docker compose logs app | grep -A1 "Admin password"          # macOS / Linux
+```
+```powershell
+docker compose logs app | Select-String "Admin password" -Context 0,1   # Windows
 ```
 
 ## 1. Log in
