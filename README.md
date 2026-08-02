@@ -36,7 +36,43 @@ Each work item carries an append-only **journal** of typed entries — discovery
 
 ## Install (Docker)
 
-You need Docker with Compose. Two commands, under 5 minutes, no file editing.
+Once a container runtime is in place, this is two commands and under 5 minutes,
+with no file editing.
+
+### Prerequisites
+
+Gladius runs as two containers — the app and PostgreSQL — so you need something
+that can run a Compose file. Any of these work:
+
+| Runtime | Notes |
+|---|---|
+| [Docker Desktop](https://docs.docker.com/desktop/) | The usual choice. Free for personal use and small business; **larger companies need a paid subscription** |
+| [Podman Desktop](https://podman-desktop.io/) | Fully open source, no licensing tier |
+| [Rancher Desktop](https://rancherdesktop.io/) | Fully open source, no licensing tier |
+
+The compose file is standard, so any Compose-compatible runtime should work.
+Docker is what we test against.
+
+Check you're ready — this should print a version, not an error:
+
+```bash
+docker compose version     # or: podman compose version
+```
+
+**On Windows**, budget 20–30 minutes for the runtime itself. Every container
+runtime on Windows runs Linux containers inside WSL2, so the setup is the same
+whichever you pick:
+
+1. Confirm virtualization is enabled — Task Manager → Performance → CPU →
+   **Virtualization: Enabled**. If it's disabled you must turn it on in
+   BIOS/UEFI. This is the step people get stuck on, and WSL fails with an
+   unhelpful error rather than telling you.
+2. In PowerShell **as Administrator**, run `wsl --install`, then reboot.
+   (Windows 10 2004+ or Windows 11.)
+3. Install your runtime, keeping the WSL2 backend option checked. Launch it
+   once and let it finish starting before continuing.
+
+### Install Gladius
 
 **macOS / Linux**
 
