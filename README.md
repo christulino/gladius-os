@@ -36,22 +36,80 @@ Each work item carries an append-only **journal** of typed entries — discovery
 
 ## Install (Docker)
 
-You need Docker with Compose. Two commands, under 5 minutes, no file editing:
+Once a container runtime is in place, this is two commands and under 5 minutes,
+with no file editing.
+
+### Prerequisites
+
+Gladius runs as two containers — the app and PostgreSQL — so you need something
+that can run a Compose file. Any of these work:
+
+| Runtime | Notes |
+|---|---|
+| [Docker Desktop](https://docs.docker.com/desktop/) | The usual choice. Free for personal use and small business; **larger companies need a paid subscription** |
+| [Podman Desktop](https://podman-desktop.io/) | Fully open source, no licensing tier |
+| [Rancher Desktop](https://rancherdesktop.io/) | Fully open source, no licensing tier |
+
+The compose file is standard, so any Compose-compatible runtime should work.
+Docker is what we test against.
+
+Check you're ready — this should print a version, not an error:
+
+```bash
+docker compose version     # or: podman compose version
+```
+
+**On Windows**, budget 20–30 minutes for the runtime itself. Every container
+runtime on Windows runs Linux containers inside WSL2, so the setup is the same
+whichever you pick:
+
+1. Confirm virtualization is enabled — Task Manager → Performance → CPU →
+   **Virtualization: Enabled**. If it's disabled you must turn it on in
+   BIOS/UEFI. This is the step people get stuck on, and WSL fails with an
+   unhelpful error rather than telling you.
+2. In PowerShell **as Administrator**, run `wsl --install`, then reboot.
+   (Windows 10 2004+ or Windows 11.)
+3. Install your runtime, keeping the WSL2 backend option checked. Launch it
+   once and let it finish starting before continuing.
+
+### Install Gladius
+
+**macOS / Linux**
 
 ```bash
 curl -O https://raw.githubusercontent.com/christulino/gladius-os/main/docker-compose.yml
 docker compose up
 ```
 
-Then open **http://localhost:3000/admin/**. On first boot the app generates a
-random admin password and prints it in the container logs:
+**Windows (PowerShell)**
 
-```bash
-docker compose logs app | grep -A1 "Admin password"
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/christulino/gladius-os/main/docker-compose.yml -OutFile docker-compose.yml
+docker compose up
 ```
 
-Log in with `admin@example.com` and that password, then change it under
-**Settings → Profile**.
+On first boot Gladius generates a random admin password and prints it in the
+output you're watching — look for:
+
+```
+Admin password (SAVE THIS — shown once):
+```
+
+**Save it now.** It is shown once, on first boot only; a restart will not print
+it again. If you lose it, `docker compose down -v` and start over (this destroys
+all data).
+
+Scrolled past it? Search the logs:
+
+```bash
+docker compose logs app | grep -A1 "Admin password"          # macOS / Linux
+```
+```powershell
+docker compose logs app | Select-String "Admin password" -Context 0,1   # Windows
+```
+
+Then open **http://localhost:3000/admin/**, log in with `admin@example.com` and
+that password, and change it under **Settings → Profile**.
 
 **AI features (optional):** playbooks and natural-language search stay dark until
 you add an Anthropic API key under **Settings → AI Models**. No environment
@@ -169,7 +227,9 @@ docker compose -f docker-compose.dev.yml up -d
 
 # Install dependencies
 npm install
-cd admin-ui && npm install && cd ..
+cd admin-ui
+npm install
+cd ..
 
 # Copy env and configure
 cp .env.example .env
@@ -186,10 +246,14 @@ npm run seed
 npm run dev
 
 # In a separate terminal — start the admin UI (port 5173)
-cd admin-ui && npm run dev
+cd admin-ui
+npm run dev
 ```
 
 Admin UI: `http://localhost:5173/admin/`
+
+On Windows, run these in PowerShell (where `cp` maps to `Copy-Item`) or in WSL.
+`cmd.exe` has neither `cp` nor `&&` chaining.
 
 `npm run seed` also runs any pending migrations automatically, so `npm run seed`
 alone works if you want a single command for a fresh database. Admin login
