@@ -1,5 +1,16 @@
 # Backlog-Grinder Session — Kickoff
 
+> **Maintainer runbook — not a user guide.** This describes how the Gladius
+> maintainer runs the project's own backlog, and it assumes maintainer-local
+> setup that is deliberately not in this repository (gitignored `CLAUDE.md` /
+> `DECISIONS.md`, a configured `.mcp.json`, and agent skills installed outside
+> the repo). If you cloned Gladius, treat it as a worked example rather than
+> instructions.
+>
+> To drive Gladius with your own agent, start from
+> [Connect an AI agent](../README.md#connect-an-ai-agent-mcp) and
+> [the quickstart](quickstart.md).
+
 A reusable kickoff for an **interactive, supervised** Gladius backlog-grinding session
 (like the one that produced PRs #13–#16). Not headless, not cloud — you start a normal
 `claude` CLI session and paste the prompt below. Opus orchestrates; sonnet sub-agents

@@ -1,5 +1,19 @@
 # Serial Grinder Session — Kickoff (merge-as-you-go)
 
+> **Maintainer runbook — not a user guide.** This describes how the Gladius
+> maintainer runs the project's own backlog, and it assumes files that are
+> deliberately **not in this repository**: the doctrine corpus
+> (`docs/doctrine/*.md`, gitignored — its canonical home is org context, tagged
+> `doctrine`), `CLAUDE.md` and `DECISIONS.md` (gitignored, maintainer-local), a
+> `gladius-architect` skill installed under `~/.claude/skills/`, and a gitignored
+> `.mcp.json`. If you cloned Gladius, those paths will not resolve for you and
+> that is expected — nothing is missing from your checkout.
+>
+> To drive Gladius with your own agent, start from
+> [Connect an AI agent](../README.md#connect-an-ai-agent-mcp) and
+> [the quickstart](quickstart.md) instead. Packaging a portable version of this
+> workflow — a shippable doctrine starter and skill — is not done yet.
+
 A reusable kickoff for a **supervised, serial, merge-as-you-go** Gladius backlog-grinding
 session. One item at a time, full cycle per item: implement → independent review →
 tiered auto-merge → board sweep → next item off fresh main. The orchestrator (Fable/Opus)
