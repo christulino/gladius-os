@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-22
+
+**Final release of the server edition** (Node + PostgreSQL + Docker + web UI).
+1.0 baselines everything built so far. The next line, 1.1, removes the database
+and the UI: workflows, exit criteria, playbooks and context become files in your
+repo, and work items live in Jira, GitHub Issues, or plain files. This edition
+receives no further feature work; the container image stays published at
+`ghcr.io/christulino/gladius-os:1.0.0`.
+
+### Fixed
+
+- **Context-entry notifications reached nobody.** The notifiable event-type list
+  was hardcoded and had drifted from the seeded notification defaults, so
+  `work_item.context_entry_added` silently notified no one. The list is now
+  derived from the database (notification defaults ∪ user overrides), so seeding
+  a default in a migration is sufficient. (#95)
+
+### Documentation
+
+- **Install path works for a newcomer, including Windows** — PowerShell 5.1
+  breakages fixed (`curl -O` aliasing, missing `grep`, no `&&`). (#96)
+- **Install acceptance checklist** carries macOS/Linux and Windows commands and
+  Windows-only pass criteria; **grinder kickoff docs** are marked as maintainer
+  runbooks that depend on files deliberately kept out of the repo. (#97)
+
 ## [0.2.1] - 2026-08-01
 
 ### Fixed
